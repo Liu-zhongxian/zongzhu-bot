@@ -1,0 +1,29 @@
+{
+    "manufacturer": "waveshare",
+    "type": "esp32-s3-touch-amoled-1.75",
+    "target": "esp32s3",
+    "builds": [
+        {
+            "name": "esp32-s3-touch-amoled-1.75",
+            "sdkconfig_append": [
+                "CONFIG_USE_WECHAT_MESSAGE_STYLE=n",
+                "CONFIG_BOARD_TYPE_WAVESHARE_ESP32_S3_TOUCH_AMOLED_1_75=y",
+                "CONFIG_USE_DEVICE_AEC=y"
+            ]
+        },
+        {
+            "name": "esp32-s3-touch-amoled-1.75c",
+            "sdkconfig_append": [
+                "CONFIG_USE_WECHAT_MESSAGE_STYLE=n",
+                "CONFIG_BOARD_TYPE_WAVESHARE_ESP32_S3_TOUCH_AMOLED_1_75C=y",
+                "CONFIG_USE_DEVICE_AEC=y",
+                "CONFIG_USE_AFE_WAKE_WORD=n",
+                "CONFIG_USE_CUSTOM_WAKE_WORD=y",
+                "CONFIG_CUSTOM_WAKE_WORD=\"ni hao zong zhu\"",
+                "CONFIG_CUSTOM_WAKE_WORD_DISPLAY=\"你好宗主\"",
+                "CONFIG_CUSTOM_WAKE_WORD_THRESHOLD=20",
+                "CONFIG_SR_MN_CN_MULTINET7_QUANT=y"
+            ]
+        }
+    ]
+}

@@ -1,0 +1,11 @@
+{
+    "type": "doit-s3-aibox",
+    "target": "esp32s3",
+    "builds": [
+        {
+            "name": "doit-s3-aibox",
+            "sdkconfig_append": [
+            ]
+        }
+    ]
+}

@@ -1,0 +1,36 @@
+# Copy to xiaozhi-esp32-server/main/xiaozhi-server/data/.config.yaml.
+# Replace 192.168.1.100 with this computer's reachable LAN IP.
+server:
+  ip: 0.0.0.0
+  port: 8000
+  http_port: 8003
+  websocket: ws://192.168.1.100:8000/xiaozhi/v1/
+  vision_explain: http://192.168.1.100:8003/mcp/vision/explain
+  auth:
+    enabled: true
+    allowed_devices: []
+selected_module:
+  VAD: SileroVAD
+  ASR: FunASR
+  LLM: BotOnly
+  TTS: EdgeTTS
+  Memory: nomem
+  Intent: nointent
+ASR:
+  FunASR:
+    language: zh
+LLM:
+  BotOnly:
+    type: bot_only
+grok_bot:
+  enabled: true
+  config_file: ../../../private/grok-bot-webhook.json
+prompt: 你是宗主，用简洁自然的中文回答用户，适合语音播报。
+wakeup_words: [你好宗主, 你好小智, 嘿你好呀]
+enable_greeting: true
+enable_wakeup_words_response_cache: true
+end_prompt:
+  enable: false
+VAD:
+  SileroVAD:
+    min_silence_duration_ms: 700

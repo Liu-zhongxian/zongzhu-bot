@@ -1,0 +1,10 @@
+{
+    "type": "jiuchuan-s3",
+    "target": "esp32s3",
+    "builds": [
+        {
+            "name": "jiuchuan-s3",
+            "sdkconfig_append": []
+        }
+    ]
+}

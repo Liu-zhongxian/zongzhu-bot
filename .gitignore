@@ -1,0 +1,14 @@
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+.firmware-venv/
+.env
+private/
+backups/
+logs/
+*.log
+*.pid
+**/data/.config.yaml
+**/.secrets.yaml
+**/models/SenseVoiceSmall/model.pt

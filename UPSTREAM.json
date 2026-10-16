@@ -1,0 +1,10 @@
+{
+  "xiaozhi-esp32": {
+    "url": "https://github.com/78/xiaozhi-esp32.git",
+    "commit": "49b4380b3faa0ceadd28a3e78aaf0f311c46c57e"
+  },
+  "xiaozhi-esp32-server": {
+    "url": "https://github.com/xinnan-tech/xiaozhi-esp32-server.git",
+    "commit": "60c2a7ee17e41d3248ad1a65ac9c9d71f1c79b91"
+  }
+}

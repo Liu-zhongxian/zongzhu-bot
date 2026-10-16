@@ -1,0 +1,6 @@
+{
+  "url": "https://YOUR_BOT_WEBHOOK_URL",
+  "token": "REPLACE_WITH_YOUR_WEBHOOK_TOKEN",
+  "reply_dir": "/absolute/path/to/zongzhu-esp32-grok-bot/private/bot-replies",
+  "reply_wait_seconds": 300
+}

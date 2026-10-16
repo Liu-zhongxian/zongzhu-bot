@@ -1,0 +1,17 @@
+{
+  "version": "2.5.2.3",
+  "variant": "esp32-s3-touch-amoled-1.75c",
+  "app_bytes": 2955680,
+  "flashed": true,
+  "host_tests": 110,
+  "backend_tests": 25,
+  "simulated_wait_display_test": "passed",
+  "assets_identical_to_2.5.2.2": true,
+  "partition_identical_to_2.5.2.2": true,
+  "flash_scope": "app partition 0 only; 0x20000",
+  "flash_hash_verified": true,
+  "physical_acceptance": "passed: waiting display, reply speech, text retention",
+  "boot_version_verified": true,
+  "wifi_reconnected": true,
+  "user_confirmation": "等待、朗读和文字保留都正常"
+}

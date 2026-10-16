@@ -1,0 +1,34 @@
+from abc import ABC, abstractmethod
+from config.logger import setup_logging
+
+TAG = __name__
+logger = setup_logging()
+
+class LLMProviderBase(ABC):
+    @abstractmethod
+    def response(self, session_id, dialogue):
+        """LLM response generator"""
+        pass
+
+    def response_no_stream(self, system_prompt, user_prompt, **kwargs):
+        # 构造对话格式
+        dialogue = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+        result = ""
+        for part in self.response("", dialogue, **kwargs):
+            result += part
+        return result
+    
+    def response_with_functions(self, session_id, dialogue, functions=None):
+        """
+        Default implementation for function calling (streaming)
+        This should be overridden by providers that support function calls
+
+        Returns: generator that yields either text tokens or a special function call token
+        """
+        # For providers that don't support functions, just return regular response
+        for token in self.response(session_id, dialogue):
+            yield token, None
+

@@ -1,0 +1,50 @@
+name: Feature request
+description: Propose an improvement to a supported device or the common firmware
+title: "[Feature] "
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use the **Board support request** form for a new board, hardware revision, or product variant. Account and cloud-product requests belong on the [XiaoZhi AI website](https://xiaozhi.me/).
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Before submitting
+      options:
+        - label: I have searched the existing feature requests and did not find the same proposal.
+          required: true
+
+  - type: input
+    id: scope
+    attributes:
+      label: Affected device or area
+      description: Enter the device, board target, or firmware area. Enter "All devices" for a general request.
+      placeholder: ex. df-k10, audio, display, protocol, or All devices
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: Explain the current limitation and why the requested change would be useful.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Requested behavior
+      description: Describe the result or behavior you would like to see.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Optionally add alternatives, screenshots, diagrams, links, or testing information.
+    validations:
+      required: false

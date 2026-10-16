@@ -1,0 +1,77 @@
+name: Device runtime bug
+description: Report a reproducible firmware problem while a device is running
+title: "[Bug] "
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This form is for the open-source device firmware. For device unbinding, email [xiaozhi.ai@tenclass.com](mailto:xiaozhi.ai@tenclass.com?subject=Device%20unbinding%20request) privately with the device ID and MAC address. Use the [XiaoZhi AI website](https://xiaozhi.me/) for other account and cloud-service requests.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Before submitting
+      options:
+        - label: I have tested the latest applicable firmware and searched for an existing issue reporting the same problem.
+          required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Device or development board
+      description: Enter the manufacturer, exact product/model, and hardware revision or SKU when known.
+      placeholder: ex. LilyGO T-Circle-S3 V1.1 or EchoEar N16R8
+    validations:
+      required: true
+
+  - type: input
+    id: firmware_version
+    attributes:
+      label: Firmware version
+      description: Paste the `App version:` value from the startup log. Do not enter a board name or "latest".
+      placeholder: ex. 2.2.6
+    validations:
+      required: true
+
+  - type: input
+    id: firmware_source
+    attributes:
+      label: Firmware source or filename
+      description: State where the firmware came from and include its filename or board target when available.
+      placeholder: ex. xiaozhi.me, GitHub release echoear.bin, self-built target df-k10, or vendor firmware
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and reproduction steps
+      description: Describe the starting state, exact actions, expected result, actual result, frequency, and any relevant modifications.
+      placeholder: |
+        Steps:
+        Expected result:
+        Actual result:
+        Frequency:
+        Modifications, if any:
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs or other evidence
+      description: Paste relevant startup and failure logs, including a backtrace or reset reason when applicable. If logs are unavailable, briefly say why. Remove credentials, device IDs, MAC addresses, UUIDs, and other private information.
+      placeholder: Paste relevant logs here, or explain why logs cannot be collected.
+      render: shell
+    validations:
+      required: true
+
+  - type: upload
+    id: attachments
+    attributes:
+      label: Optional photos, videos, or log files
+      description: Attach files that help identify the hardware or demonstrate the failure. Review files for private information first.
+    validations:
+      required: false
+      accept: ".png,.jpg,.jpeg,.gif,.mp4,.mov,.webm,.log,.txt,.zip"

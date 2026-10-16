@@ -1,0 +1,10 @@
+{
+    "type": "genjutech-s3-1.54tft",
+    "target": "esp32s3",
+    "builds": [
+        {
+            "name": "genjutech-s3-1.54tft",
+            "sdkconfig_append": []
+        }
+    ]
+}

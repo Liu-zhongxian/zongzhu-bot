@@ -1,0 +1,105 @@
+name: Build Boards
+
+on:
+  # Manual runs exercise the full matrix, including CI-specific options.
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - ci/* # for ci test
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Determine variants to build
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v6.1
+    outputs:
+      variants: ${{ steps.select.outputs.variants }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Test build tooling
+        run: python -m unittest discover -s scripts/tests -v
+
+      - id: select
+        name: Select variants based on changes
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          CHANGED_FILE="$RUNNER_TEMP/changed-files.txt"
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            git ls-files > "$CHANGED_FILE"
+          elif [[ "$EVENT_NAME" == "pull_request" ]]; then
+            # Checkout is the synthetic merge commit. Compare the PR branch
+            # from its merge base, excluding unrelated updates on main.
+            git diff --name-only --no-renames HEAD^1...HEAD^2 > "$CHANGED_FILE"
+          elif [[ "$BEFORE_SHA" =~ ^0+$ && "$GITHUB_REF" != "refs/heads/main" ]] && \
+               BASE_SHA=$(git merge-base HEAD origin/main); then
+            # First push of a ci/* branch has an all-zero before SHA.
+            git diff --name-only --no-renames "$BASE_SHA" HEAD > "$CHANGED_FILE"
+          elif [[ -n "$BEFORE_SHA" && ! "$BEFORE_SHA" =~ ^0+$ ]] && \
+               git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
+            git diff --name-only --no-renames "$BEFORE_SHA" HEAD > "$CHANGED_FILE"
+          else
+            # A missing baseline (e.g. an unavailable force-pushed commit)
+            # must not silently omit changed boards.
+            git ls-files > "$CHANGED_FILE"
+          fi
+
+          cat "$CHANGED_FILE"
+
+          # Keep the full manual matrix out of environment variables.
+          python scripts/build.py --select-changed < "$CHANGED_FILE" > "$RUNNER_TEMP/variants.json"
+          {
+            printf 'variants='
+            cat "$RUNNER_TEMP/variants.json"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.ci_name || matrix.full_name }}
+    needs: prepare
+    if: ${{ needs.prepare.outputs.variants != '[]' }}
+    strategy:
+      fail-fast: false  # 单个变体失败不影响其它变体
+      matrix:
+        include: ${{ fromJson(needs.prepare.outputs.variants) }}
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v6.1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build current variant
+        shell: bash
+        env:
+          BOARD: ${{ matrix.board }}
+          VARIANT: ${{ matrix.name }}
+          BUILD_OPTIONS_JSON: ${{ toJSON(matrix.ci_build_options) }}
+        run: |
+          source "$IDF_PATH/export.sh"
+          OPTIONS=()
+          if [[ "$BUILD_OPTIONS_JSON" != "null" && -n "$BUILD_OPTIONS_JSON" ]]; then
+            OPTIONS+=(--build-options-json "$BUILD_OPTIONS_JSON")
+          fi
+          python scripts/build.py "$BOARD" --name "$VARIANT" "${OPTIONS[@]}"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: xiaozhi_${{ matrix.ci_name || matrix.full_name }}_${{ github.sha }}
+          path: build/merged-binary.bin
+          if-no-files-found: error
