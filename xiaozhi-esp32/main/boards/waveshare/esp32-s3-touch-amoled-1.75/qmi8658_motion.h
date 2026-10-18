@@ -1,7 +1,6 @@
 #pragma once
-// SPDX-License-Identifier: AGPL-3.0-or-later
-// Tilt and shake thresholds adapted from Trentct/m5stack-stopwatch-avatar (2049632),
-// see kk-avatar-NOTICE.md. The QMI8658 register access is written for the 1.75C board.
+// QMI8658 motion input for the 1.75C board: tilt for eye gaze and a
+// left-right shake gesture. Shares the codec I2C bus.
 
 #include <driver/i2c_master.h>
 #include <esp_log.h>
@@ -15,17 +14,16 @@
 
 class Qmi8658Motion {
 public:
-    // tilt_x/tilt_y are in -1..1 screen coordinates (+x right, +y down).
+    // tilt_x/tilt_y are -1..1 in screen coordinates (+x right, +y down).
     using TiltCallback = std::function<void(float tilt_x, float tilt_y)>;
     using ShakeCallback = std::function<void(bool active)>;
 
-    Qmi8658Motion(i2c_master_bus_handle_t bus) : bus_(bus) {}
+    explicit Qmi8658Motion(i2c_master_bus_handle_t bus) : bus_(bus) {}
 
     bool Start(TiltCallback on_tilt, ShakeCallback on_shake) {
         for (uint8_t addr : {0x6B, 0x6A}) {
-            if (i2c_master_probe(bus_, addr, 50) == ESP_OK && Attach(addr)) {
+            if (i2c_master_probe(bus_, addr, 50) == ESP_OK && Attach(addr))
                 break;
-            }
         }
         if (!dev_) {
             ESP_LOGW(kTag, "QMI8658 not found, motion disabled");
@@ -40,17 +38,23 @@ public:
 
 private:
     static constexpr const char* kTag = "Qmi8658Motion";
-    static constexpr uint32_t kIntervalMs = 20;
-    static constexpr uint32_t kShakeReleaseDelayMs = 650;
-    static constexpr uint32_t kShakeSequenceTimeoutMs = 1500;
-    static constexpr uint32_t kShakeMaximumSwingGapMs = 480;
-    static constexpr uint32_t kShakeMinimumSwingGapMs = 90;
-    static constexpr float kStrongShakeAxisDelta = 0.32f;
-    static constexpr float kStrongShakeJerk = 0.50f;
-    static constexpr int kRequiredShakeSwings = 4;
-    static constexpr int kCalibrationSamples = 30;
-    // CTRL2 range +-4g => 8192 LSB/g.
-    static constexpr float kAccelLsbPerG = 8192.0f;
+    static constexpr uint32_t kPeriodMs = 20;
+    static constexpr float kLsbPerG = 8192.0f;  // +-4g range
+
+    // Tilt
+    static constexpr float kDeadZoneG = 0.03f;
+    static constexpr float kFullTiltG = 0.30f;
+    static constexpr uint32_t kRecentreAfterMs = 3000;
+    static constexpr int kSettleSamples = 25;
+
+    // Shake: alternating left/right lobes of the high-passed X acceleration.
+    static constexpr float kLobeG = 0.55f;      // a lobe must exceed this
+    static constexpr float kLobeResetG = 0.2f;  // and fall back below this before the next
+    static constexpr uint32_t kLobeMinGapMs = 70;
+    static constexpr uint32_t kLobeMaxGapMs = 450;
+    static constexpr int kLobesToTrigger = 4;
+    static constexpr float kCalmG = 0.06f;
+    static constexpr uint32_t kCalmForMs = 700;
 
     i2c_master_bus_handle_t bus_;
     i2c_master_dev_handle_t dev_ = nullptr;
@@ -76,126 +80,115 @@ private:
             return false;
         }
         uint8_t who = 0;
-        if (!Read(0x00, &who, 1) || who != 0x05) {
-            ESP_LOGW(kTag, "0x%02x WHO_AM_I=0x%02x, skip", addr, who);
+        // CTRL1 auto-increment/little endian; CTRL2 accel +-4g 125Hz;
+        // CTRL3 gyro 512dps 125Hz; CTRL7 enable accel + gyro.
+        const bool ok = Read(0x00, &who, 1) && who == 0x05 && Write(0x02, 0x40) &&
+                        Write(0x03, 0x16) && Write(0x04, 0x56) && Write(0x08, 0x03);
+        if (!ok) {
+            ESP_LOGW(kTag, "0x%02x not usable (WHO_AM_I=0x%02x)", addr, who);
             i2c_master_bus_rm_device(dev_);
             dev_ = nullptr;
             return false;
         }
-        // CTRL1: register auto-increment, little endian.
-        // CTRL2: accel +-4g, 125Hz. CTRL3: gyro 512dps, 125Hz. CTRL7: enable accel+gyro.
-        bool ok = Write(0x02, 0x40) && Write(0x03, 0x16) && Write(0x04, 0x56) && Write(0x08, 0x03);
-        ESP_LOGI(kTag, "QMI8658 at 0x%02x %s", addr, ok ? "ready" : "init failed");
-        if (!ok) {
-            i2c_master_bus_rm_device(dev_);
-            dev_ = nullptr;
-        }
-        return ok;
+        ESP_LOGI(kTag, "QMI8658 at 0x%02x ready", addr);
+        return true;
     }
 
-    // Board orientation: chip X/Y are mapped to screen axes here.
-    static void ToScreen(const float a[3], float& sx, float& sy) {
-        sx = QMI8658_SCREEN_X(a);
-        sy = QMI8658_SCREEN_Y(a);
+    static float Shape(float d) {
+        const float m = std::max(0.0f, std::fabs(d) - kDeadZoneG) / kFullTiltG;
+        return std::copysign(std::min(1.0f, m), d);
     }
 
     void Loop() {
-        float neutral_x = 0, neutral_y = 0, filtered_x = 0, filtered_y = 0;
-        float prev_x = 0, prev_y = 0, shake_energy = 0;
-        int calibration = 0;
-        int swings = 0;
-        int prev_direction = 0;
-        uint32_t sequence_start = 0, last_swing = 0, quiet_since = 0;
+        float lp_x = 0, lp_y = 0;          // smoothed gravity on screen axes
+        float slow_x = 0;                  // very slow baseline for the high-pass
+        float centre_x = 0, centre_y = 0;  // resting attitude
+        float activity = 0;
+        int settled = 0;
+        uint32_t still_since = 0;
+
+        int lobes = 0, last_sign = 0;
+        bool lobe_open = false;
+        uint32_t last_lobe = 0, calm_since = 0;
         bool shaking = false;
-        uint32_t last_log = 0;
 
         while (true) {
-            vTaskDelay(pdMS_TO_TICKS(kIntervalMs));
+            vTaskDelay(pdMS_TO_TICKS(kPeriodMs));
             uint8_t raw[6];
-            if (!Read(0x35, raw, sizeof(raw))) {
+            if (!Read(0x35, raw, sizeof(raw)))
                 continue;
-            }
             float a[3];
-            for (int i = 0; i < 3; ++i) {
-                a[i] = static_cast<int16_t>(raw[i * 2] | (raw[i * 2 + 1] << 8)) / kAccelLsbPerG;
-            }
-            float sx, sy;
-            ToScreen(a, sx, sy);
+            for (int i = 0; i < 3; ++i)
+                a[i] = static_cast<int16_t>(raw[i * 2] | (raw[i * 2 + 1] << 8)) / kLsbPerG;
+            const float sx = QMI8658_SCREEN_X(a);
+            const float sy = QMI8658_SCREEN_Y(a);
             const uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
-            if (now - last_log > 2000) {
-                last_log = now;
-                ESP_LOGD(kTag, "accel x=%.2f y=%.2f z=%.2f screen=(%.2f, %.2f)", a[0], a[1], a[2],
-                         sx, sy);
-            }
 
-            if (calibration == 0) {
-                filtered_x = prev_x = sx;
-                filtered_y = prev_y = sy;
+            if (settled == 0) {
+                lp_x = slow_x = sx;
+                lp_y = sy;
             }
-            const float delta_x = sx - prev_x;
-            const float delta_y = sy - prev_y;
-            prev_x = sx;
-            prev_y = sy;
-            filtered_x += (sx - filtered_x) * 0.18f;
-            filtered_y += (sy - filtered_y) * 0.18f;
+            lp_x += (sx - lp_x) * 0.15f;
+            lp_y += (sy - lp_y) * 0.15f;
+            slow_x += (sx - slow_x) * 0.05f;
+            const float hp = sx - slow_x;
+            activity = activity * 0.9f + std::fabs(hp) * 0.1f;
 
-            if (calibration < kCalibrationSamples) {
-                neutral_x += sx / kCalibrationSamples;
-                neutral_y += sy / kCalibrationSamples;
-                if (++calibration == kCalibrationSamples) {
-                    ESP_LOGI(kTag, "Motion ready: neutral x=%.2f y=%.2f", neutral_x, neutral_y);
-                }
+            if (settled < kSettleSamples) {
+                centre_x = lp_x;
+                centre_y = lp_y;
+                if (++settled == kSettleSamples)
+                    ESP_LOGI(kTag, "Motion ready, rest (%.2f, %.2f)", centre_x, centre_y);
                 continue;
             }
-            // Roughly 0.28 g of tilt reaches full gaze travel; the neutral slowly follows
-            // a new resting angle so a desk stand does not leave the eyes off-centre.
-            if (!shaking) {
-                neutral_x += (filtered_x - neutral_x) * 0.002f;
-                neutral_y += (filtered_y - neutral_y) * 0.002f;
+
+            // Re-centre only after the board has rested for a while (e.g. on a stand).
+            if (activity < kCalmG) {
+                if (still_since == 0)
+                    still_since = now;
+                if (now - still_since > kRecentreAfterMs) {
+                    centre_x += (lp_x - centre_x) * 0.02f;
+                    centre_y += (lp_y - centre_y) * 0.02f;
+                }
+            } else {
+                still_since = 0;
             }
-            on_tilt_(std::clamp((filtered_x - neutral_x) / 0.28f, -1.0f, 1.0f),
-                     std::clamp((filtered_y - neutral_y) / 0.28f, -1.0f, 1.0f));
-
-            const float jerk = std::sqrt(delta_x * delta_x + delta_y * delta_y);
-            shake_energy = shake_energy * 0.72f + jerk * 0.28f;
+            on_tilt_(Shape(lp_x - centre_x), Shape(lp_y - centre_y));
 
             if (!shaking) {
-                if (swings > 0 && (now - sequence_start > kShakeSequenceTimeoutMs ||
-                                   now - last_swing > kShakeMaximumSwingGapMs)) {
-                    swings = 0;
-                    prev_direction = 0;
+                if (lobes > 0 && now - last_lobe > kLobeMaxGapMs)
+                    lobes = 0;
+                if (lobe_open && std::fabs(hp) < kLobeResetG)
+                    lobe_open = false;
+                const int sign = hp > 0 ? 1 : -1;
+                if (!lobe_open && std::fabs(hp) > kLobeG) {
+                    lobe_open = true;
+                    const uint32_t gap = now - last_lobe;
+                    if (lobes == 0 || (sign != last_sign && gap >= kLobeMinGapMs))
+                        ++lobes;
+                    else
+                        lobes = 1;
+                    last_sign = sign;
+                    last_lobe = now;
+                    ESP_LOGI(kTag, "Shake lobe %d/%d", lobes, kLobesToTrigger);
                 }
-                const bool strong = jerk >= kStrongShakeJerk && std::fabs(delta_x) >= kStrongShakeAxisDelta;
-                const int direction = delta_x >= 0 ? 1 : -1;
-                if (strong && swings == 0) {
-                    swings = 1;
-                    prev_direction = direction;
-                    sequence_start = last_swing = now;
-                } else if (strong && direction != prev_direction &&
-                           now - last_swing >= kShakeMinimumSwingGapMs &&
-                           now - last_swing <= kShakeMaximumSwingGapMs) {
-                    ++swings;
-                    prev_direction = direction;
-                    last_swing = now;
-                    ESP_LOGI(kTag, "Horizontal swing %d/%d", swings, kRequiredShakeSwings);
-                }
-                if (swings >= kRequiredShakeSwings) {
+                if (lobes >= kLobesToTrigger) {
                     shaking = true;
-                    quiet_since = 0;
-                    swings = 0;
-                    ESP_LOGI(kTag, "Shake detected: dizzy");
+                    lobes = 0;
+                    calm_since = 0;
+                    ESP_LOGI(kTag, "Shake: dizzy");
                     on_shake_(true);
                 }
-            } else if (shake_energy < 0.08f) {
-                if (quiet_since == 0) {
-                    quiet_since = now;
-                } else if (now - quiet_since >= kShakeReleaseDelayMs) {
+            } else if (activity < kCalmG) {
+                if (calm_since == 0)
+                    calm_since = now;
+                else if (now - calm_since >= kCalmForMs) {
                     shaking = false;
-                    ESP_LOGI(kTag, "Device steady: dizzy released");
+                    ESP_LOGI(kTag, "Steady again");
                     on_shake_(false);
                 }
             } else {
-                quiet_since = 0;
+                calm_since = 0;
             }
         }
     }

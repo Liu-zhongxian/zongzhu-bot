@@ -26,9 +26,9 @@
 #define TAG "WaveshareEsp32s3TouchAMOLED1inch75"
 
 #if CONFIG_BOARD_TYPE_WAVESHARE_ESP32_S3_TOUCH_AMOLED_1_75C
-#include "avatar_round_display.h"
+#include "eye_display.h"
 #include "qmi8658_motion.h"
-using BoardLcdDisplay = AvatarRoundDisplay;
+using BoardLcdDisplay = EyeRoundDisplay;
 #else
 using BoardLcdDisplay = SpiLcdDisplay;
 #endif
@@ -225,6 +225,13 @@ private:
             }
             app.ToggleChatState();
         });
+#if CONFIG_BOARD_TYPE_WAVESHARE_ESP32_S3_TOUCH_AMOLED_1_75C
+        // Long press: cycle subtitles full -> brief -> off (saved in NVS).
+        boot_button_.OnLongPress([this]() {
+            power_save_timer_->WakeUp();
+            display_->ShowNotification(display_->CycleSubtitleMode(), 2000);
+        });
+#endif
 
 #if CONFIG_USE_DEVICE_AEC
         boot_button_.OnDoubleClick([this]() {
@@ -338,7 +345,7 @@ private:
             });
 #if CONFIG_BOARD_TYPE_WAVESHARE_ESP32_S3_TOUCH_AMOLED_1_75C
         mcp_server.AddTool("self.zongzhu.play_animation",
-            "Play Zongzhu KK-style eye reactions for 12 seconds. Use when asked to sing, "
+            "Play Zongzhu eye reactions for 12 seconds. Use when asked to sing, "
             "dance, rap or play basketball. This changes the screen, not the audio. "
             "action must be singing, dancing, rapper or basketball.",
             PropertyList({Property("action", kPropertyTypeString)}),

@@ -13,6 +13,36 @@ from core.handle.grokBotReply import prepare_reply
 PREFIX = re.compile(r"^(?:请)?让\s*(?:grok\s*bot|bot|机器人|波特|博特)[\s，,:：]*", re.I)
 _recent = OrderedDict()
 
+# ASR often mishears "你好宗主" once the board is already listening, e.g. "个你好，中猪公".
+_ZONG = set("宗总综踪棕纵中钟忠终种众重肿仲粽")
+_ZHU = set("主住注猪朱珠竹逐助祝煮柱著诸蛛驻铸筑属嘱")
+_FILLER = set("个啊呀嗯哦诶唉哎嘿那")
+_PUNCT = re.compile(r"[\s，。！？、,.!?~～:：]+")
+
+
+def strip_wake_phrase(text):
+    """Return (had_wake_phrase, remainder) for a leading, possibly misheard wake phrase."""
+    raw = text.strip()
+    i = 0
+    while i < len(raw) and (raw[i] in _FILLER or _PUNCT.match(raw[i])):
+        i += 1
+    if not raw.startswith(("你好", "您好"), i):
+        return False, text
+    j = i + 2
+    while j < len(raw) and _PUNCT.match(raw[j]):
+        j += 1
+    word = raw[j:j + 3]
+    if not word or word[0] not in _ZONG:
+        return False, text
+    hit = next((k for k in range(1, len(word)) if word[k] in _ZHU), None)
+    if hit is None:
+        return False, text
+    end = j + hit + 1
+    # A trailing filler right after the name ("中猪公") belongs to the wake phrase.
+    if end < len(raw) and end - j < 3 and raw[end] in _FILLER | set("公"):
+        end += 1
+    return True, _PUNCT.sub(" ", raw[end:]).strip()
+
 
 def extract_command(text):
     try:
@@ -101,6 +131,16 @@ async def handle_grok_bot(conn, text):
         return False
     from core.handle.sendAudioHandle import send_stt_message
     from core.handle.intentHandler import speak_txt
+
+    had_wake, rest = strip_wake_phrase(command)
+    if had_wake:
+        if not rest.strip("，。！？,.!? "):
+            # The user repeated the wake word mid-conversation: acknowledge, submit nothing.
+            conn.logger.bind(tag="grokBot").info(f"忽略重复唤醒词，不提交: {text}")
+            conn.client_abort = False
+            speak_txt(conn, "我在。")
+            return True
+        command = rest
 
     conn.bot_input_until = 0
     conn.client_abort = False

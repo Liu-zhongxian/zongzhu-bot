@@ -1,0 +1,17 @@
+{
+  "version": "2.5.2.9",
+  "variant": "esp32-s3-touch-amoled-1.75c",
+  "idf": "6.0.1",
+  "freertos_hz": 1000,
+  "app_bytes": 2869392,
+  "assets_bytes": 5376398,
+  "bootloader": "same binary as 2.5.2.3-2.5.2.5; verified booting 2.5.2.9 on the test board",
+  "partition_table_and_otadata_identical_to_2.5.2.3": true,
+  "assets": "unchanged from 2.5.2.5 (no IKUN GIFs)",
+  "flashed": true,
+  "flash_scope_on_test_board": "app 0x20000",
+  "flash_hash_verified": true,
+  "eye_model_host_check": "13 moods x 3 layouts x extreme gaze: OK",
+  "backend_tests": 28,
+  "physical_acceptance": "passed: wake, Bot round trip, speech, eyes, touch, shake, subtitle toggle; user reported no issues"
+}
