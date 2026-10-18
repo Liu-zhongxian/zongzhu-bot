@@ -11,6 +11,6 @@
   "flash_hash_verified": true,
   "boot_version_verified": true,
   "touch": "CST9217; tap/double-tap/long-press/swipe observed on device",
-  "imu": "QMI8658; shake-to-dizzy observed on device; tilt direction pending user confirmation",
+  "imu": "QMI8658; shake-to-dizzy observed on device; tilt direction confirmed by user",
   "vibration": "not available: board has no motor"
 }

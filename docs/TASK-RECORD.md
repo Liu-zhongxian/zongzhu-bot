@@ -309,4 +309,4 @@ cd '/path/to/zongzhu-esp32-grok-bot/xiaozhi-esp32-server/main/xiaozhi-server'
 - 震动：板子没有马达，没有实现。
 - 资源包不再打包 IKUN GIF，源文件还留在源码目录里。测试板上旧资源末尾残留的数据也擦掉了，回读确认 Flash 里已经没有 IKUN 数据。
 - 刷写前已经备份应用和资源分区；只写了 0x20000 和 0x800000，NVS 没动。
-- 现场手测结果见 [VALIDATION.md](VALIDATION.md)。倾斜方向还要再确认一次。
+- 现场手测结果见 [VALIDATION.md](VALIDATION.md)，倾斜方向用户已确认正确。
