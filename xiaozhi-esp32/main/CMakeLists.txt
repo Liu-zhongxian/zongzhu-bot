@@ -408,7 +408,7 @@ elseif(CONFIG_BOARD_TYPE_WAVESHARE_ESP32_S3_TOUCH_AMOLED_1_75C)
     set(BUILTIN_TEXT_FONT font_noto_sans_basic_30_4)
     set(BUILTIN_ICON_FONT font_material_symbols_30_4)
     set(DEFAULT_EMOJI_COLLECTION noto-color-emoji_64)
-    set(DEFAULT_ASSETS_EXTRA_FILES "${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD_DIR}/ikun")
+    # IKUN GIFs stay in boards/${BOARD_DIR}/ikun on disk only; not packed into assets.
 elseif(CONFIG_BOARD_TYPE_WAVESHARE_ESP32_S3_TOUCH_LCD_1_83)
     set(BOARD_DIR "waveshare/esp32-s3-touch-lcd-1.83")
     set(BUILTIN_TEXT_FONT font_noto_sans_basic_16_4)

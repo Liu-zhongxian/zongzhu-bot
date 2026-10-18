@@ -25,6 +25,9 @@
 #define EXAMPLE_PIN_NUM_LCD_RST GPIO_NUM_1
 #define PIN_NUM_TOUCH_RST GPIO_NUM_2
 #define PIN_NUM_TOUCH_INT GPIO_NUM_11
+// QMI8658 chip axes (accel[0..2]) to screen axes: +x right, +y down.
+#define QMI8658_SCREEN_X(a) (a[1])
+#define QMI8658_SCREEN_Y(a) (a[0])
 #endif
 
 #define AUDIO_CODEC_PA_PIN GPIO_NUM_46

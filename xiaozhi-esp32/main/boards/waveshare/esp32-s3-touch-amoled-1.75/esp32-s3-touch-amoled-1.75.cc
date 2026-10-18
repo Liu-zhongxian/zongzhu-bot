@@ -26,8 +26,9 @@
 #define TAG "WaveshareEsp32s3TouchAMOLED1inch75"
 
 #if CONFIG_BOARD_TYPE_WAVESHARE_ESP32_S3_TOUCH_AMOLED_1_75C
-#include "ikun_round_display.h"
-using BoardLcdDisplay = IkunRoundDisplay;
+#include "avatar_round_display.h"
+#include "qmi8658_motion.h"
+using BoardLcdDisplay = AvatarRoundDisplay;
 #else
 using BoardLcdDisplay = SpiLcdDisplay;
 #endif
@@ -159,6 +160,9 @@ private:
     CustomBacklight* backlight_;
     esp_io_expander_handle_t io_expander = NULL;
     PowerSaveTimer* power_save_timer_;
+#if CONFIG_BOARD_TYPE_WAVESHARE_ESP32_S3_TOUCH_AMOLED_1_75C
+    Qmi8658Motion* motion_ = nullptr;
+#endif
 
     void InitializePowerSaveTimer() {
         power_save_timer_ = new PowerSaveTimer(-1, 60, 300);
@@ -305,7 +309,22 @@ private:
         };
         lvgl_port_add_touch(&touch_cfg);
         ESP_LOGI(TAG, "Touch panel initialized successfully");
+#if CONFIG_BOARD_TYPE_WAVESHARE_ESP32_S3_TOUCH_AMOLED_1_75C
+        display_->OnTouch([this]() { power_save_timer_->WakeUp(); });
+#endif
     }
+
+#if CONFIG_BOARD_TYPE_WAVESHARE_ESP32_S3_TOUCH_AMOLED_1_75C
+    void InitializeMotion() {
+        motion_ = new Qmi8658Motion(i2c_bus_);
+        motion_->Start([this](float x, float y) { display_->SetTilt(x, y); },
+                       [this](bool active) {
+                           display_->SetDizzy(active);
+                           if (active)
+                               power_save_timer_->WakeUp();
+                       });
+    }
+#endif
 
     // 初始化工具
     void InitializeTools() {
@@ -319,7 +338,7 @@ private:
             });
 #if CONFIG_BOARD_TYPE_WAVESHARE_ESP32_S3_TOUCH_AMOLED_1_75C
         mcp_server.AddTool("self.zongzhu.play_animation",
-            "Play Zongzhu / IKUN's screen animation for 12 seconds. Use when asked to sing, "
+            "Play Zongzhu KK-style eye reactions for 12 seconds. Use when asked to sing, "
             "dance, rap or play basketball. This changes the screen, not the audio. "
             "action must be singing, dancing, rapper or basketball.",
             PropertyList({Property("action", kPropertyTypeString)}),
@@ -348,6 +367,9 @@ public:
         InitializeSpi();
         InitializeDisplay();
         InitializeTouch();
+#if CONFIG_BOARD_TYPE_WAVESHARE_ESP32_S3_TOUCH_AMOLED_1_75C
+        InitializeMotion();
+#endif
         InitializeButtons();
         InitializeTools();
     }
