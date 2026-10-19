@@ -64,6 +64,9 @@ class WebSocketServer:
         self.auth_enable = auth_config.get("enabled", False)
         # 设备白名单
         self.allowed_devices = set(auth_config.get("allowed_devices", []))
+        # Public deployments: devices outside the allowlist are refused outright,
+        # because the OTA endpoint hands a token to any device that asks.
+        self.allowlist_only = auth_config.get("allowlist_only", False)
         secret_key = self.config["server"]["auth_key"]
         expire_seconds = auth_config.get("expire_seconds", None)
         self.auth = AuthManager(secret_key=secret_key, expire_seconds=expire_seconds)
@@ -216,6 +219,8 @@ class WebSocketServer:
             if self.allowed_devices and device_id in self.allowed_devices:
                 # 如果属于白名单内的设备，不校验token，直接放行
                 return
+            if self.allowlist_only:
+                raise AuthenticationError("Device not in allowlist")
             else:
                 # 否则校验token
                 token = headers.get("authorization", "")

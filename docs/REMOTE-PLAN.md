@@ -1,6 +1,6 @@
 # 任务说明书：脱离电脑与局域网
 
-创建：2026-10-19（Asia/Shanghai）。状态：**进行中**。HTTPS 回传代码已完成并通过单元测试，服务器部署未开始。
+创建：2026-10-19（Asia/Shanghai）。状态：**进行中**。服务器已部署，真实 Bot 经 HTTPS 回传已跑通（2026-10-19）；待切换板子和关机验收（阶段 5、6）。
 
 ## 1. 目标
 
@@ -87,35 +87,35 @@ Bot 云端虚拟机 ──HTTPS POST /bot/reply（一次性令牌）──▶ �
 
 ### 阶段 0：收集信息（需要用户）
 
-- [ ] 服务器：云厂商、地域、操作系统、CPU 架构、内存、公网 IP
-- [ ] 服务器 SSH 登录方式（建议把本机公钥加到服务器，不传密码）
-- [ ] 域名：在哪里注册、DNS 在哪里管理、是否已备案（大陆服务器才需要）
-- [ ] 打算用的子域名，例如 `zongzhu.example.com`
+- [x] 服务器：云厂商、地域、操作系统、CPU 架构、内存、公网 IP
+- [x] 服务器 SSH 登录方式（建议把本机公钥加到服务器，不传密码）
+- [x] 域名：在哪里注册、DNS 在哪里管理、是否已备案（大陆服务器才需要）
+- [x] 打算用的子域名，例如 `zongzhu.example.com`
 
 ### 阶段 1：服务器基础检查
 
-- [ ] 内存至少 2GB 空闲（SenseVoiceSmall 识别模型）
-- [ ] 安装 Docker
-- [ ] 从服务器访问 Grok Bot Webhook（不带令牌，只看能否连通）
-- [ ] 从服务器访问 EdgeTTS 并合成一句测试语音
-- [ ] 云厂商安全组放行 80、443
+- [x] 内存至少 2GB 空闲（SenseVoiceSmall 识别模型）
+- [x] ~~安装 Docker~~ 改用 venv + systemd：少一层，也避开 Docker 端口绕过 ufw 的问题
+- [x] 从服务器访问 Grok Bot Webhook（不带令牌，只看能否连通）
+- [x] 从服务器访问 EdgeTTS 并合成一句测试语音
+- [x] 云厂商安全组放行 80、443
 
 ### 阶段 2：域名绑定
 
-- [ ] DNS 加一条 A 记录：子域名 → 服务器公网 IP
-- [ ] 确认解析生效（`dig +short 子域名`）
+- [x] DNS 加一条 A 记录：子域名 → 服务器公网 IP
+- [x] 确认解析生效（`dig +short 子域名`）
 
 ### 阶段 3：部署后端
 
-- [ ] 新增 `Dockerfile` 和 `docker-compose.yml`，配置、模型、回复目录挂载为数据卷
-- [ ] 反向代理用 Caddy，自动申请 Let's Encrypt 证书，按第 4 节只放行三个路径
-- [ ] 后端配置：`server.websocket` 改为 `wss://子域名/xiaozhi/v1/`；Webhook 配置填 `reply_url: https://子域名/bot/reply`
-- [ ] 容器设为开机自启、异常自动重启
-- [ ] 确认 `/mcp/vision/explain` 无法从公网访问（上游这个接口带特定 Client-Id 就能跳过鉴权）
+- [x] 部署文件见 `deploy/`：独立 `zongzhu` 用户运行，后端只监听 127.0.0.1
+- [x] 反向代理用 Caddy，自动申请 Let's Encrypt 证书，按第 4 节只放行三个路径
+- [x] 后端配置：`server.websocket` 改为 `wss://子域名/xiaozhi/v1/`；Webhook 配置填 `reply_url: https://子域名/bot/reply`
+- [x] 容器设为开机自启、异常自动重启
+- [x] 确认 `/mcp/vision/explain` 无法从公网访问（上游这个接口带特定 Client-Id 就能跳过鉴权）
 
 ### 阶段 4：真实 Bot 回传
 
-- [ ] 用 `verify_bot_reply.py` 触发一次真实任务，确认 Bot 用 curl 回传、服务器返回 200
+- [x] 用 `verify_bot_reply.py` 触发一次真实任务，确认 Bot 用 curl 回传、服务器返回 200
 - [ ] 同一任务重复回传返回 409；错误令牌返回 403
 - [ ] Bot 回传失败时，确认原对话里有说明
 
@@ -138,7 +138,26 @@ Bot 云端虚拟机 ──HTTPS POST /bot/reply（一次性令牌）──▶ �
 - [ ] `docs/VALIDATION.md` 记录本轮实测
 - [ ] 本文件更新为完成状态
 
-## 8. 风险
+## 8. 部署记录（2026-10-19）
+
+| 项目 | 内容 |
+| --- | --- |
+| 服务器 | Ubuntu 22.04，4 核 6GB，海外机房（无需备案）；与已有的 Hermes Agent 共存，互不影响 |
+| 域名 | `zongzhu.52drunk.com`，Cloudflare 仅 DNS，Let's Encrypt 证书由 Caddy 自动续期 |
+| 后端 | `/opt/zongzhu`，systemd 服务 `zongzhu`，只监听 127.0.0.1:8000/8003 |
+| 防火墙 | ufw 放行 SSH、80、443 |
+| 设备白名单 | 新增 `server.auth.allowlist_only`：上游 OTA 会给任何设备发令牌，公网部署必须打开，只放行板子 MAC |
+
+实测：
+
+- 公网 `/`、`/mcp/vision/explain` 返回 404；OTA 下发 `wss://zongzhu.52drunk.com/xiaozhi/v1/`
+- WebSocket：名单外设备即使带令牌也被拒绝；板子 MAC 连接成功并收到 hello
+- `/bot/reply` 伪造请求返回 404
+- 真实 Bot：服务器提交测试任务，22 秒后 Bot 从云端虚拟机 POST 回复，内容正确，整个过程不经过 Mac
+
+部署中发现：仓库快照漏了 Silero VAD 模型 `silero_vad.onnx`，按 README 部署会启动失败，已补进仓库。
+
+## 9. 风险
 
 | 风险 | 应对 |
 | --- | --- |
@@ -148,7 +167,7 @@ Bot 云端虚拟机 ──HTTPS POST /bot/reply（一次性令牌）──▶ �
 | 公网延迟比局域网高 | 阶段 6 实测；音频本来就是流式传输，预计影响在几百毫秒内 |
 | 服务器故障导致宗主不可用 | 保留本机后端作为备用，改一下 OTA 地址就能切回 |
 
-## 9. 不在本次范围
+## 10. 不在本次范围
 
 - 网页刷机（等远程方案稳定后再做，配网流程可能随之简化）
 - 板子直接调用 xAI API 的兜底模式

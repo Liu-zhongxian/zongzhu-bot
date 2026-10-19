@@ -1,0 +1,20 @@
+[Unit]
+Description=Zongzhu voice backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=zongzhu
+Group=zongzhu
+WorkingDirectory=/opt/zongzhu/app
+ExecStart=/opt/zongzhu/venv/bin/python app.py
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/opt/zongzhu
+
+[Install]
+WantedBy=multi-user.target

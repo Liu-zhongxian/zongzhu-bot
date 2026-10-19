@@ -1,0 +1,15 @@
+zongzhu.example.com {
+	# Only the board's endpoints and the Bot reply are public; everything else is 404.
+	handle /xiaozhi/v1* {
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle /xiaozhi/ota* {
+		reverse_proxy 127.0.0.1:8003
+	}
+	handle /bot/reply {
+		reverse_proxy 127.0.0.1:8003
+	}
+	handle {
+		respond 404
+	}
+}

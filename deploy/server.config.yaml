@@ -1,0 +1,39 @@
+# 服务器版配置：复制到 /opt/zongzhu/app/data/.config.yaml，权限 600。
+# 把 zongzhu.example.com 换成你的子域名，auth_key 换成随机串（python3 -c "import secrets;print(secrets.token_urlsafe(32))"），
+# allowed_devices 填板子的 MAC（后端日志里的 device-id）。allowlist_only 打开后，名单外的设备一律拒绝。
+server:
+  ip: 127.0.0.1
+  port: 8000
+  http_port: 8003
+  websocket: wss://zongzhu.example.com/xiaozhi/v1/
+  vision_explain: https://zongzhu.example.com/mcp/vision/explain
+  auth_key: REPLACE_WITH_RANDOM_STRING
+  auth:
+    enabled: true
+    allowlist_only: true
+    allowed_devices: ["YOUR:BOARD:MAC:ADDRESS"]
+selected_module:
+  VAD: SileroVAD
+  ASR: FunASR
+  LLM: BotOnly
+  TTS: EdgeTTS
+  Memory: nomem
+  Intent: nointent
+ASR:
+  FunASR:
+    language: zh
+LLM:
+  BotOnly:
+    type: bot_only
+grok_bot:
+  enabled: true
+  config_file: /opt/zongzhu/private/grok-bot-webhook.json
+prompt: 你是宗主，用简洁自然的中文回答用户，适合语音播报。
+wakeup_words: [你好宗主, 你好小智, 嘿你好呀, 你好小志]
+enable_greeting: true
+enable_wakeup_words_response_cache: true
+end_prompt:
+  enable: false
+VAD:
+  SileroVAD:
+    min_silence_duration_ms: 700
