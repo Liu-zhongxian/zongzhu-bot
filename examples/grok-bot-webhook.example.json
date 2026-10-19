@@ -2,5 +2,6 @@
   "url": "https://YOUR_BOT_WEBHOOK_URL",
   "token": "REPLACE_WITH_YOUR_WEBHOOK_TOKEN",
   "reply_dir": "/absolute/path/to/zongzhu-bot/private/bot-replies",
+  "reply_url": "",
   "reply_wait_seconds": 300
 }

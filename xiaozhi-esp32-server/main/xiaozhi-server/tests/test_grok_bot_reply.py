@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import httpx
 from core.handle.grokBotReply import (prepare_reply, read_reply, deliver_replies,
                                       waiting_for_reply, hold_connection, watch_replies,
-                                      update_wait_ui, resume_bot_input)
+                                      update_wait_ui, resume_bot_input, accept_reply)
 from core.handle.grokBotHandle import submit_command, _recent
 
 
@@ -232,6 +232,114 @@ class GrokBotReplyTest(unittest.IsolatedAsyncioTestCase):
         await update_wait_ui(self.conn, self.directory, 300)
         self.assertTrue(self.conn.bot_ui_waiting)
         self.assertEqual(self.conn.websocket.send.await_count, 2)
+
+
+class HttpReplyTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.directory = Path(self.temp.name)
+        self.request_id = "ESP32-" + "c" * 32
+        self.pending, self.result = prepare_reply(self.directory, self.request_id, "board-1", "one-time")
+
+    def test_pending_keeps_only_token_hash(self):
+        metadata = json.loads(self.pending.read_text())
+        self.assertNotIn("one-time", self.pending.read_text())
+        self.assertEqual(len(metadata["token_sha256"]), 64)
+
+    def test_posted_reply_becomes_deliverable_result_once(self):
+        self.assertEqual(accept_reply(self.directory, self.request_id, "one-time", "  回复内容  "), 200)
+        self.assertEqual(read_reply(self.pending, "board-1")[1], "回复内容")
+        self.assertEqual(self.result.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(accept_reply(self.directory, self.request_id, "one-time", "第二次"), 409)
+        self.assertEqual(list(self.directory.glob(".*.tmp")), [])
+
+    def test_rejects_wrong_token_unknown_request_and_bad_text(self):
+        self.assertEqual(accept_reply(self.directory, self.request_id, "guess", "x"), 403)
+        self.assertEqual(accept_reply(self.directory, "ESP32-" + "d" * 32, "one-time", "x"), 404)
+        self.assertEqual(accept_reply(self.directory, "../etc/passwd", "one-time", "x"), 400)
+        self.assertEqual(accept_reply(self.directory, self.request_id, "one-time", "   "), 400)
+        self.assertEqual(accept_reply(self.directory, self.request_id, "one-time", "长" * 8001), 400)
+        self.assertEqual(accept_reply(self.directory, self.request_id, None, "x"), 400)
+        self.assertFalse(self.result.exists())
+
+    def test_file_mode_request_cannot_be_answered_over_http(self):
+        rid = "ESP32-" + "e" * 32
+        prepare_reply(self.directory, rid, "board-1")
+        self.assertEqual(accept_reply(self.directory, rid, "anything", "x"), 403)
+
+    def test_expired_request_rejected(self):
+        metadata = json.loads(self.pending.read_text())
+        metadata["created"] -= 2 * 24 * 3600
+        self.pending.write_text(json.dumps(metadata))
+        self.assertEqual(accept_reply(self.directory, self.request_id, "one-time", "x"), 404)
+
+    async def test_http_mode_instruction_keeps_webhook_secret_and_posts_reply(self):
+        _recent.clear()
+        config = self.directory / "config.json"
+        config.write_text(json.dumps({
+            "url": "https://example.test", "token": "test-secret", "reply_dir": str(self.directory),
+            "reply_url": "https://nas.example.test/bot/reply",
+        }))
+        seen = {}
+        def respond(request):
+            seen["auth"] = request.headers["Authorization"]
+            seen["body"] = json.loads(request.content)
+            return httpx.Response(200, json={"success": True, "runUuid": "run-1"})
+        result = await submit_command("查天气", "board-1", config, httpx.MockTransport(respond))
+        self.assertIn("任务已提交", result)
+        self.assertEqual(seen["auth"], "Bearer test-secret")
+        body = seen["body"]
+        self.assertNotIn("test-secret", body["command"])
+        self.assertIn("curl -sS -X POST https://nas.example.test/bot/reply", body["command"])
+        token = json.loads(body["command"].split("\n")[3])["token"]
+        self.assertEqual(accept_reply(self.directory, body["request_id"], token, "晴"), 200)
+
+    async def test_plain_http_reply_url_refused(self):
+        _recent.clear()
+        config = self.directory / "config.json"
+        config.write_text(json.dumps({
+            "url": "https://example.test", "token": "t", "reply_dir": str(self.directory),
+            "reply_url": "http://nas.local/bot/reply",
+        }))
+        transport = httpx.MockTransport(lambda request: self.fail("must not submit"))
+        self.assertIn("HTTPS", await submit_command("查天气", "board-1", config, transport))
+
+
+class BotReplyEndpointTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        from aiohttp import web
+        from aiohttp.test_utils import TestClient, TestServer
+        from core.api.bot_reply_handler import BotReplyHandler
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        directory = Path(self.temp.name)
+        self.config_file = directory / "config.json"
+        self.config_file.write_text(json.dumps({"reply_dir": str(directory), "reply_url": "https://x/bot/reply"}))
+        self.request_id = "ESP32-" + "f" * 32
+        prepare_reply(directory, self.request_id, "board-1", "tok")
+        app = web.Application()
+        with patch("core.api.bot_reply_handler.setup_logging", Mock()):
+            handler = BotReplyHandler({"grok_bot": {"config_file": str(self.config_file)}})
+        app.router.add_post("/bot/reply", handler.handle_post)
+        self.client = TestClient(TestServer(app))
+        await self.client.start_server()
+        self.addAsyncCleanup(self.client.close)
+
+    async def test_accepts_valid_reply_and_reports_errors(self):
+        ok = await self.client.post("/bot/reply", json={"request_id": self.request_id, "token": "tok", "text": "好"})
+        self.assertEqual((ok.status, (await ok.json())["ok"]), (200, True))
+        again = await self.client.post("/bot/reply", json={"request_id": self.request_id, "token": "tok", "text": "好"})
+        self.assertEqual(again.status, 409)
+        bad = await self.client.post("/bot/reply", data=b"not json", headers={"Content-Type": "application/json"})
+        self.assertEqual(bad.status, 400)
+        big = await self.client.post("/bot/reply", data=b"x" * (65 * 1024))
+        self.assertEqual(big.status, 413)
+
+    async def test_disabled_without_reply_url(self):
+        self.config_file.write_text(json.dumps({"reply_dir": "/tmp"}))
+        response = await self.client.post("/bot/reply", json={"request_id": self.request_id, "token": "tok", "text": "好"})
+        self.assertEqual(response.status, 503)
 
 
 if __name__ == "__main__":

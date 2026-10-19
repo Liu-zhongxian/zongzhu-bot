@@ -1,6 +1,9 @@
 """Local result files bridge the existing Bot back to device speech and subtitles."""
 import asyncio
+import hashlib
+import hmac
 import json
+import os
 import re
 import time
 import uuid
@@ -13,18 +16,69 @@ _delivery_lock = asyncio.Lock()
 REPLY_WAIT_SECONDS = 300
 # The firmware closes the channel after 120s without any incoming frame.
 KEEPALIVE_SECONDS = 30
+# A posted reply is accepted this long after the request.
+REPLY_TOKEN_SECONDS = 24 * 3600
 
 
-def prepare_reply(directory, request_id, device):
+def _token_hash(token):
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def prepare_reply(directory, request_id, device, token=None):
     directory = Path(directory)
     if not directory.is_absolute():
         raise ValueError("Bot reply directory must be absolute")
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     pending = directory / (request_id + ".pending.json")
+    metadata = {"request_id": request_id, "device": device, "created": time.time()}
+    if token:
+        # Only the hash is kept, so the reply directory never holds a usable token.
+        metadata["token_sha256"] = _token_hash(token)
     with pending.open("x", encoding="utf-8") as file:
         pending.chmod(0o600)
-        json.dump({"request_id": request_id, "device": device, "created": time.time()}, file)
+        json.dump(metadata, file)
     return pending, directory / (request_id + ".json")
+
+
+def accept_reply(directory, request_id, token, text):
+    """Store a reply posted over HTTP; returns an HTTP status code.
+
+    The posted reply becomes the same result file the Bot used to write locally,
+    so delivery, retries and the waiting UI stay unchanged.
+    """
+    if not isinstance(request_id, str) or not re.fullmatch(r"ESP32-[0-9a-f]{32}", request_id):
+        return 400
+    if not isinstance(token, str) or not token or not isinstance(text, str):
+        return 400
+    if not text.strip() or len(text) > 8000:
+        return 400
+    directory = Path(directory)
+    pending = directory / (request_id + ".pending.json")
+    try:
+        if pending.is_symlink() or pending.stat().st_size > 4096:
+            return 404
+        metadata = json.loads(pending.read_text(encoding="utf-8"))
+        expected = metadata.get("token_sha256")
+        if not isinstance(expected, str) or not hmac.compare_digest(expected, _token_hash(token)):
+            return 403
+        # Late replies are still delivered (timed-out requests are kept), within a day.
+        if time.time() - float(metadata["created"]) > REPLY_TOKEN_SECONDS:
+            return 404
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return 404
+    result = directory / (request_id + ".json")
+    if result.exists() or result.is_symlink():
+        return 409
+    temp = directory / f".{request_id}.{uuid.uuid4().hex}.tmp"
+    try:
+        fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as file:
+            json.dump({"request_id": request_id, "text": text.strip()}, file, ensure_ascii=False)
+        temp.rename(result)
+    except OSError:
+        temp.unlink(missing_ok=True)
+        return 500
+    return 200
 
 
 def read_reply(pending, device):

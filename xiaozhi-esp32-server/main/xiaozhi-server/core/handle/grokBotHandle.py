@@ -1,6 +1,7 @@
 """Forward conversation to the user's existing Grok Bot without a chat model."""
 import json
 import re
+import secrets
 import time
 import uuid
 from collections import OrderedDict
@@ -83,16 +84,36 @@ async def submit_command(command, device, config_file, transport=None):
     payload = {"command": command, "request_id": request_id,
                "device": device, "source": "zongzhu-voice"}
     pending = None
+    reply_url = config.get("reply_url")
+    if reply_url and not str(reply_url).startswith("https://"):
+        _recent.pop(key, None)
+        return "Bot 回传地址必须是 HTTPS，任务未提交，请检查电脑上的配置。"
     if config.get("reply_dir"):
+        reply_token = secrets.token_urlsafe(24) if reply_url else None
         try:
-            pending, target = prepare_reply(config["reply_dir"], request_id, device)
+            pending, target = prepare_reply(config["reply_dir"], request_id, device, reply_token)
         except (OSError, ValueError, TypeError):
             _recent.pop(key, None)
             return "Bot 回传目录不可用，任务未提交，请检查电脑上的配置。"
         payload["user_text"] = command
+        intro = ("以下是用户对宗主板子说的对话，请处理并在当前硬件对话回复：\n"
+                 + json.dumps(command, ensure_ascii=False))
+    if pending and reply_url:
         payload["command"] = (
-            "以下是用户对宗主板子说的对话，请处理并在当前硬件对话回复：\n"
-            + json.dumps(command, ensure_ascii=False)
+            intro
+            + "\n完成后还需要把实际回复回传到板子屏幕：在你的执行环境里把下面的 JSON 写入文件 reply.json（UTF-8），"
+            "把 text 换成给用户的实际回复：\n"
+            + json.dumps({"request_id": request_id, "token": reply_token, "text": "这里填写给用户的实际回复"}, ensure_ascii=False)
+            + "\n然后运行：curl -sS -X POST " + reply_url
+            + " -H 'Content-Type: application/json' --data-binary @reply.json"
+            + "\n返回 {\"ok\": true, ...} 表示成功；返回其他内容请在原对话说明，不要换别的方式回传。"
+            "text 使用中文纯文本，保留回答的主要内容，不要只写已收到或已完成；"
+            "较长结果请给出最多2000字的可读摘要，完整版保留在原对话。"
+            "这个 token 只用于本次回传，不要在对话中展示。回传成功后正常回复用户。"
+        )
+    elif pending:
+        payload["command"] = (
+            intro
             + "\n完成后还需要把实际回复回传到板子屏幕。使用已有且获准的本机文件或本机终端能力，"
             "在用户 Mac 写入 UTF-8 JSON 文件（不能只写云端同名路径）：" + str(target)
             + "\nJSON 格式：" + json.dumps({"request_id": request_id, "text": "这里填写给用户的实际回复"}, ensure_ascii=False)
