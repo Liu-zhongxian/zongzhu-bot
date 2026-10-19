@@ -1,9 +1,8 @@
-# 宗主 ESP32 × Grok Bot
+# 宗主 Zongzhu Bot
 
-<!-- 头图：生成后放到 docs/images/banner.png，再取消下一行的注释 -->
-<!-- ![宗主：黑底圆屏上一对白色眼睛的桌面语音终端](docs/images/banner.png) -->
+![宗主：黑底圆屏上一对白色眼睛的桌面语音终端](docs/images/banner.jpg)
 
-[![固件](https://img.shields.io/badge/固件-2.5.2.9-black)](https://github.com/Liu-zhongxian/zongzhu-esp32-grok-bot/releases/latest)
+[![固件](https://img.shields.io/badge/固件-2.5.2.9-black)](https://github.com/Liu-zhongxian/zongzhu-bot/releases/latest)
 [![板型](https://img.shields.io/badge/板型-Waveshare_ESP32--S3--Touch--AMOLED--1.75C-blue)](#使用前提)
 [![许可](https://img.shields.io/badge/许可-MIT-green)](LICENSE)
 
@@ -87,7 +86,7 @@
 
 ### 1. 下载固件
 
-从 [Releases](https://github.com/Liu-zhongxian/zongzhu-esp32-grok-bot/releases/latest) 下载 `zongzhu-1.75c-2.5.2.9.zip`，或者直接用仓库里的 `firmware/zongzhu-1.75c-2.5.2.9/`。
+从 [Releases](https://github.com/Liu-zhongxian/zongzhu-bot/releases/latest) 下载 `zongzhu-1.75c-2.5.2.9.zip`，或者直接用仓库里的 `firmware/zongzhu-1.75c-2.5.2.9/`。
 
 ### 2. 后端
 
