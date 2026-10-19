@@ -1,3 +1,5 @@
+中文 | [English](README.en.md)
+
 # 宗主 Zongzhu Bot
 
 ![宗主：黑底圆屏上一对白色眼睛的桌面语音终端](docs/images/banner.jpg)
@@ -76,11 +78,7 @@
 
 ## 工作原理
 
-```
-板子麦克风 ─▶ 本机后端（FunASR 识别）─▶ Bot Webhook
-                                            │
-圆屏字幕 + 扬声器 ◀─ 后端（EdgeTTS）◀─ 本机回复文件 ◀┘
-```
+![架构图：板子把语音发给电脑后端，后端识别后通过 Webhook 交给 Grok Bot，Bot 把回复写回电脑上的文件，后端合成字幕和语音发回板子](docs/images/architecture.zh-CN.svg)
 
 ## 快速开始
 

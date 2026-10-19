@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 470" width="1000" height="470" role="img" aria-label="宗主 Zongzhu Bot 架构">
+<title>宗主 Zongzhu Bot 架构</title>
+<style>
+  svg { --bg:#ffffff; --panel:#f6f7f9; --line:#d0d4db; --node:#ffffff; --fg:#1f2328; --mute:#656d76; --accent:#0969da; --warm:#bc4c00; }
+  @media (prefers-color-scheme: dark) {
+    svg { --bg:#0d1117; --panel:#161b22; --line:#30363d; --node:#0d1117; --fg:#e6edf3; --mute:#8d96a0; --accent:#4493f8; --warm:#f0883e; }
+  }
+  text { font-family: -apple-system, "PingFang SC", "Noto Sans SC", "Segoe UI", sans-serif; fill: var(--fg); }
+  .bg { fill: var(--bg); }
+  .panel { fill: var(--panel); stroke: var(--line); }
+  .node { fill: var(--node); stroke: var(--line); }
+  .pt { font-size: 14px; font-weight: 600; }
+  .nt { font-size: 13px; font-weight: 600; }
+  .ns { font-size: 11px; fill: var(--mute); }
+  .lb { font-size: 11px; fill: var(--accent); }
+  .lbw { font-size: 11px; fill: var(--warm); }
+  .cap { font-size: 11px; fill: var(--mute); }
+  .go { stroke: var(--accent); stroke-width: 1.8; fill: none; marker-end: url(#a); }
+  .back { stroke: var(--warm); stroke-width: 1.8; fill: none; marker-end: url(#w); }
+  .dash { stroke: var(--mute); stroke-width: 1.4; stroke-dasharray: 4 4; fill: none; marker-end: url(#m); }
+  .ha { fill: var(--accent); } .hw { fill: var(--warm); } .hm { fill: var(--mute); }
+</style>
+<defs>
+  <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ha" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="w" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="hw" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path class="hm" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+<rect class="bg" width="1000" height="470"/>
+
+<rect class="panel" x="20" y="60" width="250" height="350" rx="14"/>
+<rect class="panel" x="320" y="60" width="440" height="350" rx="14"/>
+<rect class="panel" x="810" y="60" width="170" height="350" rx="14"/>
+<text class="pt" x="145" y="88" text-anchor="middle">板子 ESP32-S3 · 1.75C</text>
+<text class="pt" x="540" y="88" text-anchor="middle">电脑后端 xiaozhi-server</text>
+<text class="pt" x="895" y="88" text-anchor="middle">Grok Bot</text>
+
+<rect class="node" x="40" y="110" width="210" height="56" rx="10"/>
+<text class="nt" x="145" y="134" text-anchor="middle">麦克风 + 本地唤醒</text><text class="ns" x="145" y="153" text-anchor="middle">「你好宗主」· MultiNet7</text>
+<rect class="node" x="40" y="220" width="210" height="56" rx="10"/>
+<text class="nt" x="145" y="244" text-anchor="middle">触摸 · 倾斜 · 摇晃</text><text class="ns" x="145" y="263" text-anchor="middle">触摸屏 · QMI8658</text>
+<rect class="node" x="40" y="330" width="210" height="56" rx="10"/>
+<text class="nt" x="145" y="354" text-anchor="middle">圆屏眼睛 + 字幕 · 扬声器</text><text class="ns" x="145" y="373" text-anchor="middle">13 种表情 · 3 种字幕模式</text>
+
+<rect class="node" x="340" y="110" width="160" height="56" rx="10"/>
+<text class="nt" x="420" y="134" text-anchor="middle">FunASR 识别</text><text class="ns" x="420" y="153" text-anchor="middle">SenseVoiceSmall</text>
+<rect class="node" x="560" y="110" width="180" height="56" rx="10"/>
+<text class="nt" x="650" y="134" text-anchor="middle">Bot 桥接</text><text class="ns" x="650" y="153" text-anchor="middle">去唤醒词 · 去重 · request_id</text>
+<rect class="node" x="340" y="330" width="160" height="56" rx="10"/>
+<text class="nt" x="420" y="354" text-anchor="middle">EdgeTTS 合成</text><text class="ns" x="420" y="373" text-anchor="middle">字幕 + Opus 音频</text>
+<rect class="node" x="560" y="330" width="180" height="56" rx="10"/>
+<text class="nt" x="650" y="354" text-anchor="middle">回复监听</text><text class="ns" x="650" y="373" text-anchor="middle">private/bot-replies/</text>
+<text class="cap" x="460" y="252" text-anchor="middle">同一局域网 · 8003 提供 OTA</text>
+
+<rect class="node" x="825" y="110" width="140" height="56" rx="10"/>
+<text class="nt" x="895" y="134" text-anchor="middle">Webhook</text><text class="ns" x="895" y="153" text-anchor="middle">Bearer 鉴权</text>
+<rect class="node" x="825" y="220" width="140" height="56" rx="10"/>
+<text class="nt" x="895" y="244" text-anchor="middle">执行任务</text><text class="ns" x="895" y="263" text-anchor="middle">返回 runUuid</text>
+<rect class="node" x="825" y="330" width="140" height="56" rx="10"/>
+<text class="nt" x="895" y="354" text-anchor="middle">写回复 JSON</text><text class="ns" x="895" y="373" text-anchor="middle">临时文件 → 重命名</text>
+
+<path class="go" d="M250,138 L338,138"/>
+<text class="lb" x="295" y="130" text-anchor="middle">① 语音</text><text class="lb" x="295" y="156" text-anchor="middle">WS :8000</text>
+<path class="go" d="M500,138 L558,138"/>
+<text class="lb" x="530" y="130" text-anchor="middle">② 文本</text>
+<path class="go" d="M740,138 L823,138"/>
+<text class="lb" x="782" y="130" text-anchor="middle">③ POST</text><text class="lb" x="782" y="156" text-anchor="middle">command</text>
+<path class="go" d="M895,166 L895,218"/>
+<path class="go" d="M895,276 L895,328"/>
+
+<path class="back" d="M825,358 L742,358"/>
+<text class="lbw" x="782" y="350" text-anchor="middle">④ 写入本机</text>
+<path class="back" d="M560,358 L502,358"/>
+<text class="lbw" x="530" y="350" text-anchor="middle">⑤ 文本</text>
+<path class="back" d="M340,358 L252,358"/>
+<text class="lbw" x="295" y="350" text-anchor="middle">⑥ 字幕 + 语音</text>
+
+<path class="dash" d="M650,166 L650,328"/>
+<text class="cap" x="658" y="252">登记</text>
+<path class="dash" d="M145,276 L145,328"/>
+<text class="cap" x="153" y="306">本地反应</text>
+
+<text class="cap" x="500" y="446" text-anchor="middle">实线：一次对话的数据流 · 虚线：本地联动 · 回复必须写到运行后端的这台电脑上</text>
+</svg>
