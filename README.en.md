@@ -5,10 +5,10 @@
 ![Zongzhu: a desktop voice terminal with a pair of white eyes on a black round screen](docs/images/banner.jpg)
 
 [![Firmware](https://img.shields.io/badge/firmware-2.5.2.9-black)](https://github.com/Liu-zhongxian/zongzhu-bot/releases/latest)
-[![Board](https://img.shields.io/badge/board-Waveshare_ESP32--S3--Touch--AMOLED--1.75C-blue)](#prerequisites)
+[![Board](https://img.shields.io/badge/board-Waveshare_1.75C_|_Lichuang_SZPI_S3-blue)](#prerequisites)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-Zongzhu (宗主) turns a 466×466 round-screen ESP32 board into a voice terminal for Grok Bot. Say the wake word "你好宗主" (*ni hao zongzhu*), speak your request, and the Bot's answer comes back to the screen and is read aloud. The screen is a pair of white eyes on black that blink, follow your finger, and get dizzy when you shake the board.
+Zongzhu (宗主) turns an ESP32-S3 screen board into a voice terminal for Grok Bot. Say the wake word "你好宗主" (*ni hao zongzhu*), speak your request, and the Bot's answer comes back to the screen and is read aloud. The screen is a pair of white eyes on black that blink, follow your finger, and get dizzy when you shake the board. Two boards are supported with the same features: the Waveshare 1.75C (466×466 round) and the Lichuang SZPI ESP32-S3 (320×240 landscape).
 
 > **Language note:** the wake word, speech recognition settings, on-screen system messages and the instructions sent to the Bot are all in Chinese. The project is built and tested for Mandarin speakers.
 
@@ -16,7 +16,7 @@ Zongzhu (宗主) turns a 466×466 round-screen ESP32 board into a voice terminal
 
 Check all three before you start. If any one is missing, the pipeline won't work:
 
-- **Board**: Waveshare ESP32-S3-Touch-AMOLED-1.75C, or the Lichuang (立创) SZPI ESP32-S3 with a 320×240 landscape layout (see [docs/BOARD-SZP.md](docs/BOARD-SZP.md), Chinese).
+- **Board**: Waveshare ESP32-S3-Touch-AMOLED-1.75C, or the Lichuang (立创) SZPI ESP32-S3, N16R8 (details in [docs/BOARD-SZP.md](docs/BOARD-SZP.md), Chinese).
 - **Computer**: an always-on computer that runs the backend (verified on Apple Silicon macOS), on the same 2.4 GHz LAN as the board.
 - **Bot**: your Grok Bot must expose a webhook **and be able to write files on this computer**. If the reply only stays in the cloud or in the chat window, the board never receives it.
 
@@ -71,7 +71,7 @@ System messages for Wi-Fi setup, activation and updates are always shown in full
 | BOOT short press | Start talking; stops playback if something is playing |
 | BOOT long press | Cycle subtitle mode |
 
-Reactions last 2–3 seconds, then the eyes return to the current state (listening, thinking, speaking, etc.). Touching the screen also wakes it from power-saving dim. The board has no vibration motor, so there is no haptic feedback.
+Reactions last 2–3 seconds, then the eyes return to the current state (listening, thinking, speaking, etc.). Neither board has a vibration motor, so there is no haptic feedback. The Waveshare 1.75C dims its screen when idle and a touch brings it back; the Lichuang board doesn't dim.
 
 </details>
 
@@ -83,7 +83,10 @@ Reactions last 2–3 seconds, then the eyes return to the current state (listeni
 
 ### 1. Get the firmware
 
-Download `zongzhu-1.75c-2.5.2.9.zip` from [Releases](https://github.com/Liu-zhongxian/zongzhu-bot/releases/latest), or use `firmware/zongzhu-1.75c-2.5.2.9/` in this repo.
+Either:
+
+- **Recommended: build it yourself with your backend address built in.** Wi-Fi setup then only asks for Wi-Fi. See step 3.
+- **Use a release package**: `firmware/zongzhu-1.75c-2.5.2.9/` for the Waveshare 1.75C (also on [Releases](https://github.com/Liu-zhongxian/zongzhu-bot/releases/latest)), `firmware/zongzhu-szp-2.5.2.9/` for the Lichuang board. Release packages don't know your computer's address, so you type the OTA URL during Wi-Fi setup.
 
 ### 2. Backend
 
@@ -118,9 +121,6 @@ PY
 
 ### 3. Flash the firmware
 
-To make Wi-Fi setup ask for Wi-Fi only, build a firmware with the OTA address built in using `tools/build_firmware.py` (defaults to this Mac's `.local` name; usage is at the top of the script). The steps below flash a release package.
-
-
 Connect the board over USB-C, find the serial port, and back up the whole flash first so you can restore it:
 
 ```sh
@@ -128,19 +128,35 @@ ls /dev/cu.usbmodem*
 esptool --chip esp32s3 --port /dev/cu.usbmodemXXXX read-flash 0 ALL zongzhu-backup.bin
 ```
 
-Then verify and write:
+**Option 1: build with this Mac's address and flash (recommended).** Needs ESP-IDF 6.0.1+:
 
 ```sh
-cd firmware/zongzhu-1.75c-2.5.2.9
+python3 tools/build_firmware.py szp   --idf <ESP-IDF dir> --flash /dev/cu.usbmodemXXXX --erase   # Lichuang
+python3 tools/build_firmware.py 1.75c --idf <ESP-IDF dir> --flash /dev/cu.usbmodemXXXX --erase   # Waveshare 1.75C
+```
+
+The built-in OTA URL defaults to `http://<this Mac's name>.local:8003/xiaozhi/ota/` (the name from `scutil --get LocalHostName`), so it keeps working when the Mac's LAN IP changes. On first boot the board saves it, so the setup page shows it already filled in. Packages go to `build-output/`; they contain the Mac's name and are not committed.
+
+`--erase` wipes the whole flash, Wi-Fi settings included. It's required when the board ran other firmware before, and when an OTA URL was typed in earlier, because a saved URL wins over the built-in one.
+
+**Option 2: flash a release package.** Verify and write:
+
+```sh
+cd firmware/zongzhu-1.75c-2.5.2.9   # Lichuang: firmware/zongzhu-szp-2.5.2.9
 shasum -a 256 -c SHA256SUMS
 esptool --chip esp32s3 --port /dev/cu.usbmodemXXXX --baud 921600 write-flash @flash_args
 ```
 
-The full image set does not touch NVS (Wi-Fi and other settings are kept), but it resets the OTA boot selection to partition 0. If the port doesn't show up or the connection fails, hold BOOT while plugging in USB to enter download mode, then retry.
+The full image set does not touch NVS (Wi-Fi and other settings are kept), but it resets the OTA boot selection to partition 0. If the board ran other firmware (a different partition table), run `esptool --chip esp32s3 --port /dev/cu.usbmodemXXXX erase-flash` first. If the port doesn't show up or the connection fails, hold BOOT while plugging in USB to enter download mode, then retry.
 
 ### 4. Wi-Fi setup
 
-After boot, join the board's hotspot and pick a 2.4 GHz Wi-Fi network that can reach the computer. Set the OTA URL to `http://<computer LAN IP>:8003/xiaozhi/ota/`.
+A board without Wi-Fi settings opens a hotspot (`Xiaozhi-XXXX`). Join it, open `http://192.168.4.1` and pick a 2.4 GHz network that can reach the computer:
+
+- Firmware from option 1: **pick Wi-Fi and save**; leave the advanced tab alone.
+- Release package: in the advanced tab, set the OTA URL to `http://<computer LAN IP>:8003/xiaozhi/ota/`.
+
+To redo Wi-Fi setup on a configured board, tap BOOT after power-on, before it connects to Wi-Fi (the window is only 1–2 seconds).
 
 ### 5. Try it
 
@@ -151,12 +167,13 @@ Say "你好宗主", wait for the response, then make a request. The screen first
 | Symptom | Check first |
 | --- | --- |
 | Board never connects | Board and computer on the same subnet; the IP in `.config.yaml` and in the board's OTA URL is the computer's current IP; macOS firewall allows Python on ports 8000/8003 |
-| Computer's IP changed | Update two places: the WebSocket URL in `.config.yaml` and the OTA URL on the board's setup page |
+| Computer's IP changed | Update the WebSocket URL in `.config.yaml`. The board's OTA URL needs no change with option 1 (`.local` name); a typed IP must be changed on the setup page |
 | "Task submitted" but no reply ever arrives | The Bot didn't write the file on this computer. Make sure it has local file write access, writes under `reply_dir`, and the `request_id` in the file matches the request |
 | Screen says the Bot rejected the request | The webhook returned 4xx; check `url` and `token` |
 | Screen says the reply directory is unavailable | `reply_dir` isn't an existing, writable absolute path |
 | Wake word misfires or won't trigger | Threshold is `CONFIG_CUSTOM_WAKE_WORD_THRESHOLD` in the board's `config.json` (currently 20; lower is more sensitive but misfires more). Rebuild after changing it |
-| Gaze moves opposite to the tilt | Adjust `QMI8658_SCREEN_X/Y` in `config.h` and rebuild |
+| Gaze moves opposite to the tilt | Adjust `QMI8658_SCREEN_X/Y` in that board's `config.h` and rebuild |
+| OTA field is empty on the setup page | Nothing is saved yet, and the firmware falls back to its built-in URL. Option 1 firmware saves it on first boot, so an empty field means older firmware |
 
 ## Bot interface
 
@@ -189,31 +206,45 @@ Load an ESP-IDF 6.0.1+ environment (this release was tested with 6.0.1). The sou
 
 ```sh
 cd xiaozhi-esp32
-python scripts/build.py waveshare/esp32-s3-touch-amoled-1.75 --name esp32-s3-touch-amoled-1.75c
+python scripts/build.py waveshare/esp32-s3-touch-amoled-1.75 --name esp32-s3-touch-amoled-1.75c   # Waveshare 1.75C
+python scripts/build.py lckfb/szpi-esp32s3 --name lichuang-dev-zongzhu                            # Lichuang
 ```
+
+These builds default to the official XiaoZhi OTA server. To build in your own backend address, use `tools/build_firmware.py` from step 3; it also copies the source to an ASCII-only path before building.
 
 ## Repository layout
 
 | Path | Contents |
 | --- | --- |
-| `xiaozhi-esp32/` | Full firmware source; this project's changes live in `main/boards/waveshare/esp32-s3-touch-amoled-1.75/` |
+| `xiaozhi-esp32/` | Full firmware source; this project's changes live in `main/boards/common/zongzhu/` (shared), `main/boards/waveshare/esp32-s3-touch-amoled-1.75/` and `main/boards/lckfb/szpi-esp32s3/` |
 | `xiaozhi-esp32-server/main/xiaozhi-server/` | The Python backend that actually runs; the Bot bridge is `core/handle/grokBotHandle.py` |
-| `firmware/zongzhu-1.75c-2.5.2.9/` | Prebuilt image set, checksums, build info |
+| `firmware/zongzhu-1.75c-2.5.2.9/`, `firmware/zongzhu-szp-2.5.2.9/` | Release packages for both boards: image set, checksums, build info |
+| `tools/build_firmware.py` | Builds with the OTA URL built in, packages, flashes |
 | `examples/` | Config templates without real credentials |
 | `docs/TASK-RECORD.md` | Redacted implementation log and acceptance records (Chinese) |
 | `docs/VALIDATION.md` | Test scope and limits of the current release (Chinese) |
+| `docs/BOARD-SZP.md` | Lichuang board port and test record (Chinese) |
 | `verify_*.py` | End-to-end checks against a real Bot |
 
 <details>
-<summary>Key board files</summary>
+<summary>Key files</summary>
+
+Shared code in `main/boards/common/zongzhu/`:
 
 | File | Purpose |
 | --- | --- |
 | `eye_model.h` | Shapes and motion of the 13 expressions (pure math, no LVGL) |
-| `eye_display.h` | Round-screen layout, eye drawing, blinking and gaze, touch gestures, subtitle modes |
+| `eye_display.h` | Eye drawing, blinking and gaze, touch gestures, subtitle modes; screen size and layout come from `EyeScreen` |
 | `qmi8658_motion.h` | QMI8658 driver, tilt following and shake detection |
+| `ota_default.h` | Saves the built-in OTA URL to settings on first boot |
+
+In each board's directory:
+
+| File | Purpose |
+| --- | --- |
 | `config.h` | Pins and IMU axis mapping |
-| `config.json` | Build options: wake word, 1 ms tick (`CONFIG_FREERTOS_HZ=1000`) |
+| `config.json` | Build variants: wake word, 1 ms tick (`CONFIG_FREERTOS_HZ=1000`), etc. |
+| Board `.cc` | Screen layout values, buttons and tools; on the Lichuang board the Zongzhu features are enabled by `CONFIG_ZONGZHU_EYE_UI` |
 
 </details>
 
@@ -229,7 +260,7 @@ cd xiaozhi-esp32-server/main/xiaozhi-server
 ## Known limitations
 
 - The eyes' motion while speaking is a state-based animation, not synced to volume.
-- Animation logic runs at about 35–42 fps. The display task has lower priority than audio so sound never stutters, which means occasional ~100 ms pauses while speaking.
+- Animation logic runs at about 35–42 fps on the Waveshare 1.75C (not measured separately on the Lichuang board). The display task has lower priority than audio so sound never stutters, which means occasional ~100 ms pauses while speaking.
 - Gesture thresholds were tuned on the test board and may need adjustment for a different grip.
 - LAN only, and the computer must stay on.
 - The MQTT path is compiled in but hasn't had its own on-device network test.
