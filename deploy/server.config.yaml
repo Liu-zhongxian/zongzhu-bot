@@ -1,6 +1,7 @@
 # 服务器版配置：复制到 /opt/zongzhu/app/data/.config.yaml，权限 600。
 # 把 zongzhu.example.com 换成你的子域名，auth_key 换成随机串（python3 -c "import secrets;print(secrets.token_urlsafe(32))"），
-# allowed_devices 填板子的 MAC（后端日志里的 device-id）。allowlist_only 打开后，名单外的设备一律拒绝。
+# allowed_devices 填板子的 MAC（后端日志里的 device-id），device_client_ids 再配上它的 client-id。
+# allowlist_only 打开后，名单外的设备一律拒绝。
 server:
   ip: 127.0.0.1
   port: 8000
@@ -12,6 +13,8 @@ server:
     enabled: true
     allowlist_only: true
     allowed_devices: ["YOUR:BOARD:MAC:ADDRESS"]
+    # MAC 容易被别人知道；client-id 是板子 NVS 里的随机 UUID（后端日志里的 client-id），两者都对才放行
+    device_client_ids: {"YOUR:BOARD:MAC:ADDRESS": "YOUR-BOARD-CLIENT-ID"}
 selected_module:
   VAD: SileroVAD
   ASR: FunASR

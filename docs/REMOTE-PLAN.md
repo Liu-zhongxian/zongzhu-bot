@@ -146,12 +146,12 @@ Bot 云端虚拟机 ──HTTPS POST /bot/reply（一次性令牌）──▶ �
 | 域名 | `zongzhu.52drunk.com`，Cloudflare 仅 DNS，Let's Encrypt 证书由 Caddy 自动续期 |
 | 后端 | `/opt/zongzhu`，systemd 服务 `zongzhu`，只监听 127.0.0.1:8000/8003 |
 | 防火墙 | ufw 放行 SSH、80、443 |
-| 设备白名单 | 新增 `server.auth.allowlist_only`：上游 OTA 会给任何设备发令牌，公网部署必须打开，只放行板子 MAC |
+| 设备白名单 | 新增 `server.auth.allowlist_only`：上游 OTA 会给任何设备发令牌，公网部署必须打开。另加 `device_client_ids`：MAC 之外还要求板子 NVS 里的随机 client-id，防止只知道 MAC 就冒充 |
 
 实测：
 
 - 公网 `/`、`/mcp/vision/explain` 返回 404；OTA 下发 `wss://zongzhu.52drunk.com/xiaozhi/v1/`
-- WebSocket：名单外设备即使带令牌也被拒绝；板子 MAC 连接成功并收到 hello
+- WebSocket：名单外设备即使带令牌也被拒绝；板子 MAC 配错误 client-id 被拒绝；MAC 和 client-id 都正确时连接成功并收到 hello
 - `/bot/reply` 伪造请求返回 404
 - 真实 Bot：服务器提交测试任务，22 秒后 Bot 从云端虚拟机 POST 回复，内容正确，整个过程不经过 Mac
 

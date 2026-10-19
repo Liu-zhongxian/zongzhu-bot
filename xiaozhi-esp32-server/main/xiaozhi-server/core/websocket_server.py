@@ -67,6 +67,9 @@ class WebSocketServer:
         # Public deployments: devices outside the allowlist are refused outright,
         # because the OTA endpoint hands a token to any device that asks.
         self.allowlist_only = auth_config.get("allowlist_only", False)
+        # Optional MAC -> client-id pairs. The MAC is easy to learn; the client-id is a
+        # random UUID kept on the board, so requiring both stops impersonation.
+        self.device_client_ids = dict(auth_config.get("device_client_ids", {}) or {})
         secret_key = self.config["server"]["auth_key"]
         expire_seconds = auth_config.get("expire_seconds", None)
         self.auth = AuthManager(secret_key=secret_key, expire_seconds=expire_seconds)
@@ -217,6 +220,9 @@ class WebSocketServer:
             device_id = headers.get("device-id", None)
             client_id = headers.get("client-id", None)
             if self.allowed_devices and device_id in self.allowed_devices:
+                expected = self.device_client_ids.get(device_id)
+                if expected and client_id != expected:
+                    raise AuthenticationError("Client id does not match device")
                 # 如果属于白名单内的设备，不校验token，直接放行
                 return
             if self.allowlist_only:
