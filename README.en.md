@@ -14,12 +14,11 @@ Zongzhu (宗主) turns a 466×466 round-screen ESP32 board into a voice terminal
 
 ## Prerequisites
 
-Check all four before you start. If any one is missing, the pipeline won't work:
+Check all three before you start. If any one is missing, the pipeline won't work:
 
 - **Board**: Waveshare ESP32-S3-Touch-AMOLED-1.75C. The firmware supports this board only.
 - **Computer**: an always-on computer that runs the backend (verified on Apple Silicon macOS), on the same 2.4 GHz LAN as the board.
 - **Bot**: your Grok Bot must expose a webhook **and be able to write files on this computer**. If the reply only stays in the cloud or in the chat window, the board never receives it.
-- **Not a direct API client**: this project calls the Bot's webhook, not xAI Chat Completions. An xAI API key alone is not enough.
 
 ## Features
 

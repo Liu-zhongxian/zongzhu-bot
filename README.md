@@ -14,12 +14,11 @@
 
 ## 使用前提
 
-开始之前先确认这四条，任何一条不满足都跑不通：
+开始之前先确认这三条，任何一条不满足都跑不通：
 
 - **板子**：Waveshare ESP32-S3-Touch-AMOLED-1.75C。固件只适配这一块。
 - **电脑**：一台一直开着的电脑运行后端（已在 Apple Silicon macOS 上验证），和板子在同一个 2.4GHz 局域网。
 - **Bot**：你的 Grok Bot 要提供 Webhook，并且**能往这台电脑写文件**。回复只留在云端或聊天窗口里的话，板子收不到。
-- **不是 API 直连**：本项目调用的是 Bot 的 Webhook，不调用 xAI Chat Completions，只有 xAI API Key 是不够的。
 
 ## 功能
 
