@@ -22,6 +22,7 @@
 
 #if CONFIG_ZONGZHU_EYE_UI
 #include "zongzhu/eye_display.h"
+#include "zongzhu/ota_default.h"
 #include "zongzhu/qmi8658_motion.h"
 
 // 320x240 landscape: status bar on top, eyes below; text pushes the eyes up.
@@ -354,6 +355,9 @@ private:
 
 public:
     LichuangDevBoard() : boot_button_(BOOT_BUTTON_GPIO) {
+#if CONFIG_ZONGZHU_EYE_UI
+        SeedDefaultOtaUrl();
+#endif
         InitializeI2c();
         InitializeSpi();
         InitializeSt7789Display();

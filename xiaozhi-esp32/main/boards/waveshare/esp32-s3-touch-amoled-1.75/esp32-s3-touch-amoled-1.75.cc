@@ -28,6 +28,7 @@
 #if CONFIG_BOARD_TYPE_WAVESHARE_ESP32_S3_TOUCH_AMOLED_1_75C
 #include "zongzhu/eye_display.h"
 #include "zongzhu/qmi8658_motion.h"
+#include "zongzhu/ota_default.h"
 using BoardLcdDisplay = EyeDisplay;
 #else
 using BoardLcdDisplay = SpiLcdDisplay;
@@ -365,6 +366,9 @@ private:
 
 public:
     WaveshareEsp32s3TouchAMOLED1inch75() : boot_button_(BOOT_BUTTON_GPIO) {
+#if CONFIG_BOARD_TYPE_WAVESHARE_ESP32_S3_TOUCH_AMOLED_1_75C
+        SeedDefaultOtaUrl();
+#endif
         InitializePowerSaveTimer();
         InitializeCodecI2c();
 #if CONFIG_BOARD_TYPE_WAVESHARE_ESP32_S3_TOUCH_AMOLED_1_75
