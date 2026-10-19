@@ -58,5 +58,10 @@
 
 #define XCLK_FREQ_HZ 20000000
 
+// QMI8658 chip axes (accel[0..2]) to screen axes: +x right, +y down.
+// Used by the Zongzhu variant; confirm on the board by tilting.
+#define QMI8658_SCREEN_X(a) (-a[1])
+#define QMI8658_SCREEN_Y(a) (a[0])
+
 
 #endif // _BOARD_CONFIG_H_

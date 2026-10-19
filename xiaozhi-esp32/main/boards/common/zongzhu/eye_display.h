@@ -1,6 +1,7 @@
 #pragma once
-// Zongzhu round-screen UI: procedural eyes, touch reactions and subtitle modes
-// for the 466x466 circular AMOLED. Shapes come from eye_model.h.
+// Zongzhu UI: procedural eyes, touch reactions and subtitle modes. Screen size and
+// layout come from EyeScreen; the defaults are the 466x466 round AMOLED (1.75C).
+// Shapes come from eye_model.h.
 
 #include <esp_heap_caps.h>
 #include <esp_log.h>
@@ -21,11 +22,34 @@
 
 enum class SubtitleMode : int32_t { Full = 0, Brief = 1, Off = 2 };
 
-class EyeRoundDisplay : public SpiLcdDisplay {
+// Screen geometry for the eye UI. Eye layouts: Large (no text), Medium (brief
+// subtitle) and Small (full text); y values are from the top of the screen.
+struct EyeScreen {
+    struct Layout {
+        int box_y, box_h, center_y;  // eye area, and eye centre within it
+        float scale;                 // eye size relative to eye_model.h
+    };
+    int width = 466;
+    // Status bars; the round glass needs them inset from the edge.
+    int status_bar_w = 288, status_bar_h = 48, status_bar_y = 64;
+    int top_bar_w = 176, top_bar_h = 36, top_bar_y = 28;
+    int status_w = 280, text_w = 284, popup_w = 300;
+    Layout large{100, 280, 140, 1.0f};
+    Layout medium{100, 230, 115, 0.82f};
+    Layout small{108, 140, 70, 0.6f};
+    int text_y = 330, text_h = 80;               // Large/Medium subtitle area
+    int text_y_small = 252, text_h_small = 160;  // full-text area
+    float follow_px = 150;                       // finger offset for full gaze
+};
+
+class EyeDisplay : public SpiLcdDisplay {
 public:
     using SpiLcdDisplay::SpiLcdDisplay;
 
-    ~EyeRoundDisplay() override {
+    // Must be called before SetupUI().
+    void SetScreen(const EyeScreen& screen) { screen_ = screen; }
+
+    ~EyeDisplay() override {
         DisplayLockGuard lock(this);
         if (frame_timer_)
             lv_timer_delete(frame_timer_);
@@ -43,31 +67,31 @@ public:
                 std::clamp<int32_t>(settings.GetInt("subtitle", 0), 0, 2));
         }
         DisplayLockGuard lock(this);
-        // The circular glass clips the square framebuffer's corners; keep text inside.
+        // On the round glass the bars are inset so the corners don't clip text.
         for (auto bar : {top_bar_, status_bar_}) {
-            lv_obj_set_size(bar, 288, 48);
+            lv_obj_set_size(bar, screen_.status_bar_w, screen_.status_bar_h);
             lv_obj_set_style_pad_all(bar, 0, 0);
-            lv_obj_align(bar, LV_ALIGN_TOP_MID, 0, 64);
+            lv_obj_align(bar, LV_ALIGN_TOP_MID, 0, screen_.status_bar_y);
         }
-        lv_obj_set_size(top_bar_, 176, 36);
-        lv_obj_align(top_bar_, LV_ALIGN_TOP_MID, 0, 28);
-        lv_obj_set_width(status_label_, 280);
+        lv_obj_set_size(top_bar_, screen_.top_bar_w, screen_.top_bar_h);
+        lv_obj_align(top_bar_, LV_ALIGN_TOP_MID, 0, screen_.top_bar_y);
+        lv_obj_set_width(status_label_, screen_.status_w);
         lv_label_set_long_mode(status_label_, LV_LABEL_LONG_SCROLL_CIRCULAR);
-        lv_obj_set_width(notification_label_, 280);
+        lv_obj_set_width(notification_label_, screen_.status_w);
         lv_label_set_long_mode(notification_label_, LV_LABEL_LONG_SCROLL_CIRCULAR);
         lv_obj_set_style_bg_opa(top_bar_, LV_OPA_TRANSP, 0);
 
         lv_obj_remove_flag(emoji_box_, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_remove_flag(emoji_box_, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_width(bottom_bar_, 284);
+        lv_obj_set_width(bottom_bar_, screen_.text_w);
         lv_obj_set_style_pad_all(bottom_bar_, 0, 0);
         lv_obj_set_style_bg_opa(bottom_bar_, LV_OPA_TRANSP, 0);
         lv_obj_remove_flag(bottom_bar_, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_set_width(chat_message_label_, 284);
+        lv_obj_set_width(chat_message_label_, screen_.text_w);
         lv_label_set_long_mode(chat_message_label_, LV_LABEL_LONG_WRAP);
         lv_obj_set_style_text_line_space(chat_message_label_, 4, 0);
         lv_obj_set_style_text_align(chat_message_label_, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_width(low_battery_popup_, 300);
+        lv_obj_set_width(low_battery_popup_, screen_.popup_w);
         lv_obj_center(low_battery_popup_);
         lv_obj_add_flag(emoji_label_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(emoji_image_, LV_OBJ_FLAG_HIDDEN);
@@ -82,12 +106,12 @@ public:
         lv_obj_add_event_cb(
             canvas_,
             [](lv_event_t* e) {
-                static_cast<EyeRoundDisplay*>(lv_event_get_user_data(e))->Draw(lv_event_get_layer(e));
+                static_cast<EyeDisplay*>(lv_event_get_user_data(e))->Draw(lv_event_get_layer(e));
             },
             LV_EVENT_DRAW_MAIN, this);
         lv_display_add_event_cb(
             display_,
-            [](lv_event_t* e) { ++static_cast<EyeRoundDisplay*>(lv_event_get_user_data(e))->refreshes_; },
+            [](lv_event_t* e) { ++static_cast<EyeDisplay*>(lv_event_get_user_data(e))->refreshes_; },
             LV_EVENT_REFR_READY, this);
         ApplyMonochrome();
         ApplyLayout(Layout::Large);
@@ -96,7 +120,7 @@ public:
             lv_timer_set_period(refr, kFrameMs);
         frame_timer_ = lv_timer_create(
             [](lv_timer_t* timer) {
-                static_cast<EyeRoundDisplay*>(lv_timer_get_user_data(timer))->Render();
+                static_cast<EyeDisplay*>(lv_timer_get_user_data(timer))->Render();
             },
             kFrameMs, this);
         ESP_LOGI(kTag, "Eyes ready, subtitle mode %d", static_cast<int>(subtitle_mode_));
@@ -132,7 +156,7 @@ public:
             lv_timer_delete(performance_timer_);
         performance_timer_ = lv_timer_create(
             [](lv_timer_t* timer) {
-                auto self = static_cast<EyeRoundDisplay*>(lv_timer_get_user_data(timer));
+                auto self = static_cast<EyeDisplay*>(lv_timer_get_user_data(timer));
                 self->performance_timer_ = nullptr;
                 self->SetEmotion("neutral");
             },
@@ -192,23 +216,20 @@ public:
 
 private:
     static constexpr const char* kTag = "EyeUI";
-    static constexpr int kCenterX = 233;
 
     enum class Layout { Large, Medium, Small };
-    struct LayoutSpec {
-        int box_y, box_h, center_y;
-        float scale;
-    };
-    static LayoutSpec Spec(Layout layout) {
+    EyeScreen screen_;
+    const EyeScreen::Layout& Spec(Layout layout) const {
         switch (layout) {
             case Layout::Medium:
-                return {100, 230, 115, 0.82f};
+                return screen_.medium;
             case Layout::Small:
-                return {108, 140, 70, 0.6f};
+                return screen_.small;
             default:
-                return {100, 280, 140, 1.0f};
+                return screen_.large;
         }
     }
+    int CenterX() const { return screen_.width / 2; }
 
     static constexpr uint32_t kFrameMs = 20;
 
@@ -281,13 +302,12 @@ private:
 
     void ApplyLayout(Layout layout) {
         layout_ = layout;
-        const auto spec = Spec(layout);
-        lv_obj_set_size(emoji_box_, 466, spec.box_h);
+        const auto& spec = Spec(layout);
+        lv_obj_set_size(emoji_box_, screen_.width, spec.box_h);
         lv_obj_align(emoji_box_, LV_ALIGN_TOP_MID, 0, spec.box_y);
         const bool small = layout == Layout::Small;
-        const int text_h = small ? 160 : 80;
-        lv_obj_set_height(bottom_bar_, text_h);
-        lv_obj_align(bottom_bar_, LV_ALIGN_TOP_MID, 0, small ? 252 : 330);
+        lv_obj_set_height(bottom_bar_, small ? screen_.text_h_small : screen_.text_h);
+        lv_obj_align(bottom_bar_, LV_ALIGN_TOP_MID, 0, small ? screen_.text_y_small : screen_.text_y);
     }
 
     // First sentence only, at most two short lines.
@@ -532,8 +552,8 @@ private:
         float gx = tilt_x_.load(std::memory_order_relaxed) + glance_x_;
         float gy = tilt_y_.load(std::memory_order_relaxed) + glance_y_;
         if (pressed_ && gesture_ == Gesture::Follow) {
-            gx = (touch_point_.x - kCenterX) / 150.0f;
-            gy = (touch_point_.y - center_y) / 150.0f;
+            gx = (touch_point_.x - CenterX()) / screen_.follow_px;
+            gy = (touch_point_.y - center_y) / screen_.follow_px;
         }
         // Glances snap (saccade-like); everything else eases.
         const float k = eyes::Ease(dt, pressed_ ? 14 : 18);
@@ -725,7 +745,7 @@ private:
         max_gap_ms_ = std::max(max_gap_ms_, gap);
         PollTouch(now);
         const auto mood = CurrentMood(now);
-        const auto spec = Spec(layout_);
+        const auto& spec = Spec(layout_);
         UpdateGaze(now, dt, mood, spec.box_y + spec.center_y);
         const float blink = BlinkFactor(now, mood);
 
@@ -736,8 +756,8 @@ private:
 
         const float half = eyes::kHomeX * spec.scale;
         const EyeGeom next[2] = {
-            ComputeEye(face_.left, kCenterX - half, spec.center_y, spec.scale, blink, now, 0),
-            ComputeEye(face_.right, kCenterX + half, spec.center_y, spec.scale, blink, now, 1)};
+            ComputeEye(face_.left, CenterX() - half, spec.center_y, spec.scale, blink, now, 0),
+            ComputeEye(face_.right, CenterX() + half, spec.center_y, spec.scale, blink, now, 1)};
         for (int i = 0; i < 2; ++i) {
             if (!(next[i] == geom_[i])) {
                 Invalidate(geom_[i].box, next[i].box);

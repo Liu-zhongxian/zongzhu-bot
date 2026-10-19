@@ -1,6 +1,7 @@
 #pragma once
-// QMI8658 motion input for the 1.75C board: tilt for eye gaze and a
-// left-right shake gesture. Shares the codec I2C bus.
+// QMI8658 motion input for the Zongzhu boards: tilt for eye gaze and a
+// left-right shake gesture. Shares the codec I2C bus. The including board's
+// config.h maps chip axes to screen axes with QMI8658_SCREEN_X/Y.
 
 #include <driver/i2c_master.h>
 #include <esp_log.h>
@@ -11,6 +12,10 @@
 #include <cmath>
 #include <cstdint>
 #include <functional>
+
+#if !defined(QMI8658_SCREEN_X) || !defined(QMI8658_SCREEN_Y)
+#error "Define QMI8658_SCREEN_X/Y in the board config.h before including qmi8658_motion.h"
+#endif
 
 class Qmi8658Motion {
 public:

@@ -20,6 +20,35 @@
 
 #define TAG "LichuangDevBoard"
 
+#if CONFIG_ZONGZHU_EYE_UI
+#include "zongzhu/eye_display.h"
+#include "zongzhu/qmi8658_motion.h"
+
+// 320x240 landscape: status bar on top, eyes below; text pushes the eyes up.
+static EyeScreen ZongzhuScreen() {
+    EyeScreen s;
+    s.width = DISPLAY_WIDTH;
+    s.status_bar_w = DISPLAY_WIDTH;
+    s.status_bar_h = 28;
+    s.status_bar_y = 0;
+    s.top_bar_w = DISPLAY_WIDTH;
+    s.top_bar_h = 28;
+    s.top_bar_y = 0;
+    s.status_w = 300;
+    s.text_w = 300;
+    s.popup_w = 280;
+    s.large = {28, 212, 100, 0.78f};
+    s.medium = {28, 150, 70, 0.6f};
+    s.small = {26, 76, 38, 0.36f};
+    s.text_y = 180;
+    s.text_h = 56;
+    s.text_y_small = 102;
+    s.text_h_small = 134;
+    s.follow_px = 100;
+    return s;
+}
+#endif
+
 class Pca9557 : public I2cDevice {
 public:
     Pca9557(i2c_master_bus_handle_t i2c_bus, uint8_t addr) : I2cDevice(i2c_bus, addr) {
@@ -68,6 +97,10 @@ private:
     Pca9557* pca9557_;
     Esp32Camera* camera_;
     PressToTalkMcpTool* press_to_talk_tool_ = nullptr;
+#if CONFIG_ZONGZHU_EYE_UI
+    EyeDisplay* eyes_ = nullptr;
+    Qmi8658Motion* motion_ = nullptr;
+#endif
 
     void InitializeI2c() {
         // Initialize I2C peripheral
@@ -125,6 +158,13 @@ private:
             }
         });
 
+#if CONFIG_ZONGZHU_EYE_UI
+        // Long press: cycle subtitles full -> brief -> off (saved in NVS).
+        boot_button_.OnLongPress([this]() {
+            eyes_->ShowNotification(eyes_->CycleSubtitleMode(), 2000);
+        });
+#endif
+
 #if CONFIG_USE_DEVICE_AEC
         boot_button_.OnDoubleClick([this]() {
             auto& app = Application::GetInstance();
@@ -167,7 +207,12 @@ private:
         esp_lcd_panel_mirror(panel, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
         esp_lcd_panel_disp_on_off(panel, true);
 
-#if CONFIG_USE_EMOTE_MESSAGE_STYLE
+#if CONFIG_ZONGZHU_EYE_UI
+        eyes_ = new EyeDisplay(panel_io, panel,
+            DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
+        eyes_->SetScreen(ZongzhuScreen());
+        display_ = eyes_;
+#elif CONFIG_USE_EMOTE_MESSAGE_STYLE
         display_ = new emote::EmoteDisplay(panel, panel_io, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 #else
         display_ = new SpiLcdDisplay(panel_io, panel,
@@ -229,6 +274,14 @@ private:
         }
     }
 
+#if CONFIG_ZONGZHU_EYE_UI
+    void InitializeMotion() {
+        motion_ = new Qmi8658Motion(i2c_bus_);
+        motion_->Start([this](float x, float y) { eyes_->SetTilt(x, y); },
+                       [this](bool active) { eyes_->SetDizzy(active); });
+    }
+#endif
+
     void InitializeCamera() {
         // Open camera power
         pca9557_->SetOutputState(2, 0);
@@ -274,9 +327,29 @@ private:
                 return true;
             });
 
+#if CONFIG_ZONGZHU_EYE_UI
+        // Long press cycles subtitles here, so press-to-talk is not offered.
+        mcp_server.AddTool("self.zongzhu.play_animation",
+            "Play Zongzhu eye reactions for 12 seconds. Use when asked to sing, "
+            "dance, rap or play basketball. This changes the screen, not the audio. "
+            "action must be singing, dancing, rapper or basketball.",
+            PropertyList({Property("action", kPropertyTypeString)}),
+            [this](const PropertyList& properties) -> ReturnValue {
+                const auto action = properties["action"].value<std::string>();
+                if (action != "singing" && action != "dancing" && action != "rapper" &&
+                    action != "basketball") {
+                    return std::string("Unsupported animation action");
+                }
+                Application::GetInstance().Schedule([this, action]() {
+                    eyes_->PlayPerformance(action);
+                });
+                return true;
+            });
+#else
         // Allow switching between press-to-talk (长按说话) and click-to-talk (单击唤醒)
         press_to_talk_tool_ = new PressToTalkMcpTool();
         press_to_talk_tool_->Initialize();
+#endif
     }
 
 public:
@@ -285,6 +358,9 @@ public:
         InitializeSpi();
         InitializeSt7789Display();
         InitializeTouch();
+#if CONFIG_ZONGZHU_EYE_UI
+        InitializeMotion();
+#endif
         InitializeButtons();
         InitializeCamera();
         InitializeTools();

@@ -12,3 +12,4 @@ logs/
 **/data/.config.yaml
 **/.secrets.yaml
 **/models/SenseVoiceSmall/model.pt
+build-output/

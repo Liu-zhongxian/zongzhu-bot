@@ -16,7 +16,7 @@
 
 开始之前先确认这三条，任何一条不满足都跑不通：
 
-- **板子**：Waveshare ESP32-S3-Touch-AMOLED-1.75C。固件只适配这一块。
+- **板子**：Waveshare ESP32-S3-Touch-AMOLED-1.75C，或立创·实战派 ESP32-S3（320×240 横屏版，见 [docs/BOARD-SZP.md](docs/BOARD-SZP.md)）。
 - **电脑**：一台一直开着的电脑运行后端（已在 Apple Silicon macOS 上验证），和板子在同一个 2.4GHz 局域网。
 - **Bot**：你的 Grok Bot 要提供 Webhook，并且**能往这台电脑写文件**。回复只留在云端或聊天窗口里的话，板子收不到。
 
@@ -117,6 +117,9 @@ PY
 `start.sh` 在前台运行，关掉终端服务就停了，不要同时开多个。后端占用 8000（WebSocket）和 8003（HTTP/OTA）两个端口。
 
 ### 3. 刷固件
+
+想让板子配网时只填 Wi-Fi，可以用 `tools/build_firmware.py` 编译一份带 OTA 地址的固件（默认指向本机 `.local` 名字），用法见脚本开头说明。下面是直接刷发布包的方法。
+
 
 用 USB-C 连上板子，先找串口并备份整片 Flash（出问题可以原样刷回）：
 

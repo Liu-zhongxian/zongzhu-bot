@@ -26,9 +26,9 @@
 #define TAG "WaveshareEsp32s3TouchAMOLED1inch75"
 
 #if CONFIG_BOARD_TYPE_WAVESHARE_ESP32_S3_TOUCH_AMOLED_1_75C
-#include "eye_display.h"
-#include "qmi8658_motion.h"
-using BoardLcdDisplay = EyeRoundDisplay;
+#include "zongzhu/eye_display.h"
+#include "zongzhu/qmi8658_motion.h"
+using BoardLcdDisplay = EyeDisplay;
 #else
 using BoardLcdDisplay = SpiLcdDisplay;
 #endif

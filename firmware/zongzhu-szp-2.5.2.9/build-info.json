@@ -1,0 +1,15 @@
+{
+  "version": "2.5.2.9",
+  "board": "lckfb/szpi-esp32s3",
+  "variant": "lichuang-dev-zongzhu",
+  "hardware": "立创·实战派 ESP32-S3 (N16R8), 320x240 ST7789, FT6336, QMI8658",
+  "idf": "6.0.1",
+  "freertos_hz": 1000,
+  "app_bytes": 2842416,
+  "assets_bytes": 4166180,
+  "first_install": "erase-flash, then write-flash @flash_args (the board previously ran a different partition layout)",
+  "flashed": true,
+  "flash_hash_verified": true,
+  "boot_check": "eyes UI, QMI8658 at 0x6a, ES8311/ES7210, GC0308 camera, Wi-Fi config mode",
+  "physical_acceptance": "pending"
+}

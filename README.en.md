@@ -16,7 +16,7 @@ Zongzhu (宗主) turns a 466×466 round-screen ESP32 board into a voice terminal
 
 Check all three before you start. If any one is missing, the pipeline won't work:
 
-- **Board**: Waveshare ESP32-S3-Touch-AMOLED-1.75C. The firmware supports this board only.
+- **Board**: Waveshare ESP32-S3-Touch-AMOLED-1.75C, or the Lichuang (立创) SZPI ESP32-S3 with a 320×240 landscape layout (see [docs/BOARD-SZP.md](docs/BOARD-SZP.md), Chinese).
 - **Computer**: an always-on computer that runs the backend (verified on Apple Silicon macOS), on the same 2.4 GHz LAN as the board.
 - **Bot**: your Grok Bot must expose a webhook **and be able to write files on this computer**. If the reply only stays in the cloud or in the chat window, the board never receives it.
 
@@ -117,6 +117,9 @@ PY
 `start.sh` runs in the foreground; closing the terminal stops the service. Don't run more than one. The backend uses port 8000 (WebSocket) and 8003 (HTTP/OTA).
 
 ### 3. Flash the firmware
+
+To make Wi-Fi setup ask for Wi-Fi only, build a firmware with the OTA address built in using `tools/build_firmware.py` (defaults to this Mac's `.local` name; usage is at the top of the script). The steps below flash a release package.
+
 
 Connect the board over USB-C, find the serial port, and back up the whole flash first so you can restore it:
 
