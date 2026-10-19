@@ -1,6 +1,6 @@
 # 任务说明书：立创·实战派 ESP32-S3 板
 
-创建：2026-10-19（Asia/Shanghai）。状态：**已上机**（2026-10-19）。固件运行正常，用户反馈没有问题；OTA 地址已改为编译时写入。
+创建：2026-10-19（Asia/Shanghai）。状态：**已上机，待实机验收**（2026-10-19）。固件运行正常，用户反馈没有问题；OTA 地址已改为编译时写入，配网只需 Wi-Fi；README 已更新。剩余事项见第 8 节。
 
 ## 1. 目标
 
@@ -76,9 +76,20 @@
 
 ### 阶段 5：收尾
 
-- [ ] 固件包放到 `firmware/zongzhu-szp-<版本>/`
-- [ ] README 增加立创板说明
+- [x] 固件包放到 `firmware/zongzhu-szp-2.5.2.9/`（发布包，OTA 默认为小智官方地址，不含本机名字）
+- [x] README（中英文）增加立创板说明、`tools/build_firmware.py` 用法、只配 Wi-Fi 的流程（提交 `040aa5c`）
+- [ ] `docs/VALIDATION.md` 补立创板实测（阶段 4 完成后）
 - [ ] 本文件更新为完成状态
+
+## 6. 回退
+
+整片备份可以原样写回，恢复 muse-gadget：
+
+```sh
+esptool --chip esp32s3 --port <串口> write-flash 0 backups/szp-94a9902da370-muse-before-zongzhu-20261019.bin
+```
+
+更早的出厂备份：`muse/backups/original-94a9902da370-20261007.bin`。
 
 ## 7. OTA 地址编译时写入（2026-10-19）
 
@@ -98,12 +109,17 @@
 
 仍是固定 IP 的地方：Mac 后端下发给板子的 WebSocket 地址（`ws://192.168.124.158:8000/...`）。改成 `.local` 会同时影响两块板子，待用户确认。
 
-## 6. 回退
+## 8. 当前状态与待确认（2026-10-19）
 
-整片备份可以原样写回，恢复 muse-gadget：
+| 项目 | 状态 |
+| --- | --- |
+| 立创板 | 已刷带 `.local` OTA 地址的固件，只配 Wi-Fi 即连上 Mac 后端，可正常对话 |
+| 微雪 1.75C | 仍是旧固件，OTA 地址是配网时手填的 IP；共用代码重构后只编译验证，**未重刷** |
+| Mac 后端 WebSocket 地址 | 仍是 `ws://192.168.124.158:8000/xiaozhi/v1/`（固定 IP）。可改为 `ws://<Mac名>.local:8000/xiaozhi/v1/`，会同时影响两块板，**待用户确认** |
+| 服务器方案 | 暂停，见 `REMOTE-PLAN.md`；用户要求本轮不碰服务器 |
 
-```sh
-esptool --chip esp32s3 --port <串口> write-flash 0 backups/szp-94a9902da370-muse-before-zongzhu-20261019.bin
-```
+待办：
 
-更早的出厂备份：`muse/backups/original-94a9902da370-20261007.bin`。
+- [ ] 用户确认后，后端 WebSocket 改 `.local` 并重启，用立创板验证
+- [ ] 阶段 4 实机验收（倾斜轴向 `QMI8658_SCREEN_X/Y` 是推测值，需实测；帧率未测）
+- [ ] 可选：微雪 1.75C 用 `tools/build_firmware.py 1.75c --erase` 重刷，同样改为只配 Wi-Fi
