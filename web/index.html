@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>宗主网页刷机</title>
+  <meta name="description" content="用浏览器给 ESP32-S3 板子刷入宗主固件：识别板子、选唤醒词、填后端地址和 Wi-Fi，一次刷好。">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>宗主网页刷机</h1>
+    <p>用 USB 把板子接到电脑，按步骤操作。刷机全程在你的浏览器里完成，Wi-Fi 密码等信息只写进板子，不会上传到任何地方。</p>
+  </header>
+
+  <main>
+    <div id="unsupported" class="notice error" hidden>
+      这个浏览器不支持网页串口。请用电脑上的 <b>Chrome</b> 或 <b>Edge</b> 打开本页（Safari、Firefox 和手机浏览器都不行）。
+    </div>
+
+    <ol class="stepper" id="stepper">
+      <li><button data-step="0"><span class="num">1</span><span class="label">连接板子</span></button></li>
+      <li><button data-step="1"><span class="num">2</span><span class="label">唤醒词</span></button></li>
+      <li><button data-step="2"><span class="num">3</span><span class="label">界面</span></button></li>
+      <li><button data-step="3"><span class="num">4</span><span class="label">后端</span></button></li>
+      <li><button data-step="4"><span class="num">5</span><span class="label">联网</span></button></li>
+      <li><button data-step="5"><span class="num">6</span><span class="label">刷入</span></button></li>
+    </ol>
+
+    <section class="step" id="step-connect">
+      <h2><span class="num">1</span>连接并识别板子</h2>
+      <p>用能传数据的 USB-C 线连接板子，点下面的按钮，在弹窗里选择板子的串口。</p>
+      <div class="row">
+        <button id="connect" class="primary">连接板子</button>
+        <button id="connect-any" class="link">弹窗里找不到设备？显示全部串口</button>
+      </div>
+      <p class="hint">还是连不上：按住板子上的 <b>BOOT</b> 键，拔插一次 USB，松开 BOOT 后再点"连接板子"。</p>
+      <div id="chip-info" hidden>
+        <dl class="facts" id="chip-facts"></dl>
+        <p id="board-question">请确认是哪一块板子：</p>
+        <div id="board-list" class="choices"></div>
+        <p id="board-unsupported" class="notice error" hidden></p>
+      </div>
+    </section>
+
+    <section class="step" id="step-wake" hidden>
+      <h2><span class="num">2</span>选择唤醒词</h2>
+      <div id="wake-list" class="choices"></div>
+      <label class="choice">
+        <input type="radio" name="wake" value="custom">
+        <span><b>自定义</b><small>效果因词而异，建议四个字、发音清楚、日常不常说的词</small></span>
+      </label>
+      <div id="wake-custom" class="sub" hidden>
+        <label>唤醒词（中文）<input id="wake-text" maxlength="8" placeholder="例如：你好小雨"></label>
+        <label>拼音（不带声调，用空格分开）<input id="wake-pinyin" placeholder="例如：ni hao xiao yu"></label>
+        <p class="hint" id="wake-error"></p>
+      </div>
+    </section>
+
+    <section class="step" id="step-ui" hidden>
+      <h2><span class="num">3</span>选择界面样式</h2>
+      <div class="choices">
+        <label class="choice">
+          <input type="radio" name="ui" value="eyes" checked>
+          <span><b>眼睛</b><small>黑底白眼睛，会眨眼、跟随倾斜、被摇晕；支持触摸和三种字幕模式</small></span>
+        </label>
+        <label class="choice disabled">
+          <input type="radio" name="ui" value="ikun" disabled>
+          <span><b>IKUN</b><small>即将推出</small></span>
+        </label>
+      </div>
+    </section>
+
+    <section class="step" id="step-backend" hidden>
+      <h2><span class="num">4</span>后端在哪里运行</h2>
+      <p>板子只负责录音和播放，语音识别和转发 Bot 由后端完成。后端需要你自己运行，本页不会把板子连到任何别人的服务器。</p>
+      <div class="choices">
+        <label class="choice">
+          <input type="radio" name="backend" value="local" checked>
+          <span><b>我自己的电脑（推荐）</b><small>电脑和板子连同一个 Wi-Fi，电脑开着时可用</small></span>
+        </label>
+        <label class="choice">
+          <input type="radio" name="backend" value="server">
+          <span><b>我有自己的服务器</b><small>有公网地址和域名，板子在任何网络都能用</small></span>
+        </label>
+      </div>
+      <div id="backend-local" class="sub">
+        <div class="install" id="install-mac">
+          <h3>第一次用？先在这台电脑上装后端</h3>
+          <p class="hint">打开"终端"（启动台搜索"终端"），粘贴下面这行并回车。脚本会安装依赖、下载后端和语音模型（约 1GB，需要十几分钟）、询问你的 Bot Webhook 地址，最后显示下面要填的电脑地址，并可以直接启动后端。</p>
+          <div class="cmd">
+            <code id="install-cmd"></code>
+            <button id="copy-install" type="button">复制</button>
+          </div>
+          <p class="hint">也可以 <a id="download-install" download="install-mac.sh">下载脚本</a>，再在终端运行 <code>bash ~/Downloads/install-mac.sh</code>。重复运行就是更新，已有配置会保留。</p>
+        </div>
+        <p class="notice warn" id="install-other" hidden>一键安装脚本目前只支持 macOS。Windows / Linux 请按 <a class="link-backend" target="_blank" rel="noopener">后端安装说明</a> 手动安装。</p>
+        <label>电脑的地址
+          <input id="local-host" placeholder="例如：my-mac.local 或 192.168.1.100" autocomplete="off" spellcheck="false">
+        </label>
+        <p class="hint">
+          安装脚本最后会显示这个地址。已经装好的：macOS 终端运行 <code>scutil --get LocalHostName</code>，在结果后面加 <code>.local</code>；
+          Windows / Linux 填电脑的局域网 IP（<code>ipconfig</code> / <code>ip addr</code>），并给电脑设固定 IP。
+        </p>
+        <p class="hint">刷完板子再装、再启动后端也可以。手动安装见 <a class="link-backend" target="_blank" rel="noopener">后端安装说明</a>。</p>
+      </div>
+      <div id="backend-server" class="sub" hidden>
+        <label>服务器的 OTA 地址
+          <input id="server-url" placeholder="https://你的域名/xiaozhi/ota/" autocomplete="off" spellcheck="false">
+        </label>
+        <p class="hint">部署方法见 <a id="link-deploy" target="_blank" rel="noopener">服务器部署说明</a>。服务器开启设备白名单后，要把刷完时显示的 MAC 和 client-id 加进去。</p>
+      </div>
+      <p class="hint">将要写入：<code id="ota-preview">—</code></p>
+      <p class="hint error-text" id="backend-error"></p>
+    </section>
+
+    <section class="step" id="step-wifi" hidden>
+      <h2><span class="num">5</span>联网</h2>
+      <div class="choices">
+        <label class="choice">
+          <input type="radio" name="wifi" value="now" checked>
+          <span><b>现在填写 Wi-Fi</b><small>刷完自动联网，不用再配网</small></span>
+        </label>
+        <label class="choice">
+          <input type="radio" name="wifi" value="later">
+          <span><b>跳过，刷完用手机配网</b><small>板子会开一个 Xiaozhi-XXXX 热点，手机连上后打开 192.168.4.1 选择 Wi-Fi</small></span>
+        </label>
+      </div>
+      <div id="wifi-now" class="sub">
+        <label>Wi-Fi 名称<input id="wifi-ssid" maxlength="32" autocomplete="off" spellcheck="false"></label>
+        <label>Wi-Fi 密码<input id="wifi-password" type="password" maxlength="63" autocomplete="off"></label>
+        <p class="hint">只支持 <b>2.4GHz</b> Wi-Fi。选"我自己的电脑"时，要和电脑连同一个网络。密码填错时，板子会自动开热点，可以用手机重新配网。</p>
+        <p class="hint error-text" id="wifi-error"></p>
+      </div>
+    </section>
+
+    <section class="step" id="step-flash" hidden>
+      <h2><span class="num">6</span>刷入</h2>
+      <dl class="facts" id="summary"></dl>
+      <label class="confirm">
+        <input type="checkbox" id="confirm-erase">
+        <span>我知道刷机会<b>清空整块板子</b>，原来的程序和设置都会被删除。</span>
+      </label>
+      <button id="flash" class="primary" disabled>开始刷机</button>
+      <p class="hint error-text" id="flash-hint"></p>
+      <div id="progress" hidden>
+        <p id="progress-label"></p>
+        <progress id="progress-bar" max="100" value="0"></progress>
+      </div>
+      <div id="result" hidden></div>
+      <details>
+        <summary>详细日志</summary>
+        <pre id="log"></pre>
+      </details>
+    </section>
+    <div class="wizard-nav" id="wizard-nav">
+      <button id="prev" class="secondary" type="button">上一步</button>
+      <button id="next" class="primary" type="button">下一步</button>
+    </div>
+  </main>
+
+  <footer>
+    <p>源码与说明：<a id="link-repo" target="_blank" rel="noopener">GitHub</a>。刷写使用乐鑫 esptool-js（Apache-2.0）。</p>
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

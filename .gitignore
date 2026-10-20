@@ -13,3 +13,4 @@ logs/
 **/.secrets.yaml
 **/models/SenseVoiceSmall/model.pt
 build-output/
+_site/

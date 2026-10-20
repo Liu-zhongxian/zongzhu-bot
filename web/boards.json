@@ -1,0 +1,20 @@
+[
+  {
+    "id": "szp",
+    "name": "立创·实战派 ESP32-S3",
+    "look": "2.0 寸长方形屏（320×240），板上有摄像头接口",
+    "chip": "ESP32-S3",
+    "flashSize": "16MB",
+    "package": "zongzhu-szp-2.5.2.9",
+    "assets": "generated_assets.bin"
+  },
+  {
+    "id": "1.75c",
+    "name": "微雪 ESP32-S3-Touch-AMOLED-1.75C",
+    "look": "1.75 寸圆形屏，型号末尾带 C",
+    "chip": "ESP32-S3",
+    "flashSize": "32MB",
+    "package": "zongzhu-1.75c-2.5.2.9",
+    "assets": "assets.bin"
+  }
+]
