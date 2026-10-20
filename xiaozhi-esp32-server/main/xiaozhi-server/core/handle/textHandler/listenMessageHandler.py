@@ -96,8 +96,13 @@ class ListenTextMessageHandler(TextMessageHandler):
                     conn.dialogue.put(Message(role="assistant", content=call_text))
                     return
 
+                # Bot 模式下板子只在唤醒时发 detect，唤醒词由网页刷机选择，
+                # 记下板子报上来的唤醒词，不要求它出现在 wakeup_words 配置里
+                if conn.config.get("grok_bot", {}).get("enabled"):
+                    conn.device_wake_word = filtered_text
                 # 识别是否是唤醒词
-                is_wakeup_words = filtered_text in conn.config.get("wakeup_words")
+                is_wakeup_words = (filtered_text in conn.config.get("wakeup_words")
+                                   or getattr(conn, "device_wake_word", None) == filtered_text)
                 # 是否开启唤醒词回复
                 enable_greeting = conn.config.get("enable_greeting", True)
 

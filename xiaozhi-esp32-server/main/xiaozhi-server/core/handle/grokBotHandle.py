@@ -21,12 +21,31 @@ _FILLER = set("个啊呀嗯哦诶唉哎嘿那")
 _PUNCT = re.compile(r"[\s，。！？、,.!?~～:：]+")
 
 
-def strip_wake_phrase(text):
-    """Return (had_wake_phrase, remainder) for a leading, possibly misheard wake phrase."""
+def _match_word(raw, i, word):
+    """End index of `word` at raw[i:], ignoring punctuation inside raw; None if absent."""
+    for char in word:
+        while i < len(raw) and _PUNCT.match(raw[i]):
+            i += 1
+        if i >= len(raw) or raw[i] != char:
+            return None
+        i += 1
+    return i
+
+
+def strip_wake_phrase(text, wake_words=()):
+    """Return (had_wake_phrase, remainder) for a leading, possibly misheard wake phrase.
+
+    `wake_words` (e.g. the one the board reported) are matched exactly; "你好宗主" also
+    has a fuzzy rule for the ways ASR mishears it.
+    """
     raw = text.strip()
     i = 0
     while i < len(raw) and (raw[i] in _FILLER or _PUNCT.match(raw[i])):
         i += 1
+    for word in wake_words:
+        end = _match_word(raw, i, word) if word else None
+        if end is not None:
+            return True, _PUNCT.sub(" ", raw[end:]).strip()
     if not raw.startswith(("你好", "您好"), i):
         return False, text
     j = i + 2
@@ -147,13 +166,14 @@ async def handle_grok_bot(conn, text):
     command = extract_command(text)
     if not config.get("enabled") or command is None:
         return False
+    device_wake = getattr(conn, "device_wake_word", None)
     # Wake phrases use the local cached greeting; they are not Bot tasks.
-    if re.sub(r"[\W_]", "", command) in conn.config.get("wakeup_words", []):
+    if re.sub(r"[\W_]", "", command) in [*conn.config.get("wakeup_words", []), device_wake]:
         return False
     from core.handle.sendAudioHandle import send_stt_message
     from core.handle.intentHandler import speak_txt
 
-    had_wake, rest = strip_wake_phrase(command)
+    had_wake, rest = strip_wake_phrase(command, [device_wake] if device_wake else ())
     if had_wake:
         if not rest.strip("，。！？,.!? "):
             # The user repeated the wake word mid-conversation: acknowledge, submit nothing.

@@ -223,6 +223,32 @@ class GrokBotReplyTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(messages[1]["state"], "start")
         self.assertFalse(self.conn.bot_ui_waiting)
 
+    async def test_long_wait_shows_approval_hint_once(self):
+        self.conn.features = {"bot_ui": True}
+        self.conn.reset_audio_states = Mock()
+        await update_wait_ui(self.conn, self.directory, 300)
+        self.assertEqual(self.conn.websocket.send.await_count, 1)
+        created = json.loads(self.pending.read_text())["created"]
+        with patch("core.handle.grokBotReply.time.time", return_value=created + 31):
+            await update_wait_ui(self.conn, self.directory, 300)
+            await update_wait_ui(self.conn, self.directory, 300)
+        self.assertEqual(self.conn.websocket.send.await_count, 2)
+        message = json.loads(self.conn.websocket.send.call_args.args[0])
+        self.assertEqual(message["state"], "sentence_start")
+        self.assertIn("授权", message["text"])
+        self.assertTrue(self.conn.bot_ui_waiting)
+
+    async def test_approval_hint_skipped_after_wake_or_when_disabled(self):
+        self.conn.features = {"bot_ui": True}
+        self.conn.reset_audio_states = Mock()
+        created = json.loads(self.pending.read_text())["created"]
+        with patch("core.handle.grokBotReply.time.time", return_value=created + 31):
+            await update_wait_ui(self.conn, self.directory, 300, 0)
+            self.assertEqual(self.conn.websocket.send.await_count, 1)
+            resume_bot_input(self.conn)
+            await update_wait_ui(self.conn, self.directory, 300)
+        self.assertEqual(self.conn.websocket.send.await_count, 1)
+
     async def test_second_request_can_enter_wait_again(self):
         self.conn.features = {"bot_ui": True}
         self.conn.reset_audio_states = Mock()

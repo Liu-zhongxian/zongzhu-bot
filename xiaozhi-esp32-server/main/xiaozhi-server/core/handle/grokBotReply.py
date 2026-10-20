@@ -18,6 +18,10 @@ REPLY_WAIT_SECONDS = 300
 KEEPALIVE_SECONDS = 30
 # A posted reply is accepted this long after the request.
 REPLY_TOKEN_SECONDS = 24 * 3600
+# Bot replies normally arrive within ~15s; a longer wait is often an approval
+# prompt in the Grok UI, which the server cannot see.
+APPROVAL_HINT_SECONDS = 30
+APPROVAL_HINT = "等待时间较长。\n如果 Grok 界面在请求授权，请在那里确认。"
 
 
 def _token_hash(token):
@@ -191,7 +195,7 @@ async def hold_connection(conn):
         conn.bot_keepalive_at = now
 
 
-async def update_wait_ui(conn, directory, wait_seconds):
+async def update_wait_ui(conn, directory, wait_seconds, hint_seconds=APPROVAL_HINT_SECONDS):
     """Announce each pending request once; waking explicitly resumes input."""
     if not getattr(conn, "features", {}).get("bot_ui"):
         return
@@ -223,6 +227,14 @@ async def update_wait_ui(conn, directory, wait_seconds):
             "type": "bot_wait", "state": "timeout", "session_id": conn.session_id,
         }))
         conn.bot_ui_waiting = False
+    if (hint_seconds and latest and getattr(conn, "bot_ui_waiting", False)
+            and now - latest >= hint_seconds and getattr(conn, "bot_hint_for", 0) != latest):
+        # Replaces the waiting text only; the firmware keeps counting seconds in the status bar.
+        await conn.websocket.send(json.dumps({
+            "type": "tts", "state": "sentence_start", "text": APPROVAL_HINT,
+            "session_id": conn.session_id,
+        }, ensure_ascii=False))
+        conn.bot_hint_for = latest
 
 
 def resume_bot_input(conn):
@@ -246,7 +258,8 @@ async def watch_replies(conn):
                 wait_seconds = config.get("reply_wait_seconds", REPLY_WAIT_SECONDS)
                 device = conn.headers.get("device-id", "unknown")
                 if not delivered:
-                    await update_wait_ui(conn, directory, wait_seconds)
+                    await update_wait_ui(conn, directory, wait_seconds,
+                                         config.get("approval_hint_seconds", APPROVAL_HINT_SECONDS))
                 playing_reply = (conn.client_is_speaking and
                                  getattr(conn, "bot_reply_sentence_id", None) == getattr(conn, "sentence_id", ""))
                 if playing_reply or (not delivered and waiting_for_reply(directory, device, wait_seconds)):

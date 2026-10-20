@@ -1145,7 +1145,7 @@ void Application::ShowBotIdle() {
     if (bot_waiting_) {
         display->SetStatus("等待 Bot 回复");
         display->SetChatMessage("assistant",
-                                "任务已提交，正在等待回复。\n说“你好宗主”或按键可追加指令。");
+                                "任务已提交，正在等待回复。\n唤醒或按键可追加指令。");
         display->SetEmotion("thinking");
     } else if (!bot_reply_text_.empty()) {
         display->SetStatus("回复已收到");
