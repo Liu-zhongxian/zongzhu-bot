@@ -24,7 +24,9 @@ const PACKAGES = {
 const ASSETS = { szp: "generated_assets.bin", "1.75c": "assets.bin" };
 
 test("crc32 matches zlib.crc32(data, 0xFFFFFFFF)", () => {
-  for (const size of [0, 1, 28, 1000]) {
+  // Empty input is checked against Python's zlib.crc32(b"", 0xFFFFFFFF); Node 22's zlib returns 0 there.
+  assert.equal(crc32(new Uint8Array(0)), 0xffffffff);
+  for (const size of [1, 28, 1000]) {
     const data = randomBytes(size);
     assert.equal(crc32(data), zlib.crc32(data, 0xffffffff));
   }
