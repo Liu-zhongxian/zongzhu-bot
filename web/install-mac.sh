@@ -5,7 +5,7 @@
 #   /bin/bash -c "$(curl -fsSL <网页地址>/install-mac.sh)"
 #
 # 做的事：
-#   1. 用 Homebrew 安装 Python 3.10、FFmpeg、Opus
+#   1. 检查 Python 3.10、FFmpeg、Opus，只用 Homebrew 安装缺的（不更新 Homebrew，不升级已装的软件）
 #   2. 下载后端代码到 ~/zongzhu（ZONGZHU_DIR 可改），已有配置不会被覆盖
 #   3. 建 Python 虚拟环境并安装依赖
 #   4. 询问 Bot Webhook 地址和 token，写进 private/grok-bot-webhook.json
@@ -42,10 +42,47 @@ if [ "$BREW_PREFIX" != /opt/homebrew ]; then
   warn "检测到 Intel Mac（Homebrew 在 ${BREW_PREFIX}）。本项目只在 Apple 芯片上测试过。"
 fi
 
-say "安装 Python 3.10、FFmpeg、Opus（已安装的会跳过）"
-brew install python@3.10 ffmpeg opus
-PYTHON="$BREW_PREFIX/opt/python@3.10/bin/python3.10"
-[ -x "$PYTHON" ] || die "找不到 $PYTHON"
+say "检查 Python 3.10、FFmpeg、Opus（已有的不重装）"
+# Install only what is missing, without updating Homebrew or upgrading what the
+# user has. Installing ffmpeg next to an existing ffmpeg-full once upgraded x265
+# under it and broke that ffmpeg-full (2026-10-21).
+export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_UPGRADE=1 HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1
+works() { "$@" >/dev/null 2>&1; }
+missing=""  # a word list: /bin/bash 3.2 treats an empty array as unbound under set -u
+
+PYTHON=""
+for p in "$BREW_PREFIX/opt/python@3.10/bin/python3.10" "$(command -v python3.10 || true)"; do
+  if [ -n "$p" ] && works "$p" -c 'import sys, venv, ensurepip; assert sys.version_info[:2] == (3, 10)'; then
+    PYTHON="$p"
+    break
+  fi
+done
+if [ -n "$PYTHON" ]; then echo "Python 3.10：已有（${PYTHON}），跳过"; else missing="$missing python@3.10"; fi
+
+FFMPEG=""
+for f in "$(command -v ffmpeg || true)" "$BREW_PREFIX/bin/ffmpeg" "$BREW_PREFIX/opt/ffmpeg-full/bin/ffmpeg"; do
+  if [ -n "$f" ] && works "$f" -version; then
+    FFMPEG="$f"
+    break
+  fi
+done
+if [ -n "$FFMPEG" ]; then
+  echo "FFmpeg：已有（${FFMPEG}），跳过"
+elif brew list --versions ffmpeg-full >/dev/null 2>&1; then
+  die "已安装的 ffmpeg-full 无法运行（多半是它依赖的库被升级过）。请先运行 brew upgrade ffmpeg-full，再重新运行本脚本。为了不弄坏它，脚本不会在旁边另装 ffmpeg。"
+else
+  missing="$missing ffmpeg"
+fi
+
+if [ -e "$BREW_PREFIX/lib/libopus.dylib" ]; then echo "Opus：已有，跳过"; else missing="$missing opus"; fi
+
+if [ -n "$missing" ]; then
+  echo "需要安装：$missing"
+  # shellcheck disable=SC2086  # formula names, split on purpose
+  brew install $missing
+fi
+[ -n "$PYTHON" ] || PYTHON="$BREW_PREFIX/opt/python@3.10/bin/python3.10"
+[ -x "$PYTHON" ] || die "找不到 Python 3.10（${PYTHON}）"
 
 say "下载后端代码到 $DIR"
 TMP=$(mktemp -d)

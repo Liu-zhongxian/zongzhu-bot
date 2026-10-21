@@ -70,7 +70,7 @@
 
 ## 6. 后端安装脚本（`web/install-mac.sh`）
 
-1. Homebrew 安装 `python@3.10`、`ffmpeg`、`opus`（没有 Homebrew 就提示去 brew.sh 安装后重跑）
+1. 检查 Python 3.10、FFmpeg、Opus，已有能用的就跳过，只用 Homebrew 装缺的；装的时候关掉 Homebrew 自动更新，不升级已装的软件（没有 Homebrew 就提示去 brew.sh 安装后重跑）。已装 `ffmpeg-full` 也算有（它是 keg-only，`start.sh` 会把它加进 PATH）；`ffmpeg-full` 装了但运行不了时，提示先 `brew upgrade ffmpeg-full`，不在旁边另装 `ffmpeg`。原因：2026-10-21 实测，脚本在已有 `ffmpeg-full` 的电脑上照装 `ffmpeg`，顺带把 `x265` 升到 4.3，原来的 `ffmpeg-full` 8.1.1 找不到 `libx265.216.dylib`，后端启动失败
 2. 从 GitHub 下载 `main` 分支代码包，只取后端需要的部分放到 `~/zongzhu`（`ZONGZHU_DIR`、`ZONGZHU_REF` 可改）。**所以后端改动要先推到 main，用户装到的才是新版**
 3. 建 `.venv` 并安装 `requirements-macos.txt`
 4. 在终端询问 Bot Webhook 地址和 token（token 输入不显示），写入 `private/grok-bot-webhook.json`（权限 600）；直接回车就保留模板，以后再改
