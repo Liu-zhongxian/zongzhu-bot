@@ -11,7 +11,7 @@
 #   4. 询问 Bot Webhook 地址和 token，写进 private/grok-bot-webhook.json
 #   5. 按本机局域网 IP 生成后端配置
 #   6. 下载语音识别模型 SenseVoiceSmall（约 900MB）
-#   7. 显示网页第 4 步要填的电脑地址，可以直接启动后端
+#   7. 显示网页第 4 步要填的电脑地址，询问是否开机自启（tools/autostart.sh），或直接启动后端
 #
 # 重复运行就是更新：代码会换成最新版，配置、模型和 Bot 设置保留。
 set -euo pipefail
@@ -58,6 +58,8 @@ mkdir -p "$DIR"
 rsync -a "$TMP/src/xiaozhi-esp32-server" "$DIR/"
 for f in start.sh requirements-macos.txt LICENSE README.md; do cp "$TMP/src/$f" "$DIR/"; done
 rsync -a "$TMP/src/examples" "$DIR/"
+mkdir -p "$DIR/tools"
+cp "$TMP/src/tools/autostart.sh" "$TMP/src/tools/launcher.c" "$DIR/tools/"
 chmod +x "$DIR/start.sh"
 cd "$DIR"
 
@@ -117,9 +119,24 @@ printf '\n\033[1;32m安装完成。\033[0m\n\n'
 echo "回到网页第 4 步，在「电脑的地址」里填下面任意一个："
 [ -n "$HOSTNAME_LOCAL" ] && printf '  \033[1m%s.local\033[0m   （推荐，IP 变了也能用）\n' "$HOSTNAME_LOCAL"
 printf '  \033[1m%s\033[0m\n\n' "$IP"
-echo "以后启动后端：$DIR/start.sh（在前台运行，关掉终端就停了）"
 echo "第一次启动时 macOS 如果询问是否允许 Python 接受传入连接，请选「允许」。"
 
+if launchctl print "gui/$(id -u)/com.zongzhu.backend" >/dev/null 2>&1; then
+  # 已开着自启：更新代码后重启，让新代码生效
+  bash "$DIR/tools/autostart.sh" restart || warn "重启没有成功，运行 bash $DIR/tools/autostart.sh status 查看原因。"
+  exit 0
+fi
+auto=$(ask $'\n设置开机自启吗？登录后自动在后台运行，Mac 不会因为空闲而睡眠。[Y/n] ')
+case "$auto" in
+  n|N|no|NO) ;;
+  *)
+    bash "$DIR/tools/autostart.sh" enable || warn "自启没有设置成功，可以先前台运行 $DIR/start.sh。"
+    echo "以后查看状态：bash $DIR/tools/autostart.sh status；取消自启：bash $DIR/tools/autostart.sh disable"
+    exit 0
+    ;;
+esac
+
+echo "以后启动后端：$DIR/start.sh（在前台运行，关掉终端就停了）"
 start=$(ask $'\n现在启动后端吗？[Y/n] ')
 case "$start" in
   n|N|no|NO) ;;

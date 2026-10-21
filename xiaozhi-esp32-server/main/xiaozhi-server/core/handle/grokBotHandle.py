@@ -1,4 +1,5 @@
 """Forward conversation to the user's existing Grok Bot without a chat model."""
+import asyncio
 import json
 import re
 import secrets
@@ -8,6 +9,7 @@ from collections import OrderedDict
 from pathlib import Path
 
 import httpx
+from core.handle import grokBotPhrases as phrases
 from core.handle.grokBotReply import prepare_reply
 
 
@@ -77,7 +79,13 @@ def extract_command(text):
     return text.strip()[match.end():].strip() if match else text.strip()
 
 
-async def submit_command(command, device, config_file, transport=None):
+class Submission:
+    def __init__(self, url, token, payload, pending, key):
+        self.url, self.token, self.payload, self.pending, self.key = url, token, payload, pending, key
+
+
+def prepare_submission(command, device, config_file):
+    """Local checks before anything is sent: a str is the reason it will not be sent."""
     if not command.strip("，。！？,.!? "):
         return "请说出你要交给 Bot 的事情。"
     if len(command) > 2000:
@@ -142,23 +150,53 @@ async def submit_command(command, device, config_file, transport=None):
             "不要为回传修改任何权限设置；若本机能力不可用，请在原对话说明。"
             "回传成功后正常回复用户，不必在对话中展示文件路径。"
         )
+    return Submission(url, token, payload, pending, key)
+
+
+async def post_submission(submission, transport=None):
+    """Send the Webhook; returns (status, message), status is accepted / rejected / unknown."""
     try:
         async with httpx.AsyncClient(timeout=20, follow_redirects=False, transport=transport) as client:
-            response = await client.post(url, headers={"Authorization": "Bearer " + token}, json=payload)
+            response = await client.post(submission.url, json=submission.payload,
+                                         headers={"Authorization": "Bearer " + submission.token})
         if 400 <= response.status_code < 500:
-            _recent.pop(key, None)
-            if pending:
-                pending.unlink(missing_ok=True)
-            return "Bot 服务拒绝了请求，任务未提交，请检查连接配置或稍后再试。"
+            _recent.pop(submission.key, None)
+            if submission.pending:
+                submission.pending.unlink(missing_ok=True)
+            return "rejected", "Bot 服务拒绝了请求，任务未提交，请检查连接配置或稍后再试。"
         data = response.json() if response.is_success else {}
         if data.get("success") is True and data.get("runUuid"):
-            if pending:
-                return "任务已提交，Bot 回复后会显示在屏幕上。"
-            return "任务已提交给 Bot，执行结果请在 Grok Bot 对话里查看。"
+            if submission.pending:
+                return "accepted", "任务已提交，Bot 回复后会显示在屏幕上。"
+            return "accepted", "任务已提交给 Bot，执行结果请在 Grok Bot 对话里查看。"
     except (httpx.HTTPError, OSError, ValueError, AttributeError):
         pass
     # A timeout or malformed reply cannot establish whether the Bot accepted it.
-    return "暂时无法确认任务是否提交，请先查看 Bot 对话，避免重复发送。"
+    return "unknown", "暂时无法确认任务是否提交，请先查看 Bot 对话，避免重复发送。"
+
+
+async def submit_command(command, device, config_file, transport=None):
+    submission = prepare_submission(command, device, config_file)
+    if isinstance(submission, str):
+        return submission
+    return (await post_submission(submission, transport))[1]
+
+
+async def _speak_after_ack(conn, status, reply):
+    """A second sentence after the cached acknowledgement, which already ended with tts stop."""
+    from core.handle.sendAudioHandle import send_tts_message
+    from core.handle.intentHandler import speak_txt
+
+    if status == "rejected" and (getattr(conn, "features", None) or {}).get("bot_ui"):
+        # Leaves any waiting screen and keeps the reason on screen, like a delivered reply.
+        await conn.websocket.send(json.dumps({
+            "type": "bot_wait", "state": "reply", "text": reply, "session_id": conn.session_id,
+        }, ensure_ascii=False))
+        conn.bot_ui_waiting = False
+    conn.sentence_id = uuid.uuid4().hex
+    await send_tts_message(conn, "start")
+    conn.client_is_speaking = True
+    speak_txt(conn, reply)
 
 
 async def handle_grok_bot(conn, text):
@@ -179,7 +217,8 @@ async def handle_grok_bot(conn, text):
             # The user repeated the wake word mid-conversation: acknowledge, submit nothing.
             conn.logger.bind(tag="grokBot").info(f"忽略重复唤醒词，不提交: {text}")
             conn.client_abort = False
-            speak_txt(conn, "我在。")
+            if not await phrases.speak(conn, phrases.HERE, send_start=True):
+                speak_txt(conn, phrases.HERE)
             return True
         command = rest
 
@@ -187,8 +226,20 @@ async def handle_grok_bot(conn, text):
     conn.client_abort = False
     conn.sentence_id = uuid.uuid4().hex
     await send_stt_message(conn, text)
-    reply = await submit_command(command, conn.headers.get("device-id", "unknown"),
-                                 config.get("config_file", ""))
-    if not conn.client_abort:
+    submission = prepare_submission(command, conn.headers.get("device-id", "unknown"),
+                                    config.get("config_file", ""))
+    if isinstance(submission, str):
+        if not conn.client_abort:
+            speak_txt(conn, submission)
+        return True
+    # The acknowledgement plays while the Webhook is in flight, so it does not claim success.
+    posting = asyncio.create_task(post_submission(submission))
+    acked = await phrases.speak(conn, phrases.ACK)
+    status, reply = await posting
+    if conn.client_abort:
+        return True
+    if not acked:
         speak_txt(conn, reply)
+    elif status != "accepted" or not submission.pending:
+        await _speak_after_ack(conn, status, reply)
     return True

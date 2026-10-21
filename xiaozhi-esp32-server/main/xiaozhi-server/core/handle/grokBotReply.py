@@ -136,7 +136,7 @@ async def deliver_replies(conn, directory):
             conn.client_is_speaking = True
             conn.last_activity_time = time.time() * 1000
             try:
-                if getattr(conn, "features", {}).get("bot_ui"):
+                if (getattr(conn, "features", None) or {}).get("bot_ui"):
                     await conn.websocket.send(json.dumps({
                         "type": "bot_wait", "state": "reply", "text": text,
                         "session_id": conn.session_id,
@@ -197,7 +197,7 @@ async def hold_connection(conn):
 
 async def update_wait_ui(conn, directory, wait_seconds, hint_seconds=APPROVAL_HINT_SECONDS):
     """Announce each pending request once; waking explicitly resumes input."""
-    if not getattr(conn, "features", {}).get("bot_ui"):
+    if not (getattr(conn, "features", None) or {}).get("bot_ui"):
         return
     if conn.client_is_speaking or conn.client_have_voice or getattr(conn, "just_woken_up", False):
         return
@@ -278,3 +278,5 @@ def start_reply_watcher(conn):
     task = getattr(conn, "bot_reply_task", None)
     if task is None or task.done():
         conn.bot_reply_task = asyncio.create_task(watch_replies(conn))
+    from core.handle import grokBotPhrases
+    asyncio.create_task(grokBotPhrases.warm(conn))

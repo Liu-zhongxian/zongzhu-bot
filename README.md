@@ -119,6 +119,14 @@ PY
 
 `start.sh` 在前台运行，关掉终端服务就停了，不要同时开多个。后端占用 8000（WebSocket）和 8003（HTTP/OTA）两个端口。
 
+想让后端开机自动在后台运行（进程退出会自动拉起，运行期间 Mac 不会因空闲睡眠）：
+
+```sh
+bash tools/autostart.sh enable    # 开启并马上启动；status 自检，restart 重启，disable 取消
+```
+
+仓库在"桌面""文稿""下载"里时，第一次会弹出"宗主后端"想访问文件夹的窗口，点"允许"。原理和注意事项见 [docs/REFERENCE-TASKS.md](docs/REFERENCE-TASKS.md) 第 4 节。
+
 ### 3. 刷固件
 
 用 USB-C 连上板子，先找串口并备份整片 Flash（出问题可以原样刷回）：
@@ -168,8 +176,8 @@ esptool --chip esp32s3 --port /dev/cu.usbmodemXXXX --baud 921600 write-flash @fl
 | --- | --- |
 | 板子一直连不上服务 | 电脑和板子是否在同一网段；`.config.yaml` 和板子 OTA 地址里的 IP 是否是电脑当前的 IP；macOS 防火墙是否放行了 Python 的 8000/8003 端口 |
 | 电脑 IP 变了 | `.config.yaml` 里的 WebSocket 地址要改。板子的 OTA 地址：用方式一（`.local` 名字）刷的不用改；手填 IP 的要在配网页改 |
-| 屏幕说"任务已提交"，但一直没有回复 | Bot 没把文件写到这台电脑。确认 Bot 有本机文件写入权限，写到的是 `reply_dir` 下的路径，内容里的 `request_id` 和请求里的一致 |
-| 屏幕说"Bot 服务拒绝了请求" | Webhook 返回了 4xx，检查 `url` 和 `token` |
+| 听到"好的，正在交给 Bot"、屏幕在等待，但一直没有回复 | Bot 没把文件写到这台电脑。确认 Bot 有本机文件写入权限，写到的是 `reply_dir` 下的路径，内容里的 `request_id` 和请求里的一致 |
+| 回执之后接着说"Bot 服务拒绝了请求" | Webhook 返回了 4xx，检查 `url` 和 `token` |
 | 屏幕说"Bot 回传目录不可用" | `reply_dir` 不是存在且可写的绝对路径 |
 | 唤醒词总是误触发或叫不醒 | 阈值在板级 `config.json` 的 `CONFIG_CUSTOM_WAKE_WORD_THRESHOLD`（当前 20，调低更灵敏、误触发也更多），改完重新构建 |
 | 倾斜方向和视线方向反了 | 在对应板子的 `config.h` 里调整 `QMI8658_SCREEN_X/Y` 后重新构建 |

@@ -109,10 +109,10 @@ class GrokBotTest(unittest.IsolatedAsyncioTestCase):
                                        "wakeup_words": []},
                                logger=mock.MagicMock(), headers={"device-id": "device-1"},
                                client_abort=False, device_wake_word="你好小雨")
-        async def fake_submit(command, *args):
+        def fake_submit(command, *args):
             fake_submit.command = command
             return "任务已提交"
-        with mock.patch("core.handle.grokBotHandle.submit_command", fake_submit), \
+        with mock.patch("core.handle.grokBotHandle.prepare_submission", fake_submit), \
                 _fake_handlers(mock.MagicMock()):
             self.assertTrue(await handle_grok_bot(conn, "你好小雨，整理新闻"))
         self.assertEqual(fake_submit.command, "整理新闻")
@@ -122,7 +122,7 @@ class GrokBotTest(unittest.IsolatedAsyncioTestCase):
                                        "wakeup_words": ["你好宗主"]},
                                logger=mock.MagicMock(), headers={"device-id": "device-1"})
         speak = mock.MagicMock()
-        with mock.patch("core.handle.grokBotHandle.submit_command") as submit, _fake_handlers(speak):
+        with mock.patch("core.handle.grokBotHandle.prepare_submission") as submit, _fake_handlers(speak):
             self.assertTrue(await handle_grok_bot(conn, "个你好，中猪公"))
             submit.assert_not_called()
             speak.assert_called_once_with(conn, "我在。")
@@ -132,10 +132,10 @@ class GrokBotTest(unittest.IsolatedAsyncioTestCase):
                                        "wakeup_words": ["你好宗主"]},
                                logger=mock.MagicMock(), headers={"device-id": "device-1"},
                                client_abort=False)
-        async def fake_submit(command, *args):
+        def fake_submit(command, *args):
             fake_submit.command = command
             return "任务已提交"
-        with mock.patch("core.handle.grokBotHandle.submit_command", fake_submit), \
+        with mock.patch("core.handle.grokBotHandle.prepare_submission", fake_submit), \
                 _fake_handlers(mock.MagicMock()):
             self.assertTrue(await handle_grok_bot(conn, "你好中主，帮我查天气"))
         self.assertEqual(fake_submit.command, "帮我查天气")

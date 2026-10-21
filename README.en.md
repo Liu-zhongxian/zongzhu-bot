@@ -119,6 +119,14 @@ PY
 
 `start.sh` runs in the foreground; closing the terminal stops the service. Don't run more than one. The backend uses port 8000 (WebSocket) and 8003 (HTTP/OTA).
 
+To start the backend in the background at login (restarted if it exits; the Mac does not idle-sleep while it runs):
+
+```sh
+bash tools/autostart.sh enable    # enable and start now; status, restart, disable
+```
+
+If the repository is in Desktop, Documents or Downloads, macOS asks once whether "宗主后端" (the launcher app) may access that folder; choose Allow. Details: [docs/REFERENCE-TASKS.md](docs/REFERENCE-TASKS.md), section 4.
+
 ### 3. Flash the firmware
 
 Connect the board over USB-C, find the serial port, and back up the whole flash first so you can restore it:
@@ -168,7 +176,7 @@ Say "你好宗主", wait for the response, then make a request. The screen first
 | --- | --- |
 | Board never connects | Board and computer on the same subnet; the IP in `.config.yaml` and in the board's OTA URL is the computer's current IP; macOS firewall allows Python on ports 8000/8003 |
 | Computer's IP changed | Update the WebSocket URL in `.config.yaml`. The board's OTA URL needs no change with option 1 (`.local` name); a typed IP must be changed on the setup page |
-| "Task submitted" but no reply ever arrives | The Bot didn't write the file on this computer. Make sure it has local file write access, writes under `reply_dir`, and the `request_id` in the file matches the request |
+| You hear "好的，正在交给 Bot" ("OK, handing it to the Bot") and the screen waits, but no reply ever arrives | The Bot didn't write the file on this computer. Make sure it has local file write access, writes under `reply_dir`, and the `request_id` in the file matches the request |
 | Screen says the Bot rejected the request | The webhook returned 4xx; check `url` and `token` |
 | Screen says the reply directory is unavailable | `reply_dir` isn't an existing, writable absolute path |
 | Wake word misfires or won't trigger | Threshold is `CONFIG_CUSTOM_WAKE_WORD_THRESHOLD` in the board's `config.json` (currently 20; lower is more sensitive but misfires more). Rebuild after changing it |

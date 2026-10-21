@@ -260,6 +260,12 @@ class GrokBotReplyTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.conn.websocket.send.await_count, 2)
 
 
+    async def test_hello_without_features_is_not_an_error(self):
+        # conn.features stays None when the board's hello has no features field.
+        self.conn.features = None
+        await update_wait_ui(self.conn, self.directory, 300)
+        self.conn.websocket.send.assert_not_awaited()
+
 class HttpReplyTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
