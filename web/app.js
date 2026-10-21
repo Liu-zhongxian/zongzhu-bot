@@ -20,7 +20,8 @@ const state = {
   boards: [], wakewords: [], board: null,
   chip: "", mac: "", flashSize: "",
   port: null, transport: null, loader: null,
-  pinyinTouched: false, flashing: false,
+  // flashed: the last flash finished; the page then disconnects, so no port is open.
+  pinyinTouched: false, flashing: false, flashed: false,
   step: 0, valid: [false, false, false, false, false],
 };
 
@@ -62,6 +63,7 @@ async function connect(filtered) {
         log(`读取 0x${offset.toString(16)} 失败：${error}`);
       }
     }
+    state.flashed = false;
     showChip(existing);
   } catch (error) {
     if (error?.name !== "NotFoundError") {
@@ -209,7 +211,11 @@ function update() {
   ];
   const ready = state.valid.every(Boolean);
   $("flash").disabled = !ready || !$("confirm-erase").checked || state.flashing;
-  $("flash-hint").textContent = state.loader || state.flashing ? "" : "板子没有连接，请回到第 1 步重新连接。";
+  const hint = $("flash-hint");
+  hint.textContent = state.loader || state.flashing ? ""
+    : state.flashed ? "已经刷好。要再刷一次，请回到第 1 步重新连接板子。"
+    : "板子没有连接，请回到第 1 步重新连接。";
+  hint.classList.toggle("error-text", !state.flashed);
   render();
 
   if (ready) {
@@ -278,6 +284,7 @@ async function flash() {
   const { wake, backend, wifi } = update();
   if (!state.loader || !state.board) return;
   state.flashing = true;
+  state.flashed = false;
   update();
   $("result").hidden = true;
   try {
@@ -319,8 +326,11 @@ async function flash() {
     const port = state.port;
     await disconnect();
     const boot = await watchBoot(port);
+    $("progress").hidden = true;
+    state.flashed = true;
     showResult({ uuid, backend, wifi, boot });
   } catch (error) {
+    $("progress").hidden = true;
     log(String(error?.stack || error));
     $("result").hidden = false;
     $("result").className = "notice error";
