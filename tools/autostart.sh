@@ -134,7 +134,7 @@ wait_ready() {
 }
 
 enable() {
-  [ -x "$ROOT/.venv/bin/python" ] || die "没有找到 $ROOT/.venv，请先按 README 安装后端。"
+  [ -x "$ROOT/.venv/bin/python" ] || die "没有找到 $ROOT/.venv，请先按 docs/GUIDE.md「手动安装」安装后端。"
   [ -f "$CONFIG" ] || die "没有找到后端配置 ${CONFIG}。"
   if ! loaded && { listening "$(http_port)" || listening "$(ws_port)"; }; then
     die "端口 $(ws_port)/$(http_port) 已被占用，多半是前台运行的 start.sh。先在那个终端按 Ctrl-C 停掉，再运行 enable。"

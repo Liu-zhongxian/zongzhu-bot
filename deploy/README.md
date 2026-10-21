@@ -19,14 +19,15 @@ mkdir -p /opt/zongzhu/app /opt/zongzhu/private/bot-replies
 # 把仓库里的 xiaozhi-esp32-server/main/xiaozhi-server/ 复制到 /opt/zongzhu/app/
 cd /opt/zongzhu && python3.10 -m venv venv
 venv/bin/pip install torch==2.2.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cpu
-grep -vE "^(torch|torchaudio)==" /path/to/requirements-macos.txt > /tmp/req.txt && venv/bin/pip install -r /tmp/req.txt
+venv/bin/pip install -r /path/to/requirements-macos.txt
+grep -vE "^(torch|torchaudio)==" /path/to/requirements-macos-funasr.txt > /tmp/req.txt && venv/bin/pip install -r /tmp/req.txt
 cd app && ../venv/bin/python -c "from modelscope import snapshot_download; snapshot_download('iic/SenseVoiceSmall', local_dir='models/SenseVoiceSmall')"
 chown -R zongzhu:zongzhu /opt/zongzhu && chmod 700 /opt/zongzhu/private
 systemctl enable --now zongzhu && systemctl reload caddy
 ufw allow 80/tcp && ufw allow 443/tcp
 ```
 
-PyTorch 用 CPU 版，避免下载约 2GB 的 CUDA 依赖。
+PyTorch 用 CPU 版，避免下载约 2GB 的 CUDA 依赖。服务器上用的是 FunASR（`server.config.yaml` 里 `ASR: FunASR`），所以要另装 `requirements-macos-funasr.txt`；本机默认的 X-ASR 还没在服务器上验证过。
 
 `/opt/zongzhu/private/grok-bot-webhook.json` 按 `examples/grok-bot-webhook.example.json` 填写，其中：
 

@@ -136,7 +136,7 @@ Bot 云端虚拟机 ──HTTPS POST /bot/reply（一次性令牌）──▶ �
 ### 阶段 7：文档
 
 - [ ] README 中英文版更新：使用前提、快速开始、架构图
-- [ ] `docs/VALIDATION.md` 记录本轮实测
+- [ ] `docs/records/VALIDATION.md` 记录本轮实测
 - [ ] 本文件更新为完成状态
 
 ## 8. 部署记录（2026-10-19）

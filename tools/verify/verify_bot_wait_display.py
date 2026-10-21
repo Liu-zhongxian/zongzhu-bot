@@ -11,7 +11,7 @@ import httpx
 import opuslib_next
 import websockets
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[2]  # 仓库根目录
 DEVICE = "02:00:00:00:00:07"
 
 

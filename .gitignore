@@ -12,5 +12,7 @@ logs/
 **/data/.config.yaml
 **/.secrets.yaml
 **/models/SenseVoiceSmall/model.pt
+**/models/sherpa-onnx-*/
+**/xiaozhi-server/tmp/
 build-output/
 _site/

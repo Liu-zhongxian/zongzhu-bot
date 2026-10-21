@@ -30,7 +30,7 @@ warn() { printf '\033[1;33m注意：%s\033[0m\n' "$*"; }
 die()  { printf '\033[1;31m出错：%s\033[0m\n' "$*" >&2; exit 1; }
 ask()  { local reply; read -r -p "$1" reply </dev/tty || true; printf '%s' "$reply"; }
 
-[ "$(uname -s)" = Darwin ] || die "这个脚本只支持 macOS。其他系统请按仓库 README「后端」一节手动安装。"
+[ "$(uname -s)" = Darwin ] || die "这个脚本只支持 macOS。其他系统请按仓库 docs/GUIDE.md「手动安装」的「2. 后端」一节安装。"
 
 say "检查 Homebrew"
 if ! command -v brew >/dev/null 2>&1; then

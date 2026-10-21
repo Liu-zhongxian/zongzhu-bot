@@ -78,7 +78,7 @@
 
 - [x] 固件包放到 `firmware/zongzhu-szp-2.5.2.9/`（发布包，OTA 默认为小智官方地址，不含本机名字）
 - [x] README（中英文）增加立创板说明、`tools/build_firmware.py` 用法、只配 Wi-Fi 的流程（提交 `040aa5c`）
-- [ ] `docs/VALIDATION.md` 补立创板实测（阶段 4 完成后）
+- [ ] `docs/records/VALIDATION.md` 补立创板实测（阶段 4 完成后）
 - [ ] 本文件更新为完成状态
 
 ## 6. 回退

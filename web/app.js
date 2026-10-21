@@ -462,7 +462,7 @@ function choice(name, value, title, detail, { disabled = false, checked = false,
 
 async function init() {
   $("link-repo").href = REPO;
-  for (const a of document.querySelectorAll(".link-backend")) a.href = `${REPO}#2-后端`;
+  for (const a of document.querySelectorAll(".link-backend")) a.href = `${REPO}/blob/main/docs/GUIDE.md#2-后端`;
   $("link-deploy").href = `${REPO}/blob/main/deploy/README.md`;
   // The script is served next to this page, so the command follows wherever the page is hosted.
   const script = new URL("install-mac.sh", location.href).href;
