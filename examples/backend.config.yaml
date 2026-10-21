@@ -33,4 +33,4 @@ end_prompt:
   enable: false
 VAD:
   SileroVAD:
-    min_silence_duration_ms: 700
+    min_silence_duration_ms: 1000  # 静音超过这么久算说完；700 时句中停顿会把一句话切成两次提交（2026-10-21）
