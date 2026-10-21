@@ -107,15 +107,18 @@ chmod 600 private/grok-bot-webhook.json xiaozhi-esp32-server/main/xiaozhi-server
 - `private/grok-bot-webhook.json`：填 Bot Webhook 的 `url` 和 `token`；`reply_dir` 改成 `仓库绝对路径/private/bot-replies`（可以用 `echo "$PWD/private/bot-replies"` 得到）。
 - `xiaozhi-esp32-server/main/xiaozhi-server/data/.config.yaml`：把 `192.168.1.100` 全部换成电脑的局域网 IP（macOS 上用 `ipconfig getifaddr en0` 查）。保持 `LLM: BotOnly`、`Intent: nointent`，不需要模型 API Key。
 
-下载语音识别模型并启动：
+下载语音识别模型 X-ASR（约 174MB；国内下载慢可把 `https://huggingface.co` 换成 `https://hf-mirror.com`）并启动：
 
 ```sh
-.venv/bin/python - <<'PY'
-from modelscope import snapshot_download
-snapshot_download('iic/SenseVoiceSmall', local_dir='xiaozhi-esp32-server/main/xiaozhi-server/models/SenseVoiceSmall')
-PY
+M=sherpa-onnx-x-asr-zipformer-transducer-zh-en-punct-int8-2026-06-03
+mkdir -p xiaozhi-esp32-server/main/xiaozhi-server/models/$M
+for f in encoder-epoch-99-avg-1.int8.onnx decoder-epoch-99-avg-1.onnx joiner-epoch-99-avg-1.int8.onnx tokens.txt bpe.model; do
+  curl -fL -o xiaozhi-esp32-server/main/xiaozhi-server/models/$M/$f https://huggingface.co/csukuangfj2/$M/resolve/main/$f
+done
 ./start.sh
 ```
+
+语音识别默认用 X-ASR，不需要 torch；热词和识别后纠错的写法见 `examples/backend.config.yaml`。想换回 FunASR（SenseVoiceSmall，约 900MB）：再装 `requirements-macos-funasr.txt`，按上游说明下载模型，把配置里的 `ASR: SherpaXASR` 改成 `ASR: FunASR`。两者对比见 [docs/REFERENCE-TASKS.md](docs/REFERENCE-TASKS.md) 第 7 节。
 
 `start.sh` 在前台运行，关掉终端服务就停了，不要同时开多个。后端占用 8000（WebSocket）和 8003（HTTP/OTA）两个端口。
 

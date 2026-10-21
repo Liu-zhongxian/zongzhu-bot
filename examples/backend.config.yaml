@@ -11,14 +11,15 @@ server:
     allowed_devices: []
 selected_module:
   VAD: SileroVAD
-  ASR: FunASR
+  ASR: SherpaXASR
   LLM: BotOnly
   TTS: EdgeTTS
   Memory: nomem
   Intent: nointent
-ASR:
-  FunASR:
-    language: zh
+# 语音识别用 X-ASR（安装脚本会下载模型，约 174MB）。认错的词可以在这里补：
+# asr_hotwords: [宗主, Grok, GitHub]        # 写了就整个替换默认热词
+# asr_corrections: {宗主: [中主, 钟主]}      # 正确写法: [认错的写法]，写了就整个替换默认纠错表
+# 默认值见 core/utils/asr_text.py
 LLM:
   BotOnly:
     type: bot_only

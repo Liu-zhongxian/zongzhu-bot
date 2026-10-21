@@ -10,7 +10,7 @@
 #   3. 建 Python 虚拟环境并安装依赖
 #   4. 询问 Bot Webhook 地址和 token，写进 private/grok-bot-webhook.json
 #   5. 按本机局域网 IP 生成后端配置
-#   6. 下载语音识别模型 SenseVoiceSmall（约 900MB）
+#   6. 下载语音识别模型 X-ASR（sherpa-onnx int8 版，约 174MB；Hugging Face 下不动时换 hf-mirror.com）
 #   7. 显示网页第 4 步要填的电脑地址，让用户选择启动方式：开机自启（tools/autostart.sh）或自己手动启动
 #
 # 重复运行就是更新：代码会换成最新版，配置、模型和 Bot 设置保留。
@@ -22,6 +22,8 @@ DIR="${ZONGZHU_DIR:-$HOME/zongzhu}"
 SERVER_DIR="xiaozhi-esp32-server/main/xiaozhi-server"
 CONFIG="$SERVER_DIR/data/.config.yaml"
 WEBHOOK="private/grok-bot-webhook.json"
+# 语音识别模型，目录名要和 config.yaml 里 SherpaXASR 的 model_dir 一致
+XASR="sherpa-onnx-x-asr-zipformer-transducer-zh-en-punct-int8-2026-06-03"
 
 say()  { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m注意：%s\033[0m\n' "$*"; }
@@ -93,7 +95,7 @@ tar -xzf "$TMP/src.tar.gz" -C "$TMP/src" --strip-components 1
 mkdir -p "$DIR"
 # 不带 --delete：本机的配置、模型、日志都保留。
 rsync -a "$TMP/src/xiaozhi-esp32-server" "$DIR/"
-for f in start.sh requirements-macos.txt LICENSE README.md; do cp "$TMP/src/$f" "$DIR/"; done
+for f in start.sh requirements-macos.txt requirements-macos-funasr.txt LICENSE README.md; do cp "$TMP/src/$f" "$DIR/"; done
 rsync -a "$TMP/src/examples" "$DIR/"
 mkdir -p "$DIR/tools"
 cp "$TMP/src/tools/autostart.sh" "$TMP/src/tools/launcher.c" "$DIR/tools/"
@@ -148,8 +150,38 @@ else
   chmod 600 "$CONFIG"
 fi
 
-say "下载语音识别模型（约 900MB，已下载的会跳过）"
-(cd "$SERVER_DIR" && "$DIR/.venv/bin/python" -c "from modelscope import snapshot_download; snapshot_download('iic/SenseVoiceSmall', local_dir='models/SenseVoiceSmall')")
+say "下载语音识别模型 X-ASR（约 174MB，已下载的会跳过）"
+MODEL_DIR="$SERVER_DIR/models/$XASR"
+mkdir -p "$MODEL_DIR"
+# 文件名 和 最小字节数：小于它说明没下完（或下到的是错误页），重新下载
+for item in encoder-epoch-99-avg-1.int8.onnx:150000000 decoder-epoch-99-avg-1.onnx:10000000 \
+            joiner-epoch-99-avg-1.int8.onnx:2000000 tokens.txt:50000 bpe.model:100000; do
+  name=${item%%:*}
+  min=${item##*:}
+  dest="$MODEL_DIR/$name"
+  if [ -f "$dest" ] && [ "$(stat -f %z "$dest")" -ge "$min" ]; then
+    echo "${name}：已有，跳过"
+    continue
+  fi
+  ok=""
+  for host in "${HF_ENDPOINT:-https://huggingface.co}" https://hf-mirror.com; do
+    echo "${name} ← ${host}"
+    if curl -fL --retry 2 --connect-timeout 15 --progress-bar "$host/csukuangfj2/$XASR/resolve/main/$name" -o "$dest.part" \
+        && [ "$(stat -f %z "$dest.part")" -ge "$min" ]; then
+      mv "$dest.part" "$dest"
+      ok=1
+      break
+    fi
+    rm -f "$dest.part"
+  done
+  [ -n "$ok" ] || die "语音识别模型 ${name} 下载失败。检查网络后重新运行本脚本（已下载的文件会跳过）。"
+done
+
+if grep -qE '^[[:space:]]+ASR:[[:space:]]*FunASR' "$CONFIG"; then
+  warn "你的后端配置仍在用 FunASR。新版默认用 X-ASR（更准、更快、内存约 0.5GB），模型已经下好。"
+  echo "  想换：把 ${DIR}/${CONFIG} 里 selected_module 下的 ASR: FunASR 改成 ASR: SherpaXASR，再重启后端。"
+  echo "  继续用 FunASR 也可以：依赖已在 .venv 里；新建的 .venv 需要再装 requirements-macos-funasr.txt。"
+fi
 
 HOSTNAME_LOCAL="$(scutil --get LocalHostName 2>/dev/null || true)"
 printf '\n\033[1;32m安装完成。\033[0m\n\n'

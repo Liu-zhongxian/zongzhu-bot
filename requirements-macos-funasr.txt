@@ -1,0 +1,5 @@
+# 可选：语音识别换回 FunASR（SenseVoiceSmall，模型约 900MB）时再装。
+# .venv/bin/python -m pip install -r requirements-macos-funasr.txt
+torch==2.2.2
+torchaudio==2.2.2
+funasr==1.2.7

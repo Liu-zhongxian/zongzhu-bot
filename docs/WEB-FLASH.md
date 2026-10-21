@@ -72,15 +72,17 @@
 
 1. 检查 Python 3.10、FFmpeg、Opus，已有能用的就跳过，只用 Homebrew 装缺的；装的时候关掉 Homebrew 自动更新，不升级已装的软件（没有 Homebrew 就提示去 brew.sh 安装后重跑）。已装 `ffmpeg-full` 也算有（它是 keg-only，`start.sh` 会把它加进 PATH）；`ffmpeg-full` 装了但运行不了时，提示先 `brew upgrade ffmpeg-full`，不在旁边另装 `ffmpeg`。原因：2026-10-21 实测，脚本在已有 `ffmpeg-full` 的电脑上照装 `ffmpeg`，顺带把 `x265` 升到 4.3，原来的 `ffmpeg-full` 8.1.1 找不到 `libx265.216.dylib`，后端启动失败
 2. 从 GitHub 下载 `main` 分支代码包，只取后端需要的部分放到 `~/zongzhu`（`ZONGZHU_DIR`、`ZONGZHU_REF` 可改）。**所以后端改动要先推到 main，用户装到的才是新版**
-3. 建 `.venv` 并安装 `requirements-macos.txt`
+3. 建 `.venv` 并安装 `requirements-macos.txt`（2026-10-22 起不含 torch、FunASR）
 4. 在终端询问 Bot Webhook 地址和 token（token 输入不显示），写入 `private/grok-bot-webhook.json`（权限 600）；直接回车就保留模板，以后再改
 5. 按默认网卡的局域网 IP 生成 `.config.yaml`
-6. 下载 SenseVoiceSmall 模型
+6. 下载 X-ASR 语音识别模型（5 个文件，约 174MB）：先从 Hugging Face（`HF_ENDPOINT` 可改）下，失败换 hf-mirror.com；按最小字节数判断是否下完，已下完的跳过，没下完的重下。已有配置仍选 FunASR 时只提示怎么换，不改用户的配置
 7. 显示 `电脑名.local` 和 IP 让用户填回网页，再让用户选择启动方式：开机自启（`tools/autostart.sh enable`）或手动启动（询问是否立即前台运行 `start.sh`）。两者没有默认项；已开着自启时更新后直接重启
 
 重复运行即更新：代码覆盖，已有的 Webhook 设置、后端配置、模型和 `.venv` 保留。
 
 已测（2026-10-20，沙箱目录，Homebrew、pip、模型下载用替身）：不填 Bot 地址、填 Bot 地址、重复运行保留配置三条路径都正确，生成的两个配置文件权限都是 600。**还没在一台全新的 Mac 上完整跑过。**
+
+2026-10-22 改为 X-ASR 后另测：全新 Python 3.10 环境用 pip 装 `requirements-macos.txt`（环境 867MB，原来 1.3GB，没有 torch、funasr），后端 82 项测试通过；用示例配置在另一组端口完整启动，OTA 返回 200，VAD、X-ASR 初始化成功，`bpe.vocab` 由 sentencepiece 现场导出。模型下载一段单独抽出来，在 macOS 自带 bash 3.2 下实测从零下载、重复运行跳过、文件不完整重下、主站不通换镜像四种情况，下到的文件与本机模型哈希一致。测试中发现并修正：`"$name：…"` 在 bash 3.2 下会把全角冒号当成变量名的一部分（`unbound variable`），中文前的变量一律写成 `${name}`。
 
 已知限制：Python 3.10 在 Homebrew 已标记弃用，2027-10-01 停用，之前需要升级后端的 Python 版本；`start.sh` 写死了 `/opt/homebrew`，Intel Mac 未测试。
 

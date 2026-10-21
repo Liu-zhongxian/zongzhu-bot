@@ -22,7 +22,7 @@
 | 2b | 本机 OTA 不可用时，固件不再回退旧官方 MQTT | 本项目任务记录第 17 节 | 中（要刷固件） | 未开始 |
 | 3 | 用 `gbot` 命令行读 Bot 对话，流式回传第一句（替换"Bot 写回复文件"） | groki-bot `gbot_http_proxy.py` | 中 | 未开始，需先确认账号能用 `grok-bot-cli` |
 | 4 | 闲聊用快速模型答，耗时任务才交给 Bot | groki-bot 分流规则、hub-server 呼名路由 | 中 | 未开始，需用户定规则 |
-| 5 | ASR 热词 + 识别后纠错表；评估 X-ASR 降内存；精简安装依赖；句中停顿被切成两句 | hub-server 设计文档第 3、10 节 | 中 | **本机已换成 X-ASR，加了热词和纠错（2026-10-22，见第 7 节）**；停顿已处理（700ms → 上游默认 1000ms）；安装脚本仍装 FunASR，未改；实机说话已通过 |
+| 5 | ASR 热词 + 识别后纠错表；评估 X-ASR 降内存；精简安装依赖；句中停顿被切成两句 | hub-server 设计文档第 3、10 节 | 中 | **本机已换成 X-ASR，加了热词和纠错（2026-10-22，见第 7 节）**；停顿已处理（700ms → 上游默认 1000ms）；安装脚本已改装 X-ASR、去掉 torch 和 FunASR；实机说话已通过 |
 | 6 | 整理"时间设计一览"（300 秒等待、保活、补送各管什么） | hub-server 设计文档第 6 节 | 小（文档） | 未开始 |
 | 7 | 固件上报重启原因、堆内存、运行时长 | esp32-iphone-agent `status` 心跳 | 中（要刷固件） | 未开始 |
 | 8 | 主机渲染眼睛预览；配网页二维码；升级保留 NVS 的检查脚本；屏幕验证码绑定设备 | anan-iphone-use `tools/` 与配对流程 | 各自中等 | 未开始 |
@@ -120,7 +120,7 @@ cd xiaozhi-esp32-server/main/xiaozhi-server
 
 结果文件（本机，不上传）：`logs/asr-compare/funasr-baseline.json`、`xasr-nohot.json`、`xasr-hot.json`、`funasr-history-20261015-1021.tsv`。
 
-**还没做。** 用自己的声音在板子上实际说话验收；15–20 句真实录音复测（放进测试目录，照 `manifest.tsv` 格式写正确文字，重跑 `benchmark.py`）；安装脚本改装 X-ASR 并去掉 torch、FunASR（`web/install-mac.sh` 仍下载 SenseVoiceSmall 约 900MB）。
+**还没做。** 用自己的声音在板子上实际说话验收；15–20 句真实录音复测（放进测试目录，照 `manifest.tsv` 格式写正确文字，重跑 `benchmark.py`）；~~安装脚本改装 X-ASR 并去掉 torch、FunASR~~（2026-10-22 已做，见 docs/WEB-FLASH.md 第 6 节）。
 
 **回退。** `data/.config.yaml` 里把 `selected_module.ASR` 改回 `FunASR` 并重启后端；纠错对 FunASR 同样生效，不想要时写 `asr_corrections: {}`。
 
