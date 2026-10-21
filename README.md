@@ -44,4 +44,4 @@
 
 ## 来源与许可
 
-固件基于 [78/xiaozhi-esp32](https://github.com/78/xiaozhi-esp32)，后端基于 [xinnan-tech/xiaozhi-esp32-server](https://github.com/xinnan-tech/xiaozhi-esp32-server)，都是 MIT 许可证；上游基线提交记录在 `UPSTREAM.json`。真实密钥、Wi-Fi 配置、Flash 备份、模型权重、运行日志和对话内容都只留在本机，不在这个仓库里。
+固件基于 [78/xiaozhi-esp32](https://github.com/78/xiaozhi-esp32)，后端基于 [xinnan-tech/xiaozhi-esp32-server](https://github.com/xinnan-tech/xiaozhi-esp32-server)，都是 MIT 许可证；上游基线提交记录在 `UPSTREAM.json`。
