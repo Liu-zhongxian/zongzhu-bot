@@ -30,6 +30,10 @@ from core.providers.tts.dto.dto import (
 TAG = __name__
 logger = setup_logging()
 
+# 非流式 TTS 一句一句合成：EdgeTTS 每句约 2 秒，短句播完下一句还没好就会停顿（2026-10-22 实测）。
+# 处理当前一句时，后面已在队列里的几句先在后台合成。
+PREFETCH_AHEAD = 2
+
 
 class TTSProviderBase(ABC):
     def __init__(self, config, delete_audio_file):
@@ -109,6 +113,8 @@ class TTSProviderBase(ABC):
         self.tts_stop_request = False
         self.processed_chars = 0
         self.is_first_sentence = True
+        self._prefetched = {}
+        self._prefetch_pool = concurrent.futures.ThreadPoolExecutor(max_workers=PREFETCH_AHEAD)
 
     def generate_filename(self, extension=".wav"):
         return os.path.join(
@@ -123,19 +129,29 @@ class TTSProviderBase(ABC):
     def handle_audio_file(self, file_audio: bytes, text):
         self.before_stop_play_files.append((file_audio, text))
 
-    def to_tts_stream(self, text, opus_handler: Callable[[bytes], None] = None) -> None:
-        # 保留原始文本用于显示/上报
-        original_text = text
+    def _speech_text(self, text):
         text = MarkdownCleaner.clean_markdown(text)
         # 使用正则一次性替换，避免重复遍历和部分匹配问题
         if self._correct_words_pattern:
             text = self._correct_words_pattern.sub(lambda m: self.correct_words[m.group(0)], text)
+        return text
+
+    def to_tts_stream(self, text, opus_handler: Callable[[bytes], None] = None) -> None:
+        # 保留原始文本用于显示/上报
+        original_text = text
+        text = self._speech_text(text)
         max_repeat_time = 5
         if self.delete_audio_file:
             # 需要删除文件的直接转为音频数据
+            prefetched = self._prefetched.pop(original_text, None)
             while max_repeat_time > 0:
                 try:
-                    audio_bytes = asyncio.run(self.text_to_speak(text, None))
+                    if prefetched is not None:
+                        # 后台合成失败或超时就按失败计一次，下一轮现合成
+                        future, prefetched = prefetched, None
+                        audio_bytes = future.result(timeout=self.tts_timeout)
+                    else:
+                        audio_bytes = asyncio.run(self.text_to_speak(text, None))
                     if audio_bytes:
                         # 使用原始文本用于显示/上报
                         self.tts_audio_queue.put((SentenceType.FIRST, None, original_text, getattr(self, 'current_sentence_id', None)))
@@ -385,10 +401,12 @@ class TTSProviderBase(ABC):
                     self.tts_text_buff = []
                     self.is_first_sentence = True
                     self.tts_audio_first_sentence = True
+                    self._clear_prefetched()
                 elif ContentType.TEXT == message.content_type:
                     self.tts_text_buff.append(message.content_detail)
                     segment_text = self._get_segment_text()
                     if segment_text:
+                        self._prefetch_upcoming(message.sentence_id)
                         self.to_tts_stream(segment_text, opus_handler=self.handle_opus)
                 elif ContentType.FILE == message.content_type:
                     self._process_remaining_text_stream(opus_handler=self.handle_opus)
@@ -480,20 +498,19 @@ class TTSProviderBase(ABC):
     async def close(self):
         """资源清理方法"""
         self._sentence_text_map.clear()
+        self._clear_prefetched()
+        self._prefetch_pool.shutdown(wait=False, cancel_futures=True)
         if hasattr(self, "ws") and self.ws:
             await self.ws.close()
 
-    def _get_segment_text(self):
-        # 合并当前全部文本并处理未分割部分
-        full_text = "".join(self.tts_text_buff)
-        current_text = full_text[self.processed_chars :]  # 从未处理的位置开始
+    def _next_segment(self, full_text, processed, is_first):
+        """从 processed 处切出下一句。返回 (句子或 None, 新的 processed, 新的 is_first)。"""
+        current_text = full_text[processed:]
         last_punct_pos = -1
 
         # 根据是否是第一句话选择不同的标点符号集合
         punctuations_to_use = (
-            self.first_sentence_punctuations
-            if self.is_first_sentence
-            else self.punctuations
+            self.first_sentence_punctuations if is_first else self.punctuations
         )
 
         for punct in punctuations_to_use:
@@ -503,24 +520,65 @@ class TTSProviderBase(ABC):
             ):
                 last_punct_pos = pos
 
-        if last_punct_pos != -1:
-            segment_text_raw = current_text[: last_punct_pos + 1]
-            segment_text = textUtils.get_string_no_punctuation_or_emoji(
-                segment_text_raw
-            )
-            self.processed_chars += len(segment_text_raw)  # 更新已处理字符位置
+        if last_punct_pos == -1:
+            return None, processed, is_first
+        segment_text_raw = current_text[: last_punct_pos + 1]
+        segment_text = textUtils.get_string_no_punctuation_or_emoji(segment_text_raw)
+        # 第一句在找到第一个逗号后结束
+        return segment_text, processed + len(segment_text_raw), False
 
-            # 如果是第一句话，在找到第一个逗号后，将标志设置为False
-            if self.is_first_sentence:
-                self.is_first_sentence = False
-
+    def _get_segment_text(self):
+        # 合并当前全部文本并处理未分割部分
+        full_text = "".join(self.tts_text_buff)
+        segment_text, self.processed_chars, self.is_first_sentence = self._next_segment(
+            full_text, self.processed_chars, self.is_first_sentence
+        )
+        if segment_text is not None:
             return segment_text
-        elif self.tts_stop_request and current_text:
-            segment_text = current_text
+        current_text = full_text[self.processed_chars :]
+        if self.tts_stop_request and current_text:
             self.is_first_sentence = True  # 重置标志
-            return segment_text
-        else:
-            return None
+            return current_text
+        return None
+
+    def _upcoming_segments(self, sentence_id, limit):
+        """按 _get_segment_text 的规则，推算队列里同一段回复接下来会合成的几句。"""
+        with self.tts_text_queue.mutex:
+            upcoming = list(self.tts_text_queue.queue)
+        full_text = "".join(self.tts_text_buff)
+        processed, is_first = self.processed_chars, self.is_first_sentence
+        segments = []
+        for message in upcoming:
+            if message.sentence_id != sentence_id or message.content_type == ContentType.FILE:
+                break
+            if message.content_type == ContentType.TEXT and message.content_detail:
+                full_text += message.content_detail
+                segment, processed, is_first = self._next_segment(full_text, processed, is_first)
+                if segment:
+                    segments.append(segment)
+            if message.sentence_type == SentenceType.LAST:
+                rest = textUtils.get_string_no_punctuation_or_emoji(full_text[processed:])
+                if rest:
+                    segments.append(rest)
+                break
+            if len(segments) >= limit:
+                break
+        return segments[:limit]
+
+    def _synthesize(self, text):
+        return asyncio.run(self.text_to_speak(self._speech_text(text), None))
+
+    def _prefetch_upcoming(self, sentence_id):
+        if not self.delete_audio_file:
+            return
+        for segment in self._upcoming_segments(sentence_id, PREFETCH_AHEAD):
+            if segment not in self._prefetched:
+                self._prefetched[segment] = self._prefetch_pool.submit(self._synthesize, segment)
+
+    def _clear_prefetched(self):
+        for future in self._prefetched.values():
+            future.cancel()
+        self._prefetched.clear()
 
     def _process_audio_file_stream(
         self, tts_file, callback: Callable[[Any], Any]

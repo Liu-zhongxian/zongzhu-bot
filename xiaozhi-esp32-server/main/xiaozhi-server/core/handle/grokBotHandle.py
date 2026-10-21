@@ -234,6 +234,12 @@ async def handle_grok_bot(conn, text):
         return True
     # The acknowledgement plays while the Webhook is in flight, so it does not claim success.
     posting = asyncio.create_task(post_submission(submission))
+    if submission.pending and (getattr(conn, "features", None) or {}).get("bot_ui"):
+        # Stop ordinary input now: speech that continues past the submission would otherwise
+        # become separate tasks before the waiting screen appears (three in a row, 2026-10-22).
+        # Wake or button resumes input; a rejection or a delivered reply clears it as before.
+        conn.bot_ui_waiting = True
+        conn.reset_audio_states()
     acked = await phrases.speak(conn, phrases.ACK)
     status, reply = await posting
     if conn.client_abort:

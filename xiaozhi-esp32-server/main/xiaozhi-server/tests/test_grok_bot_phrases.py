@@ -28,6 +28,7 @@ def _conn(config_file, tts=None):
         headers={"device-id": "device-1"}, logger=mock.MagicMock(), tts=tts, sample_rate=24000,
         client_abort=False, session_id="session-1", features={"bot_ui": True},
         websocket=SimpleNamespace(send=mock.AsyncMock()), dialogue=mock.MagicMock(),
+        reset_audio_states=mock.MagicMock(),
     )
 
 
@@ -102,6 +103,9 @@ class PhraseTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sorted(order), ["ack", "post"])
         self.speak_txt.assert_not_called()
         conn.websocket.send.assert_not_awaited()
+        # 提交后马上停止普通收音，接着说的话不会再各自提交
+        self.assertTrue(conn.bot_ui_waiting)
+        conn.reset_audio_states.assert_called_once()
 
     async def test_rejected_after_ack_leaves_wait_screen_and_explains(self):
         conn, _ = await self._run("rejected")
@@ -109,6 +113,7 @@ class PhraseTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((message["type"], message["state"], message["text"]), ("bot_wait", "reply", "结果：rejected"))
         self.audio.send_tts_message.assert_awaited_with(conn, "start")
         self.speak_txt.assert_called_once_with(conn, "结果：rejected")
+        self.assertFalse(conn.bot_ui_waiting)
 
     async def test_unknown_after_ack_keeps_waiting(self):
         conn, _ = await self._run("unknown")
