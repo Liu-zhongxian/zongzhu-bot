@@ -1,4 +1,5 @@
 import os
+import re
 import io
 import wave
 import uuid
@@ -17,6 +18,7 @@ from core.providers.asr.dto.dto import InterfaceType
 from core.handle.receiveAudioHandle import startToChat
 from core.handle.reportHandle import enqueue_asr_report
 from core.utils.util import remove_punctuation_and_length
+from core.utils.asr_text import fix_asr_result
 from core.handle.receiveAudioHandle import handleAudioMessage
 from typing import Optional, Tuple, List, NamedTuple, TYPE_CHECKING
 
@@ -118,6 +120,13 @@ class ASRProviderBase(ABC):
                 raw_text = ""
             else:
                 raw_text, _ = asr_result
+            asr_time = time.monotonic() - total_start_time
+            before = raw_text.get("content") if isinstance(raw_text, dict) else raw_text
+            raw_text = fix_asr_result(raw_text, conn.config)
+            after = raw_text.get("content") if isinstance(raw_text, dict) else raw_text
+            if re.sub(r"\s", "", before or "") != re.sub(r"\s", "", after or ""):
+                logger.bind(tag=TAG).info(f"识别纠错: {before} -> {after}")
+            logger.bind(tag=TAG).info(f"识别耗时: {asr_time:.3f}s")
 
             if isinstance(voiceprint_result, Exception):
                 logger.bind(tag=TAG).error(f"声纹识别失败: {voiceprint_result}")

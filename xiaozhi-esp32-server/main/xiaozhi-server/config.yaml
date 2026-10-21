@@ -392,6 +392,15 @@ ASR:
     model_dir: models/sherpa-onnx-paraformer-zh-small-2024-03-09
     output_dir: tmp/
     model_type: paraformer
+  SherpaXASR:
+    # X-ASR 中英混合模型（sherpa-onnx int8 版，约 175MB），只依赖 onnxruntime，需要 sherpa-onnx 1.13 以上
+    # 模型：https://huggingface.co/csukuangfj2/sherpa-onnx-x-asr-zipformer-transducer-zh-en-punct-int8-2026-06-03
+    # 热词和纠错表写在配置顶层的 asr_hotwords、asr_corrections，默认值见 core/utils/asr_text.py
+    type: sherpa_onnx_local
+    model_dir: models/sherpa-onnx-x-asr-zipformer-transducer-zh-en-punct-int8-2026-06-03
+    output_dir: tmp/
+    model_type: transducer
+    num_threads: 2
   DoubaoASR:
     # 可以在这里申请相关Key等信息
     # https://console.volcengine.com/speech/app

@@ -174,8 +174,8 @@ scipy==1.15.3
 sentencepiece==0.2.2
 setuptools==84.0.0
 shapely==2.1.2
-sherpa-onnx==1.12.29
-sherpa-onnx-core==1.12.29
+sherpa-onnx==1.13.8
+sherpa-onnx-core==1.13.8
 silero-vad==6.2.1
 six==1.17.0
 slowapi==0.1.10

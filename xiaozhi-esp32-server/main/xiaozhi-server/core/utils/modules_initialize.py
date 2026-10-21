@@ -1,4 +1,5 @@
 from typing import Dict, Any
+from core.utils.asr_text import hotwords_of
 from config.logger import setup_logging
 from core.utils import tts, llm, intent, memory, vad, asr
 
@@ -122,9 +123,12 @@ def initialize_asr(config):
         if "type" not in config["ASR"][select_asr_module]
         else config["ASR"][select_asr_module]["type"]
     )
+    asr_config = config["ASR"][select_asr_module]
+    if asr_config.get("model_type") == "transducer" and "hotwords" not in asr_config:
+        asr_config = dict(asr_config, hotwords=hotwords_of(config))
     new_asr = asr.create_instance(
         asr_type,
-        config["ASR"][select_asr_module],
+        asr_config,
         str(config.get("delete_audio", True)).lower() in ("true", "1", "yes"),
     )
     logger.bind(tag=TAG).info("ASR模块初始化完成")
