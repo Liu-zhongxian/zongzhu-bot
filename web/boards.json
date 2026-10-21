@@ -19,7 +19,7 @@
   },
   {
     "id": "stopwatch",
-    "name": "M5Stack StopWatch（尚未实机验证）",
+    "name": "M5Stack StopWatch",
     "look": "1.75 寸圆形屏，方形机身，侧面有黄色 A 键和蓝色 B 键",
     "chip": "ESP32-S3",
     "flashSize": "16MB",

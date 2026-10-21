@@ -18,7 +18,7 @@ const BOOT_LOG_SECONDS = 45;
 const $ = (id) => document.getElementById(id);
 const state = {
   boards: [], wakewords: [], board: null,
-  chip: "", mac: "", flashSize: "",
+  chip: "", mac: "", flashSize: "", apps: [],
   port: null, transport: null, loader: null,
   // flashed: the last flash finished; the page then disconnects, so no port is open.
   pinyinTouched: false, flashing: false, flashed: false,
@@ -56,9 +56,12 @@ async function connect(filtered) {
     state.mac = await state.loader.chip.readMac(state.loader);
     state.flashSize = await state.loader.detectFlashSize();
     let existing = null;
+    state.apps = [];
     for (const offset of APP_OFFSETS) {
       try {
-        existing = parseAppDesc(await state.loader.readFlash(offset, 0x100)) || existing;
+        const desc = parseAppDesc(await state.loader.readFlash(offset, 0x100));
+        if (desc) state.apps.push(desc);
+        existing = desc || existing;
       } catch (error) {
         log(`读取 0x${offset.toString(16)} 失败：${error}`);
       }
@@ -94,11 +97,18 @@ function showChip(existing) {
   ];
   $("chip-facts").replaceChildren(...facts.flatMap(([k, v]) => [el("dt", k), el("dd", v)]));
 
-  const matches = state.boards.filter((b) => state.chip.startsWith(b.chip) && state.flashSize === b.flashSize);
+  let matches = state.boards.filter((b) => state.chip.startsWith(b.chip) && state.flashSize === b.flashSize);
+  // Same chip and flash can't be told apart over serial, but a board that already
+  // runs one of our release packages identifies itself by the app's ELF hash.
+  const known = matches.find((b) => state.apps.some((app) => app.elfSha256 === b.appSha256));
+  if (known) matches = [known];
   const list = $("board-list");
   list.replaceChildren(...state.boards.map((board) => {
     const ok = matches.includes(board);
-    const why = ok ? board.look : `不匹配：需要 ${board.chip}、${board.flashSize} Flash`;
+    const why = ok ? board.look
+      : known && state.chip.startsWith(board.chip) && state.flashSize === board.flashSize
+        ? `不匹配：板上现在运行的是「${known.name}」的宗主固件`
+        : `不匹配：需要 ${board.chip}、${board.flashSize} Flash`;
     return choice("board", board.id, board.name, why, { disabled: !ok, checked: ok && matches.length === 1 });
   }));
   state.board = matches.length === 1 ? matches[0] : null;
@@ -106,9 +116,13 @@ function showChip(existing) {
   notice.hidden = matches.length > 0;
   notice.textContent = `暂不支持这块板子（${state.chip}，${state.flashSize} Flash）。目前支持：` +
     state.boards.map((b) => b.name).join("、") + "。";
-  $("board-question").textContent = matches.some((b) => b.flashSize === "16MB")
-    ? "请对照屏幕确认（不带 C 的微雪 1.75 也是 16MB，本页不支持）："
-    : "请确认是哪一块板子：";
+  $("board-question").textContent = known
+    ? "已根据板上现有的宗主固件识别出板子："
+    : matches.length > 1
+      ? "这几块板芯片和 Flash 相同，网页分不出来，请对照外观选择（不带 C 的微雪 1.75 也是 16MB，本页不支持）："
+      : matches.some((b) => b.flashSize === "16MB")
+        ? "请对照屏幕确认（不带 C 的微雪 1.75 也是 16MB，本页不支持）："
+        : "请确认是哪一块板子：";
   update();
 }
 

@@ -3,7 +3,9 @@
 
 Each board in web/boards.json names a package under firmware/. Its files are
 checked against SHA256SUMS, copied to <out>/firmware/<board id>/, and listed with
-their flash offsets (from flash_args) in a manifest.json the page reads.
+their flash offsets (from flash_args) in a manifest.json the page reads. The
+site's boards.json also gets each package's app ELF SHA-256, so the page can tell
+boards with the same chip apart when one already runs a release package.
 
 Examples:
   tools/build_web.py                 # writes _site/
@@ -46,6 +48,11 @@ def package_parts(package):
     return lines[0].strip(), sorted(parts, key=lambda p: p["offset"])
 
 
+def app_elf_sha256(app):
+    # esp_app_desc_t.app_elf_sha256, after the image header (24) and segment header (8).
+    return app.read_bytes()[176:208].hex()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out", type=Path, default=REPO / "_site")
@@ -56,7 +63,8 @@ def main():
         shutil.rmtree(out)
     shutil.copytree(WEB, out, ignore=SKIP)
 
-    for board in json.loads((WEB / "boards.json").read_text(encoding="utf-8")):
+    boards = json.loads((WEB / "boards.json").read_text(encoding="utf-8"))
+    for board in boards:
         package = REPO / "firmware" / board["package"]
         flash_args, parts = package_parts(package)
         if board["assets"] not in {p["file"] for p in parts}:
@@ -66,10 +74,12 @@ def main():
         target.mkdir(parents=True)
         for part in parts:
             shutil.copy2(package / part["file"], target / part["file"])
+        board["appSha256"] = app_elf_sha256(package / "xiaozhi.bin")
         manifest = {"board": board["id"], "package": board["package"], "version": info["version"],
                     "flashArgs": flash_args, "parts": parts}
         (target / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         print(f"{board['id']}: {board['package']} ({len(parts)} parts, {sum(p['size'] for p in parts):,} bytes)")
+    (out / "boards.json").write_text(json.dumps(boards, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"Site: {out}")
 
 

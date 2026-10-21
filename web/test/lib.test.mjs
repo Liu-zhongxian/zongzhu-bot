@@ -20,8 +20,9 @@ const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const PACKAGES = {
   szp: join(ROOT, "firmware/zongzhu-szp-2.5.2.9"),
   "1.75c": join(ROOT, "firmware/zongzhu-1.75c-2.5.2.9"),
+  stopwatch: join(ROOT, "firmware/zongzhu-stopwatch-2.5.2.9"),
 };
-const ASSETS = { szp: "generated_assets.bin", "1.75c": "assets.bin" };
+const ASSETS = { szp: "generated_assets.bin", "1.75c": "assets.bin", stopwatch: "generated_assets.bin" };
 
 test("crc32 matches zlib.crc32(data, 0xFFFFFFFF)", () => {
   // Empty input is checked against Python's zlib.crc32(b"", 0xFFFFFFFF); Node 22's zlib returns 0 there.
@@ -110,5 +111,12 @@ for (const [board, dir] of Object.entries(PACKAGES)) {
     assert.equal(desc.version, "2.5.2.9");
     assert.equal(desc.project, "xiaozhi");
     assert.equal(parseAppDesc(new Uint8Array(0x100).fill(0xff)), null);
+    assert.match(desc.elfSha256, /^[0-9a-f]{64}$/);
   });
 }
+
+test("each release package has its own app ELF hash", () => {
+  const hashes = Object.values(PACKAGES).map((dir) =>
+    parseAppDesc(new Uint8Array(readFileSync(join(dir, "xiaozhi.bin"))).subarray(0, 0x100)).elfSha256);
+  assert.equal(new Set(hashes).size, hashes.length);
+});

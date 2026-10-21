@@ -19,5 +19,7 @@ export function parseAppDesc(bytes) {
     time: cstr(bytes.subarray(112, 128)),
     date: cstr(bytes.subarray(128, 144)),
     idf: cstr(bytes.subarray(144, 176)),
+    // Unique per build; tools/build_web.py records it for each release package.
+    elfSha256: Array.from(bytes.subarray(176, 208), (b) => b.toString(16).padStart(2, "0")).join(""),
   };
 }
