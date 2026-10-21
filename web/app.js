@@ -262,8 +262,12 @@ function go(step) {
 
 // ---------- step 6: flash ----------
 
+// GitHub Pages caches files for 10 minutes; revalidate so a new release never
+// mixes a fresh page with a stale board list, manifest or firmware.
+const fresh = (url) => fetch(url, { cache: "no-cache" });
+
 async function fetchBytes(url) {
-  const response = await fetch(url);
+  const response = await fresh(url);
   if (!response.ok) throw new Error(`下载 ${url} 失败（${response.status}）`);
   return new Uint8Array(await response.arrayBuffer());
 }
@@ -289,7 +293,7 @@ async function flash() {
   $("result").hidden = true;
   try {
     const base = `firmware/${state.board.id}/`;
-    const manifest = await (await fetch(base + "manifest.json")).json();
+    const manifest = await (await fresh(base + "manifest.json")).json();
     const files = [];
     for (const [i, part] of manifest.parts.entries()) {
       progress(`下载固件 ${i + 1}/${manifest.parts.length}：${part.file}`, (100 * i) / manifest.parts.length);
@@ -472,7 +476,7 @@ async function init() {
     $("connect").disabled = $("connect-any").disabled = true;
   }
   [state.boards, state.wakewords] = await Promise.all(
-    ["boards.json", "wakewords.json"].map(async (f) => (await fetch(f)).json()));
+    ["boards.json", "wakewords.json"].map(async (f) => (await fresh(f)).json()));
   renderWakewords();
 
   $("connect").addEventListener("click", () => connect(true));
