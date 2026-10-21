@@ -11,7 +11,7 @@
 #   4. 询问 Bot Webhook 地址和 token，写进 private/grok-bot-webhook.json
 #   5. 按本机局域网 IP 生成后端配置
 #   6. 下载语音识别模型 SenseVoiceSmall（约 900MB）
-#   7. 显示网页第 4 步要填的电脑地址，询问是否开机自启（tools/autostart.sh），或直接启动后端
+#   7. 显示网页第 4 步要填的电脑地址，让用户选择启动方式：开机自启（tools/autostart.sh）或自己手动启动
 #
 # 重复运行就是更新：代码会换成最新版，配置、模型和 Bot 设置保留。
 set -euo pipefail
@@ -122,21 +122,36 @@ printf '  \033[1m%s\033[0m\n\n' "$IP"
 echo "第一次启动时 macOS 如果询问是否允许 Python 接受传入连接，请选「允许」。"
 
 if launchctl print "gui/$(id -u)/com.zongzhu.backend" >/dev/null 2>&1; then
-  # 已开着自启：更新代码后重启，让新代码生效
+  # 之前选了开机自启：更新代码后重启，让新代码生效，不再重新询问
   bash "$DIR/tools/autostart.sh" restart || warn "重启没有成功，运行 bash $DIR/tools/autostart.sh status 查看原因。"
   exit 0
 fi
-auto=$(ask $'\n设置开机自启吗？登录后自动在后台运行，Mac 不会因为空闲而睡眠。[Y/n] ')
-case "$auto" in
-  n|N|no|NO) ;;
-  *)
-    bash "$DIR/tools/autostart.sh" enable || warn "自启没有设置成功，可以先前台运行 $DIR/start.sh。"
-    echo "以后查看状态：bash $DIR/tools/autostart.sh status；取消自启：bash $DIR/tools/autostart.sh disable"
-    exit 0
-    ;;
-esac
 
-echo "以后启动后端：$DIR/start.sh（在前台运行，关掉终端就停了）"
+# 两种启动方式由用户自己选，没有默认项：不回答就一直问，没有终端可问时按手动处理，不替用户开自启。
+echo
+echo "选择后端的启动方式："
+echo "  1) 开机自启：登录后自动在后台运行，退出会自动拉起，运行期间 Mac 不会因空闲睡眠"
+echo "  2) 手动启动：需要时自己运行 $DIR/start.sh（在前台运行，关掉终端就停了）"
+mode=""
+while [ "$mode" != 1 ] && [ "$mode" != 2 ]; do
+  if ! read -r -p "请输入 1 或 2：" mode 2>/dev/null </dev/tty; then
+    mode=2
+    echo
+    echo "没有可交互的终端，先按手动启动处理。"
+  fi
+done
+
+if [ "$mode" = 1 ]; then
+  if bash "$DIR/tools/autostart.sh" enable; then
+    echo "以后查看状态：bash $DIR/tools/autostart.sh status；取消自启：bash $DIR/tools/autostart.sh disable"
+  else
+    warn "自启没有设置成功，可以先前台运行 $DIR/start.sh，再运行 bash $DIR/tools/autostart.sh status 查看原因。"
+  fi
+  exit 0
+fi
+
+echo "以后启动后端：$DIR/start.sh"
+echo "想改成开机自启：bash $DIR/tools/autostart.sh enable"
 start=$(ask $'\n现在启动后端吗？[Y/n] ')
 case "$start" in
   n|N|no|NO) ;;

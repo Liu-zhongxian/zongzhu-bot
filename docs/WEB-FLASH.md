@@ -76,7 +76,7 @@
 4. 在终端询问 Bot Webhook 地址和 token（token 输入不显示），写入 `private/grok-bot-webhook.json`（权限 600）；直接回车就保留模板，以后再改
 5. 按默认网卡的局域网 IP 生成 `.config.yaml`
 6. 下载 SenseVoiceSmall 模型
-7. 显示 `电脑名.local` 和 IP 让用户填回网页，询问是否立即启动
+7. 显示 `电脑名.local` 和 IP 让用户填回网页，再让用户选择启动方式：开机自启（`tools/autostart.sh enable`）或手动启动（询问是否立即前台运行 `start.sh`）。两者没有默认项；已开着自启时更新后直接重启
 
 重复运行即更新：代码覆盖，已有的 Webhook 设置、后端配置、模型和 `.venv` 保留。
 
