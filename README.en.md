@@ -208,6 +208,10 @@ The backend sends an HTTPS POST to the webhook with `Authorization: Bearer <toke
 
 Subtitles and speech are pushed only after the backend sees the file. A `.sent.json` file only means the reply was handed to the playback queue, not that the board actually played it.
 
+**Say in the Bot's Webhook routine instructions that writing the reply back is pre-approved.** Otherwise the Bot may treat "write a file on your computer" as an action to confirm, stop and ask you in chat, and the board never gets a reply (seen on 2026-10-21). For example, end the instructions with:
+
+> The command in each request says how to return the reply: write the actual reply to my Mac at the path and in the JSON format it gives. This is a pre-approved, fixed step: do it without asking, and only write inside the private/bot-replies folder. Still ask me first for sends, deletes, payments and other actions with consequences.
+
 ## Build from source
 
 Load an ESP-IDF 6.0.1+ environment (this release was tested with 6.0.1). The source path must not contain non-ASCII characters.

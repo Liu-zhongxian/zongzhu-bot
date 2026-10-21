@@ -7,6 +7,17 @@ from core.handle.textMessageHandlerRegistry import TextMessageHandlerRegistry
 
 TAG = __name__
 
+# A board's MCP tool list runs to several KB. Written whole to a terminal it can
+# fail with EAGAIN ([Errno 35]) and take a concurrent write down with it, which
+# made the first ASR attempt of every session fail.
+LOG_PREVIEW_CHARS = 500
+
+
+def preview(message: str) -> str:
+    if len(message) <= LOG_PREVIEW_CHARS:
+        return message
+    return f"{message[:LOG_PREVIEW_CHARS]}…（共 {len(message)} 字，完整内容见 DEBUG 日志）"
+
 
 class TextMessageProcessor:
     """消息处理器主类"""
@@ -25,20 +36,22 @@ class TextMessageProcessor:
                 message_type = msg_json.get("type")
 
                 # 记录日志
-                conn.logger.bind(tag=TAG).info(f"收到{message_type}消息：{message}")
+                conn.logger.bind(tag=TAG).info(f"收到{message_type}消息：{preview(message)}")
+                if len(message) > LOG_PREVIEW_CHARS:
+                    conn.logger.bind(tag=TAG).debug(f"收到{message_type}消息（完整）：{message}")
 
                 # 获取并执行处理器
                 handler = self.registry.get_handler(message_type)
                 if handler:
                     await handler.handle(conn, msg_json)
                 else:
-                    conn.logger.bind(tag=TAG).error(f"收到未知类型消息：{message}")
+                    conn.logger.bind(tag=TAG).error(f"收到未知类型消息：{preview(message)}")
             # 处理纯数字消息
             elif isinstance(msg_json, int):
-                conn.logger.bind(tag=TAG).info(f"收到数字消息：{message}")
+                conn.logger.bind(tag=TAG).info(f"收到数字消息：{preview(message)}")
                 await conn.websocket.send(message)
 
         except json.JSONDecodeError:
             # 非JSON消息直接转发
-            conn.logger.bind(tag=TAG).error(f"解析到错误的消息：{message}")
+            conn.logger.bind(tag=TAG).error(f"解析到错误的消息：{preview(message)}")
             await conn.websocket.send(message)
