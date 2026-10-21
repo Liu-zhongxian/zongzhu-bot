@@ -49,7 +49,9 @@
 python3 tools/build_firmware.py stopwatch --idf <ESP-IDF 目录>
 ```
 
-2026-10-22 用 ESP-IDF 6.0.1 编译通过，包在 `build-output/zongzhu-stopwatch-2.5.2.9/`。同一天重新编译了 1.75C 和立创板，确认共用代码的改动没有影响它们。这一版不放发布包。
+2026-10-22 用 ESP-IDF 6.0.1 编译通过。同一天重新编译了 1.75C 和立创板，确认共用代码的改动没有影响它们。
+
+发布包在 `firmware/zongzhu-stopwatch-2.5.2.9/`，网页刷机也已列出这块板（标注「尚未实机验证」）。发布包和其他板一样只带上游默认 OTA 地址，刷机时要填自己的后端地址。网页刷机过程中用到的资源分区唤醒词读写，已用这个包在本机测过。
 
 ## 6. 待实机确认
 
@@ -59,4 +61,4 @@ python3 tools/build_firmware.py stopwatch --idf <ESP-IDF 目录>
 4. 左右用力摇 4 下出现螺旋眼，放稳后恢复。
 5. 震动强度、喇叭音量、真实麦克风唤醒和整条 Bot 对话。
 
-第一次刷之前，先用 `esptool read-flash 0 ALL` 把原厂固件备份下来，再带 `--erase` 刷入。
+第一次刷之前，先用 `esptool read-flash 0 ALL` 把原厂固件备份下来，再带 `--erase` 刷入。StopWatch 没有 BOOT 键，连不上时长按复位键约 2 秒，绿灯亮后松开，进入下载模式。

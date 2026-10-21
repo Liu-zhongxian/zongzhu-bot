@@ -1,0 +1,14 @@
+{
+  "version": "2.5.2.9",
+  "board": "m5stack/stopwatch",
+  "variant": "m5stack-stopwatch-zongzhu",
+  "hardware": "M5Stack StopWatch (C152), ESP32-S3R8, 466x466 CO5300, CST820B, BMI270, ES8311",
+  "idf": "6.0.1",
+  "freertos_hz": 1000,
+  "app_bytes": 2897312,
+  "assets_bytes": 5376398,
+  "ota_url": "https://api.tenclass.net/xiaozhi/ota/ (stock default; set your own when flashing)",
+  "first_install": "back up with read-flash, then erase-flash and write-flash @flash_args",
+  "flashed": false,
+  "physical_acceptance": "not run on a board yet; see docs/BOARD-STOPWATCH.md section 6"
+}

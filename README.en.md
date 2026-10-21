@@ -86,7 +86,7 @@ Reactions last 2–3 seconds, then the eyes return to the current state (listeni
 Either:
 
 - **Recommended: build it yourself with your backend address built in.** Wi-Fi setup then only asks for Wi-Fi. See step 3.
-- **Use a release package**: `firmware/zongzhu-1.75c-2.5.2.9/` for the Waveshare 1.75C (also on [Releases](https://github.com/Liu-zhongxian/zongzhu-bot/releases/latest)), `firmware/zongzhu-szp-2.5.2.9/` for the Lichuang board. Release packages don't know your computer's address, so you type the OTA URL during Wi-Fi setup.
+- **Use a release package**: `firmware/zongzhu-1.75c-2.5.2.9/` for the Waveshare 1.75C (also on [Releases](https://github.com/Liu-zhongxian/zongzhu-bot/releases/latest)), `firmware/zongzhu-szp-2.5.2.9/` for the Lichuang board, `firmware/zongzhu-stopwatch-2.5.2.9/` for the M5Stack StopWatch (not yet run on a board). Release packages don't know your computer's address, so you type the OTA URL during Wi-Fi setup.
 
 ### 2. Backend
 

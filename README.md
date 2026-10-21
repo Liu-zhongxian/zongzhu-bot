@@ -86,7 +86,7 @@
 两种方式任选：
 
 - **推荐：自己编译，把后端地址编进固件**。之后配网只需要选 Wi-Fi，见第 3 步。
-- **直接用发布包**：微雪 1.75C 用 `firmware/zongzhu-1.75c-2.5.2.9/`（也可从 [Releases](https://github.com/Liu-zhongxian/zongzhu-bot/releases/latest) 下载 zip），立创板用 `firmware/zongzhu-szp-2.5.2.9/`。发布包不含你的电脑地址，配网时要手填 OTA 地址。
+- **直接用发布包**：微雪 1.75C 用 `firmware/zongzhu-1.75c-2.5.2.9/`（也可从 [Releases](https://github.com/Liu-zhongxian/zongzhu-bot/releases/latest) 下载 zip），立创板用 `firmware/zongzhu-szp-2.5.2.9/`，M5Stack StopWatch 用 `firmware/zongzhu-stopwatch-2.5.2.9/`（尚未实机验证）。发布包不含你的电脑地址，配网时要手填 OTA 地址。
 
 ### 2. 后端
 

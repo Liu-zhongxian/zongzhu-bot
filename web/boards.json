@@ -16,5 +16,14 @@
     "flashSize": "32MB",
     "package": "zongzhu-1.75c-2.5.2.9",
     "assets": "assets.bin"
+  },
+  {
+    "id": "stopwatch",
+    "name": "M5Stack StopWatch（尚未实机验证）",
+    "look": "1.75 寸圆形屏，方形机身，侧面有黄色 A 键和蓝色 B 键",
+    "chip": "ESP32-S3",
+    "flashSize": "16MB",
+    "package": "zongzhu-stopwatch-2.5.2.9",
+    "assets": "generated_assets.bin"
   }
 ]
