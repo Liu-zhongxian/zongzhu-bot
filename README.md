@@ -16,7 +16,7 @@
 
 开始之前先确认这三条，任何一条不满足都跑不通：
 
-- **板子**：微雪 Waveshare ESP32-S3-Touch-AMOLED-1.75C，或立创·实战派 ESP32-S3（N16R8，详见 [docs/BOARD-SZP.md](docs/BOARD-SZP.md)）。
+- **板子**：微雪 Waveshare ESP32-S3-Touch-AMOLED-1.75C，或立创·实战派 ESP32-S3（N16R8，详见 [docs/BOARD-SZP.md](docs/BOARD-SZP.md)）。M5Stack StopWatch 的编译选项已加上，但还没在实机上跑过，见 [docs/BOARD-STOPWATCH.md](docs/BOARD-STOPWATCH.md)。
 - **电脑**：一台一直开着的电脑运行后端（已在 Apple Silicon macOS 上验证），和板子在同一个 2.4GHz 局域网。
 - **Bot**：你的 Grok Bot 要提供 Webhook，并且**能往这台电脑写文件**。回复只留在云端或聊天窗口里的话，板子收不到。
 
@@ -71,7 +71,7 @@
 | BOOT 键短按 | 开始对话；播放中短按会停止播放 |
 | BOOT 键长按 | 切换字幕模式 |
 
-反应持续 2–3 秒，之后回到当前状态（聆听、思考、说话等）。两块板都没有震动马达，所以没有震动反馈。微雪 1.75C 闲置后屏幕会变暗省电，碰一下屏幕即恢复；立创板不做省电变暗。
+反应持续 2–3 秒，之后回到当前状态（聆听、思考、说话等）。这两块板都没有震动马达，所以没有震动反馈（M5Stack StopWatch 有马达，按键也不同，见 [docs/BOARD-STOPWATCH.md](docs/BOARD-STOPWATCH.md)）。微雪 1.75C 闲置后屏幕会变暗省电，碰一下屏幕即恢复；立创板不做省电变暗。
 
 </details>
 
@@ -144,6 +144,7 @@ esptool --chip esp32s3 --port /dev/cu.usbmodemXXXX read-flash 0 ALL zongzhu-back
 ```sh
 python3 tools/build_firmware.py szp   --idf <ESP-IDF 目录> --flash /dev/cu.usbmodemXXXX --erase   # 立创板
 python3 tools/build_firmware.py 1.75c --idf <ESP-IDF 目录> --flash /dev/cu.usbmodemXXXX --erase   # 微雪 1.75C
+python3 tools/build_firmware.py stopwatch --idf <ESP-IDF 目录> --flash /dev/cu.usbmodemXXXX --erase   # M5Stack StopWatch（未上机）
 ```
 
 固件里的 OTA 地址默认是 `http://<这台 Mac 的名字>.local:8003/xiaozhi/ota/`（名字来自 `scutil --get LocalHostName`），Mac 换了局域网 IP 也能找到。板子首次开机会把这个地址存好，配网页里能看到已经填上。编出的包在 `build-output/`，含本机名字，不会提交到仓库。

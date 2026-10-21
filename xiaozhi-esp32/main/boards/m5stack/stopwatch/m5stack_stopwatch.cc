@@ -14,6 +14,17 @@
 #include <driver/spi_master.h>
 #include <wifi_manager.h>
 
+#if CONFIG_ZONGZHU_EYE_UI
+#include "mcp_server.h"
+#include "settings.h"
+#include "zongzhu/bmi270_motion.h"
+#include "zongzhu/eye_display.h"
+#include "zongzhu/ota_default.h"
+#include <esp_lcd_touch_cst816s.h>
+#include <esp_lvgl_port.h>
+#include <esp_timer.h>
+#endif
+
 #define TAG "M5StackStopwatch"
 #define LCD_OPCODE_WRITE_CMD (0x02ULL)
 
@@ -87,6 +98,24 @@ public:
     }
 };
 
+#if CONFIG_ZONGZHU_EYE_UI
+// Zongzhu eyes on the same 466x466 CO5300 as the Waveshare 1.75C, so the
+// default EyeScreen layout applies unchanged.
+class StopwatchEyeDisplay : public EyeDisplay {
+public:
+    using EyeDisplay::EyeDisplay;
+
+    void SetupUI() override {
+        EyeDisplay::SetupUI();
+        DisplayLockGuard lock(this);
+        lv_display_add_event_cb(display_, RoundLcdDisplay::rounder_event_cb, LV_EVENT_INVALIDATE_AREA, NULL);
+    }
+};
+using BoardLcdDisplay = StopwatchEyeDisplay;
+#else
+using BoardLcdDisplay = RoundLcdDisplay;
+#endif
+
 class StopwatchBacklight : public Backlight {
 public:
     StopwatchBacklight(esp_lcd_panel_io_handle_t panel_io, Display* display)
@@ -119,8 +148,125 @@ private:
     M5IOE1 ioe_;
     Button button1_;
     Button button2_;
-    RoundLcdDisplay* display_;
+    BoardLcdDisplay* display_;
     StopwatchBacklight* backlight_;
+#if CONFIG_ZONGZHU_EYE_UI
+    Bmi270Motion* motion_ = nullptr;
+    esp_timer_handle_t motor_timer_ = nullptr;
+    bool motor_ready_ = false;
+    bool vibration_on_ = true;
+
+    // Vibration motor on M5IOE1 IO9 (PWM channel 1), as in the community KK firmware.
+    void InitializeMotor() {
+        motor_ready_ = ioe_.setPwmFrequency(200) == M5IOE1_OK &&
+                       ioe_.setPwmDuty12bit(M5IOE1_PWM_CH1, 0, false, true) == M5IOE1_OK;
+        if (!motor_ready_) {
+            ESP_LOGW(TAG, "Vibration motor PWM not available");
+            return;
+        }
+        const esp_timer_create_args_t args = {
+            .callback = [](void* arg) {
+                auto self = static_cast<M5StackStopwatchBoard*>(arg);
+                self->ioe_.setPwmDuty12bit(M5IOE1_PWM_CH1, 0, false, true);
+            },
+            .arg = this,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "motor_off",
+            .skip_unhandled_events = true,
+        };
+        ESP_ERROR_CHECK(esp_timer_create(&args, &motor_timer_));
+        Settings settings("board");
+        vibration_on_ = settings.GetInt("vibration", 1) != 0;
+    }
+
+    // strength 0..255; ignored while vibration is switched off.
+    void Vibrate(uint8_t strength, uint32_t duration_ms) {
+        if (!motor_ready_ || !vibration_on_)
+            return;
+        esp_timer_stop(motor_timer_);
+        ioe_.setPwmDuty12bit(M5IOE1_PWM_CH1, static_cast<uint16_t>(strength) * 0x0FFF / 0xFF, false, true);
+        esp_timer_start_once(motor_timer_, duration_ms * 1000);
+    }
+
+    void InitializeTouch() {
+        // CST820B: reset through M5IOE1, interrupt on G13; the CST816S driver speaks its protocol.
+        ioe_.pinMode(IOE_PIN_TOUCH_RST, OUTPUT);
+        ioe_.setDriveMode(IOE_PIN_TOUCH_RST, M5IOE1_DRIVE_PUSHPULL);
+        ioe_.digitalWrite(IOE_PIN_TOUCH_RST, LOW);
+        vTaskDelay(pdMS_TO_TICKS(10));
+        ioe_.digitalWrite(IOE_PIN_TOUCH_RST, HIGH);
+        vTaskDelay(pdMS_TO_TICKS(50));
+
+        esp_lcd_touch_config_t tp_cfg = {
+            .x_max = DISPLAY_WIDTH - 1,
+            .y_max = DISPLAY_HEIGHT - 1,
+            .rst_gpio_num = GPIO_NUM_NC,
+            .int_gpio_num = TOUCH_INT_PIN,
+            .levels = {
+                .reset = 0,
+                .interrupt = 0,
+            },
+            .flags = {
+                .swap_xy = 0,
+                .mirror_x = 0,
+                .mirror_y = 0,
+            },
+        };
+        esp_lcd_panel_io_handle_t tp_io = nullptr;
+        // ESP_LCD_TOUCH_IO_I2C_CST816S_CONFIG() uses C designator order, so fill it here.
+        esp_lcd_panel_io_i2c_config_t tp_io_config = {};
+        tp_io_config.dev_addr = ESP_LCD_TOUCH_IO_I2C_CST816S_ADDRESS;
+        tp_io_config.scl_speed_hz = 100 * 1000;
+        tp_io_config.control_phase_bytes = 1;
+        tp_io_config.lcd_cmd_bits = 8;
+        tp_io_config.flags.disable_control_phase = 1;
+        esp_lcd_touch_handle_t tp = nullptr;
+        if (esp_lcd_new_panel_io_i2c(i2c_bus_, &tp_io_config, &tp_io) != ESP_OK ||
+            esp_lcd_touch_new_i2c_cst816s(tp_io, &tp_cfg, &tp) != ESP_OK) {
+            ESP_LOGE(TAG, "CST820B touch init failed");
+            return;
+        }
+        const lvgl_port_touch_cfg_t touch_cfg = {
+            .disp = lv_display_get_default(),
+            .handle = tp,
+        };
+        lvgl_port_add_touch(&touch_cfg);
+        ESP_LOGI(TAG, "Touch panel initialized");
+        display_->OnReaction([this](eyes::Mood mood) {
+            Vibrate(mood == eyes::Mood::Angry ? 200 : 130, mood == eyes::Mood::Angry ? 120 : 40);
+        });
+    }
+
+    void InitializeMotion() {
+        motion_ = new Bmi270Motion(i2c_bus_);
+        motion_->Start([this](float x, float y) { display_->SetTilt(x, y); },
+                       [this](bool active) {
+                           display_->SetDizzy(active);
+                           if (active)
+                               Vibrate(220, 200);
+                       });
+    }
+
+    void InitializeTools() {
+        auto& mcp_server = McpServer::GetInstance();
+        mcp_server.AddTool("self.zongzhu.play_animation",
+            "Play Zongzhu eye reactions for 12 seconds. Use when asked to sing, "
+            "dance, rap or play basketball. This changes the screen, not the audio. "
+            "action must be singing, dancing, rapper or basketball.",
+            PropertyList({Property("action", kPropertyTypeString)}),
+            [this](const PropertyList& properties) -> ReturnValue {
+                const auto action = properties["action"].value<std::string>();
+                if (action != "singing" && action != "dancing" && action != "rapper" &&
+                    action != "basketball") {
+                    return std::string("Unsupported animation action");
+                }
+                Application::GetInstance().Schedule([this, action]() {
+                    display_->PlayPerformance(action);
+                });
+                return true;
+            });
+    }
+#endif
 
     void InitializeI2c() {
         i2c_master_bus_config_t i2c_bus_cfg = {
@@ -167,9 +313,11 @@ private:
         ioe_.setDriveMode(IOE_PIN_PA_EN, M5IOE1_DRIVE_PUSHPULL);
         ioe_.digitalWrite(IOE_PIN_PA_EN, HIGH);
 
+#if !CONFIG_ZONGZHU_EYE_UI
         ioe_.pinMode(IOE_PIN_MOTOR, OUTPUT);
         ioe_.setDriveMode(IOE_PIN_MOTOR, M5IOE1_DRIVE_PUSHPULL);
         ioe_.digitalWrite(IOE_PIN_MOTOR, LOW);
+#endif
 
         vTaskDelay(pdMS_TO_TICKS(100));
     }
@@ -226,7 +374,7 @@ private:
         esp_lcd_panel_mirror(panel, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
         esp_lcd_panel_disp_on_off(panel, true);
 
-        display_ = new RoundLcdDisplay(panel_io, panel, DISPLAY_WIDTH, DISPLAY_HEIGHT,
+        display_ = new BoardLcdDisplay(panel_io, panel, DISPLAY_WIDTH, DISPLAY_HEIGHT,
                                        DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X,
                                        DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
         backlight_ = new StopwatchBacklight(panel_io, display_);
@@ -234,8 +382,11 @@ private:
     }
 
     void InitializeButtons() {
-        // Button1: wake / toggle conversation
+        // Button1 (A, yellow): wake / toggle conversation
         button1_.OnClick([this]() {
+#if CONFIG_ZONGZHU_EYE_UI
+            Vibrate(130, 40);
+#endif
             auto& app = Application::GetInstance();
             if (app.GetDeviceState() == kDeviceStateStarting && !WifiManager::GetInstance().IsConnected()) {
                 EnterWifiConfigMode();
@@ -244,8 +395,28 @@ private:
             app.ToggleChatState();
         });
 
-        // Button2: volume 0 -> 10 -> ... -> 100 -> 0
+#if CONFIG_ZONGZHU_EYE_UI
+        // A long press: cycle subtitles full -> brief -> off (saved in NVS).
+        button1_.OnLongPress([this]() {
+            Vibrate(160, 80);
+            display_->ShowNotification(display_->CycleSubtitleMode(), 2000);
+        });
+
+        // B long press: vibration on / off (saved in NVS).
+        button2_.OnLongPress([this]() {
+            vibration_on_ = !vibration_on_;
+            Settings settings("board", true);
+            settings.SetInt("vibration", vibration_on_ ? 1 : 0);
+            Vibrate(160, 120);
+            display_->ShowNotification(vibration_on_ ? "震动：开" : "震动：关", 2000);
+        });
+#endif
+
+        // Button2 (B, blue): volume 0 -> 10 -> ... -> 100 -> 0
         button2_.OnClick([this]() {
+#if CONFIG_ZONGZHU_EYE_UI
+            Vibrate(130, 40);
+#endif
             auto* codec = GetAudioCodec();
             int volume = codec->output_volume() + 10;
             if (volume > 100) {
@@ -263,9 +434,18 @@ public:
           button2_(BUTTON2_GPIO),
           display_(nullptr),
           backlight_(nullptr) {
+#if CONFIG_ZONGZHU_EYE_UI
+        SeedDefaultOtaUrl();
+#endif
         InitializeI2c();
         InitializeSpi();
         InitializeDisplay();
+#if CONFIG_ZONGZHU_EYE_UI
+        InitializeMotor();
+        InitializeTouch();
+        InitializeMotion();
+        InitializeTools();
+#endif
         InitializeButtons();
     }
 

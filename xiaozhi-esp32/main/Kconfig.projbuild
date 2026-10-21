@@ -649,10 +649,11 @@ endchoice
 config ZONGZHU_EYE_UI
     bool "Zongzhu eye UI"
     default n
-    depends on BOARD_TYPE_LICHUANG_DEV_S3
+    depends on BOARD_TYPE_LICHUANG_DEV_S3 || BOARD_TYPE_M5STACK_STOPWATCH
     help
-        Procedural Zongzhu eyes, touch gestures, QMI8658 tilt/shake and subtitle
-        modes instead of the stock emoji UI. Enabled by the lichuang-dev-zongzhu variant.
+        Procedural Zongzhu eyes, touch gestures, IMU tilt/shake and subtitle
+        modes instead of the stock emoji UI. Enabled by the lichuang-dev-zongzhu
+        and m5stack-stopwatch-zongzhu variants.
 
 choice XIAOZHI_NETWORK_TYPE
     prompt "Network Type"

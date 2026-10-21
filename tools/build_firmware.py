@@ -30,6 +30,7 @@ SOURCE = REPO / "xiaozhi-esp32"
 BOARDS = {
     "szp": ("lckfb/szpi-esp32s3", "lichuang-dev-zongzhu"),
     "1.75c": ("waveshare/esp32-s3-touch-amoled-1.75", "esp32-s3-touch-amoled-1.75c"),
+    "stopwatch": ("m5stack/stopwatch", "m5stack-stopwatch-zongzhu"),  # not yet run on a board
 }
 TEMP_CONFIG = "config.zongzhu-ota.json"
 

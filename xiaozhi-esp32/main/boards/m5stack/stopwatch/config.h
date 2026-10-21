@@ -58,6 +58,12 @@
 #define IOE_PIN_PA_EN               M5IOE1_PIN_10
 #define IOE_PIN_MOTOR               M5IOE1_PIN_9
 
+// BMI270 chip axes (accel[0..2]) to screen axes: +x right, +y down.
+// Used by the Zongzhu variant; same mapping as the community KK firmware,
+// not yet confirmed on a board by tilting.
+#define BMI270_SCREEN_X(a)          (a[1])
+#define BMI270_SCREEN_Y(a)          (a[0])
+
 // M5PM1 @ 0x6E
 #define PMIC_PIN_CHARGE_STATE       M5PM1_GPIO_NUM_2
 #define PMIC_PIN_CHARGE_PROG        M5PM1_GPIO_NUM_3

@@ -213,6 +213,8 @@ public:
     }
     void SetDizzy(bool active) { dizzy_.store(active, std::memory_order_relaxed); }
     void OnTouch(std::function<void()> callback) { on_touch_ = std::move(callback); }
+    // Called on the LVGL task when a touch reaction starts (e.g. for haptics).
+    void OnReaction(std::function<void(eyes::Mood)> callback) { on_reaction_ = std::move(callback); }
 
 private:
     static constexpr const char* kTag = "EyeUI";
@@ -277,6 +279,7 @@ private:
     eyes::Mood reaction_ = eyes::Mood::Idle;
     uint32_t reaction_until_ = 0;
     std::function<void()> on_touch_;
+    std::function<void(eyes::Mood)> on_reaction_;
     enum class Gesture { None, Horizontal, Vertical, Follow };
     lv_indev_t* touch_ = nullptr;
     bool pressed_ = false;
@@ -421,6 +424,8 @@ private:
         reaction_ = mood;
         reaction_until_ = now + duration_ms;
         ESP_LOGI(kTag, "Reaction %d", static_cast<int>(mood));
+        if (on_reaction_)
+            on_reaction_(mood);
     }
 
     eyes::Mood CurrentMood(uint32_t now) const {

@@ -16,7 +16,7 @@ Zongzhu (宗主) turns an ESP32-S3 screen board into a voice terminal for Grok B
 
 Check all three before you start. If any one is missing, the pipeline won't work:
 
-- **Board**: Waveshare ESP32-S3-Touch-AMOLED-1.75C, or the Lichuang (立创) SZPI ESP32-S3, N16R8 (details in [docs/BOARD-SZP.md](docs/BOARD-SZP.md), Chinese).
+- **Board**: Waveshare ESP32-S3-Touch-AMOLED-1.75C, or the Lichuang (立创) SZPI ESP32-S3, N16R8 (details in [docs/BOARD-SZP.md](docs/BOARD-SZP.md), Chinese). An M5Stack StopWatch build option exists but hasn't run on a board yet; see [docs/BOARD-STOPWATCH.md](docs/BOARD-STOPWATCH.md) (Chinese).
 - **Computer**: an always-on computer that runs the backend (verified on Apple Silicon macOS), on the same 2.4 GHz LAN as the board.
 - **Bot**: your Grok Bot must expose a webhook **and be able to write files on this computer**. If the reply only stays in the cloud or in the chat window, the board never receives it.
 
@@ -71,7 +71,7 @@ System messages for Wi-Fi setup, activation and updates are always shown in full
 | BOOT short press | Start talking; stops playback if something is playing |
 | BOOT long press | Cycle subtitle mode |
 
-Reactions last 2–3 seconds, then the eyes return to the current state (listening, thinking, speaking, etc.). Neither board has a vibration motor, so there is no haptic feedback. The Waveshare 1.75C dims its screen when idle and a touch brings it back; the Lichuang board doesn't dim.
+Reactions last 2–3 seconds, then the eyes return to the current state (listening, thinking, speaking, etc.). Neither of these two boards has a vibration motor, so there is no haptic feedback (the M5Stack StopWatch has one and different buttons; see [docs/BOARD-STOPWATCH.md](docs/BOARD-STOPWATCH.md)). The Waveshare 1.75C dims its screen when idle and a touch brings it back; the Lichuang board doesn't dim.
 
 </details>
 
@@ -141,6 +141,7 @@ esptool --chip esp32s3 --port /dev/cu.usbmodemXXXX read-flash 0 ALL zongzhu-back
 ```sh
 python3 tools/build_firmware.py szp   --idf <ESP-IDF dir> --flash /dev/cu.usbmodemXXXX --erase   # Lichuang
 python3 tools/build_firmware.py 1.75c --idf <ESP-IDF dir> --flash /dev/cu.usbmodemXXXX --erase   # Waveshare 1.75C
+python3 tools/build_firmware.py stopwatch --idf <ESP-IDF dir> --flash /dev/cu.usbmodemXXXX --erase   # M5Stack StopWatch (not yet run on a board)
 ```
 
 The built-in OTA URL defaults to `http://<this Mac's name>.local:8003/xiaozhi/ota/` (the name from `scutil --get LocalHostName`), so it keeps working when the Mac's LAN IP changes. On first boot the board saves it, so the setup page shows it already filled in. Packages go to `build-output/`; they contain the Mac's name and are not committed.
