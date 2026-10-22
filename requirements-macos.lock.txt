@@ -171,3 +171,4 @@ websockets==14.2
 wrapt==2.5.1
 yarl==1.25.1
 zai-sdk==0.2.3
+pypinyin==0.55.0

@@ -2,7 +2,7 @@
 
 中文 | [English](GUIDE.en.md) · [返回 README](../README.md)
 
-首页 README 只放概要。这里是完整说明：功能细节、不用网页的手动安装、刷机、Bot 接口、构建、测试和已知限制。
+首页 README 只放概要。这里是完整说明：功能细节、本机点歌、不用网页的手动安装、刷机、Bot 接口、构建、测试和已知限制。
 
 ## 功能
 
@@ -62,6 +62,62 @@
 ## 工作原理
 
 ![架构图：板子把语音发给电脑后端，后端识别后通过 Webhook 交给 Grok Bot，Bot 把回复写回电脑上的文件，后端合成字幕和语音发回板子](images/architecture.zh-CN.svg)
+
+## 本机点歌（可选）
+
+打开后，放歌、暂停、切歌、调音量这些话在这台电脑上执行，大约 1 秒见效，不经过 Bot；其他话照旧交给 Bot。默认关闭。
+
+### 打开
+
+1. 在仓库根目录运行 `bash tools/local_music_setup.sh`。它会把 [go-music-dl](https://github.com/guohuiyuan/go-music-dl)（搜歌、拿音频）和 [mpv](https://github.com/mpv-player/mpv)（播放）下载到 `local-music/`，核对写死在脚本里的 SHA-256，校验不过就停下。mpv 用官方的独立包，不用 Homebrew 装，因为 `brew install mpv` 会连带装一份 ffmpeg，和后端用的 ffmpeg-full 冲突。
+2. 把脚本最后打印的 `local_music` 一节写进 `xiaozhi-esp32-server/main/xiaozhi-server/data/.config.yaml`，`enabled: true`。样例在 `examples/backend.config.yaml`。
+3. 重启后端。板子连上时，后端会在后台启动 go-music-dl（端口 18080）和 mpv，并提前合成"好的""已暂停"这些短句；后端退出时两个程序一起关掉。
+4. （可选）想听网易云的会员歌曲：打开 `http://localhost:18080/music/setup`，用 `local-music/go-music-dl/service.log` 里的 `Web setup token` 建一个管理员，再在设置里用网易云 App 扫码登录。Cookie 存在 `local-music/go-music-dl/data/`。
+
+需要 macOS 14 或更高版本（Apple 芯片），或者 macOS 15 或更高版本（Intel）。
+
+### 能说什么
+
+| 想做什么 | 例子 | 什么时候算 |
+| --- | --- | --- |
+| 点歌 | 放周杰伦的晴天、帮我播放周杰伦的晴天、来一首孤勇者、我想听陈奕迅的歌、换成林俊杰的江南、放一首叫七里香的歌 | 随时 |
+| 暂停 / 继续 / 停止 | 暂停、先给我暂停、帮我把歌暂停了、继续播放、别放了、把音乐关了 | 有歌的时候 |
+| 切歌 | 下一首、换首歌、跳过这首、好的下一首吧、上一首、回到上一首 | 随时 |
+| 快进 / 重播 / 循环 | 快进五秒、快退十秒、往后快进一分钟、从头播放、再放一遍、单曲循环、取消循环 | 有歌的时候 |
+| 问歌名 | 这是什么歌、这首歌是谁唱的呀 | 有歌的时候 |
+| 音量 | 音量调到三十、音量调回三十、把电脑的声音调到百分之六十、音量最大、大声点、静音、取消静音 | 随时（"开大点""关小一点"只在有歌的时候算） |
+
+"暂停""继续""从头开始"这些话在 Bot 任务里也常见，所以只有在放歌或暂停时才算点歌指令。另外有两条规则：
+- **关键词加填充字**：句子里有控制词，去掉它以后剩下的只是"先、给我、帮我、把、这首、歌、一下、吧"这类字，才算指令。"暂停那个下载任务""把窗口关掉""跳过这一步"照旧交给 Bot。
+- **识别把几句拼在一起时**（例如"周杰伦的晴天。放周杰伦的晴天。"），会拆开一句句看。
+
+放歌期间有话没认出来、交给了 Bot，后端日志里会记一条"放歌期间未匹配，交给 Bot"，方便以后补上这种说法。
+
+### 怎么选歌
+
+- **说了歌手**：网易云和 QQ、酷狗、酷我、咪咕同时搜。网易云有原唱就用网易云的，没有就从其他平台挑。
+- **只说歌名**：看各平台排第一的原版是谁唱的，按多数判断原唱。
+- **不算原版的**：歌名里有 Live、翻唱、伴奏、remix、Demo、"……版"等字样的，专辑是演唱会、remix 合集的，都排除。冒名上传也排除，比如"周杰伦."、"HF薛之谦"；"G.E.M.邓紫棋"这类艺名照常认。
+- **挑码率最高的**：同样条件的几首里挑码率最高的。比如酷我的《晴天》只有 128 kbps，咪咕有 900 多。没登录的平台拿不到播放地址时，会自动跳过。
+- **歌名被识别错**（"周杰伦的请帖"）：按读音（`pypinyin`）在这位歌手的歌里找最接近的，回答"没找到请帖，给你放周杰伦的晴天"。
+- **"下一首"**：找同一位歌手、还没放过的另一首原版。"上一首"回到放过的上一首。
+
+### 回答和板子的状态
+
+- **点歌和切歌**：板子马上说"好的""下一首"，同时开始搜，歌一放起来，屏幕上就显示"正在播放：歌手的歌名"。
+- **其他指令**：用提前合成好的短句回答，说完约 0.1 秒出声；音量、快进的具体数值只显示在屏幕上。
+- **回答完板子就待机**：不会把电脑放的音乐当成下一句话。要再说话，就唤醒或者按键。
+- **唤醒时压低音乐**：唤醒板子时，音乐先降到 25% 的音量，说完指令或者 15 秒后恢复。
+- **系统音量**：音量调的是电脑的系统音量（用 `osascript`）。
+
+### 常见问题
+
+| 现象 | 处理 |
+| --- | --- |
+| 说"放 X"后板子回答"音乐服务没能启动" | 看 `local-music/go-music-dl/service.log`；确认配置里的路径对，18080 端口没被占用 |
+| 只搜到翻唱或者"没找到" | 网易云没有这首歌的版权时，会去其他平台找；常听的平台可以在 go-music-dl 里扫码登录 |
+| 歌手名老是识别错 | 在配置的 `local_music.hotwords` 里加上这位歌手和歌名（会追加到语音识别的热词里），然后重启后端 |
+| 说完很久才有反应 | 后端刚重启后的第一句，要等短句合成好（每句 1–3 秒），之后就快了；"这是什么歌"要现场念歌名，约 2 秒 |
 
 ## 手动安装（不用网页）
 
@@ -219,11 +275,12 @@ python scripts/build.py lckfb/szpi-esp32s3 --name lichuang-dev-zongzhu          
 | 路径 | 内容 |
 | --- | --- |
 | `xiaozhi-esp32/` | 完整固件源码；本项目的改动集中在 `main/boards/common/zongzhu/`（各板共用）和各板目录（`waveshare/esp32-s3-touch-amoled-1.75/`、`lckfb/szpi-esp32s3/`、`m5stack/stopwatch/`） |
-| `xiaozhi-esp32-server/main/xiaozhi-server/` | 实际运行的 Python 后端；Bot 桥接在 `core/handle/grokBotHandle.py`，识别纠错在 `core/utils/asr_text.py` |
+| `xiaozhi-esp32-server/main/xiaozhi-server/` | 实际运行的 Python 后端；Bot 桥接在 `core/handle/grokBotHandle.py`，本机点歌在 `core/handle/localCommandHandle.py` 和 `core/music/`，识别纠错在 `core/utils/asr_text.py` |
 | `firmware/` | 各板的发布包：分段固件、校验值、构建记录 |
 | `web/` | 网页刷机页面和 macOS 后端安装脚本 `install-mac.sh`，推到 main 后自动发布到 GitHub Pages |
 | `deploy/` | 把后端部署到公网 Linux 服务器（Caddy、systemd、服务器配置） |
-| `tools/` | `build_firmware.py`（编进 OTA 地址、打包、刷写）、`build_web.py`（组装网页）、`autostart.sh`（开机自启）、`verify/`（端到端检查）、`asr-bench/`（识别对比） |
+| `tools/` | `build_firmware.py`（编进 OTA 地址、打包、刷写）、`build_web.py`（组装网页）、`autostart.sh`（开机自启）、`local_music_setup.sh`（下载点歌用的 go-music-dl 和 mpv）、`verify/`（端到端检查）、`asr-bench/`（识别对比） |
+| `local-music/` | `local_music_setup.sh` 下载的程序和 go-music-dl 的数据（含登录 Cookie）；只在本机，不进 Git |
 | `examples/` | 不含真实凭证的配置模板 |
 | `docs/` | 本文、各板说明；`docs/records/` 是开发过程和验收记录，目录见 [docs/README.md](README.md) |
 | `requirements-macos*.txt` | 后端依赖：默认（X-ASR）、可选的 FunASR、当前测试过的完整版本 |
@@ -255,11 +312,13 @@ python scripts/build.py lckfb/szpi-esp32s3 --name lichuang-dev-zongzhu          
 ```sh
 cd xiaozhi-esp32-server/main/xiaozhi-server
 ../../../.venv/bin/python -m unittest tests.test_grok_bot tests.test_grok_bot_phrases tests.test_grok_bot_reply \
-  tests.test_asr_text tests.test_tts_prefetch tests.test_device_allowlist tests.test_text_message_log
+  tests.test_asr_text tests.test_tts_prefetch tests.test_device_allowlist tests.test_text_message_log tests.test_local_music
 cd ../../../web && node --test test/*.test.mjs    # 网页刷机的库代码
 ```
 
-`tools/verify/` 里是连真实设备链路的端到端检查（在仓库根目录运行，例如 `python tools/verify/verify_bot_reply.py`）。`verify_bot_bridge.py`、`verify_bot_reply.py`、`verify_bot_speech.py` 会真的调用你配置的 Bot，只在你有权限的测试环境里用，运行前先启动后端；`verify_bot_wait_display.py` 用本机测试文件，正常情况下不会调用 Webhook。语音识别对比用 `tools/asr-bench/`。每个版本的实测结果见 [records/VALIDATION.md](records/VALIDATION.md)。
+`tools/verify/` 里是连真实设备链路的端到端检查（在仓库根目录运行，例如 `python tools/verify/verify_bot_reply.py`）。`verify_bot_bridge.py`、`verify_bot_reply.py`、`verify_bot_speech.py` 会真的调用你配置的 Bot，只在你有权限的测试环境里用，运行前先启动后端；`verify_bot_wait_display.py` 用本机测试文件，正常情况下不会调用 Webhook；`verify_local_music.py` 用 macOS 合成语音模拟设备说点歌指令，会在电脑上放几秒歌，不调用 Bot。
+
+用上面的 `unittest` 命令跑，不要用 pytest：pytest 会加载上游的 `tests/conftest.py`，它把 `httpx.AsyncClient` 整个换成了一律拒绝连接的替身，Bot 测试自己传入的模拟网络也会被拦住，测试就会失败。语音识别对比用 `tools/asr-bench/`。每个版本的实测结果见 [records/VALIDATION.md](records/VALIDATION.md)。
 
 ## 已知限制
 
@@ -268,3 +327,8 @@ cd ../../../web && node --test test/*.test.mjs    # 网页刷机的库代码
 - 手势阈值是按测试板调的，换一种握持方式可能需要微调。
 - 只能在局域网内用，电脑必须开着。
 - MQTT 路径参与了编译，但没有单独做实机网络验收。
+- 本机点歌：
+  - go-music-dl 没有只监听本机的选项，会监听所有网卡的 18080 端口。
+  - 歌放完不会自动接下一首。
+  - 只说歌名、歌名又被识别错时（比如只说了"放请帖"），不会按读音纠正。
+  - go-music-dl 的接口是从它的网页里看出来的，不是正式接口，升级后需要重新核对（`core/music/source.py` 里有说明）。

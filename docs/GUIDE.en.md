@@ -2,7 +2,7 @@
 
 [中文](GUIDE.md) | English · [Back to README](../README.en.md)
 
-The README is the summary. This page has the details: features, manual setup without the web page, flashing, the Bot interface, building, tests and known limitations.
+The README is the summary. This page has the details: features, local music, manual setup without the web page, flashing, the Bot interface, building, tests and known limitations.
 
 ## Features
 
@@ -62,6 +62,40 @@ Reactions last 2–3 seconds, then the eyes return to the current state (listeni
 ## How it works
 
 ![Architecture: the board streams voice to the backend, which transcribes it and hands it to Grok Bot via webhook; the Bot writes its reply to a file on the computer, and the backend sends subtitles and speech back to the board](images/architecture.svg)
+
+## Local music (optional)
+
+When it's on, playing music, pausing, skipping and volume run on this computer in about a second instead of going to the Bot; everything else still goes to the Bot. It's off by default. Commands are Chinese; the full list of phrasings is in the [Chinese guide](GUIDE.md#本机点歌可选).
+
+**Turning it on**
+
+1. From the repo root, run `bash tools/local_music_setup.sh`. It downloads [go-music-dl](https://github.com/guohuiyuan/go-music-dl) (search and audio) and [mpv](https://github.com/mpv-player/mpv) (playback) into `local-music/` and checks the SHA-256 values pinned in the script; on a mismatch it stops. mpv comes from the official standalone build, not Homebrew: `brew install mpv` pulls in its own ffmpeg, which conflicts with the backend's ffmpeg-full.
+2. Put the `local_music` block the script prints into `xiaozhi-esp32-server/main/xiaozhi-server/data/.config.yaml` with `enabled: true` (sample in `examples/backend.config.yaml`).
+3. Restart the backend. When the board connects, the backend starts go-music-dl (port 18080) and mpv in the background and pre-synthesizes the short replies; both programs stop when the backend exits.
+4. Optional, for NetEase members-only songs: open `http://localhost:18080/music/setup`, create an admin with the `Web setup token` from `local-music/go-music-dl/service.log`, then sign in by QR code in the settings. Cookies stay in `local-music/go-music-dl/data/`.
+
+Needs macOS 14 or later on Apple Silicon, or macOS 15 or later on Intel.
+
+**What you can say** (examples): "放周杰伦的晴天" (play Jay Chou's Sunny Day), "来一首孤勇者", "暂停" (pause), "下一首" (next), "快进五秒" (skip ahead 5 s), "从头播放" (from the start), "单曲循环" (repeat one), "这首歌是谁唱的" (who sings this), "音量调到三十" (volume 30), "静音" (mute).
+
+- **Only while music is on**: pause, resume, stop, seek and "who sings this" count as music commands only while a song is playing or paused. These words are common in Bot tasks too.
+- **Keyword plus filler**: a control word counts only when what's left is filler such as "先、给我、帮我、把、这首、歌、一下、吧". "暂停那个下载任务" (pause that download task) still goes to the Bot.
+- **Missed phrasings are logged**: an unmatched sentence said while music is on is logged as "放歌期间未匹配，交给 Bot".
+
+**How a song is chosen**
+
+- **Where it searches**: NetEase and QQ Music, Kugou, Kuwo and Migu are searched together; NetEase is used when it has the original.
+- **Title only**: when you say only a title, each platform's top original votes for its singer.
+- **What's skipped**: live versions, covers, remixes, demos, "…版" versions and look-alike uploaders.
+- **Quality**: among equal candidates the highest bitrate wins.
+- **Misheard titles**: matched by pronunciation (`pypinyin`).
+
+**How the board answers**
+
+- **Requests and skips**: the board says "好的" (OK) or "下一首" (next) right away and shows "正在播放：…" (now playing) once the song starts.
+- **Everything else**: answered with pre-synthesized phrases.
+- **Then it rests**: the board goes idle after answering, so the music isn't taken for the next command.
+- **Music ducks while you talk**: waking the board lowers the music to 25% until the command is done (or 15 s).
 
 ## Manual setup (without the web page)
 
@@ -219,11 +253,12 @@ These builds default to the official XiaoZhi OTA server. To build in your own ba
 | Path | Contents |
 | --- | --- |
 | `xiaozhi-esp32/` | Full firmware source; this project's changes live in `main/boards/common/zongzhu/` (shared) and the board folders (`waveshare/esp32-s3-touch-amoled-1.75/`, `lckfb/szpi-esp32s3/`, `m5stack/stopwatch/`) |
-| `xiaozhi-esp32-server/main/xiaozhi-server/` | The Python backend that actually runs; the Bot bridge is `core/handle/grokBotHandle.py`, recognition corrections are in `core/utils/asr_text.py` |
+| `xiaozhi-esp32-server/main/xiaozhi-server/` | The Python backend that actually runs; the Bot bridge is `core/handle/grokBotHandle.py`, local music is `core/handle/localCommandHandle.py` and `core/music/`, recognition corrections are in `core/utils/asr_text.py` |
 | `firmware/` | Release packages per board: image set, checksums, build info |
 | `web/` | The web flasher and the macOS backend installer `install-mac.sh`, published to GitHub Pages on every push to main |
 | `deploy/` | Deploying the backend to a public Linux server (Caddy, systemd, server config) |
-| `tools/` | `build_firmware.py` (builds with the OTA URL, packages, flashes), `build_web.py` (assembles the site), `autostart.sh` (start at login), `verify/` (end-to-end checks), `asr-bench/` (recognizer comparison) |
+| `tools/` | `build_firmware.py` (builds with the OTA URL, packages, flashes), `build_web.py` (assembles the site), `autostart.sh` (start at login), `local_music_setup.sh` (downloads go-music-dl and mpv), `verify/` (end-to-end checks), `asr-bench/` (recognizer comparison) |
+| `local-music/` | Programs downloaded by `local_music_setup.sh` and go-music-dl's data (including sign-in cookies); local only, not in Git |
 | `examples/` | Config templates without real credentials |
 | `docs/` | This guide and per-board notes; `docs/records/` holds development and acceptance records, indexed in [docs/README.md](README.md) (Chinese) |
 | `requirements-macos*.txt` | Backend dependencies: default (X-ASR), optional FunASR, and the full tested set |
@@ -255,11 +290,13 @@ In each board's directory:
 ```sh
 cd xiaozhi-esp32-server/main/xiaozhi-server
 ../../../.venv/bin/python -m unittest tests.test_grok_bot tests.test_grok_bot_phrases tests.test_grok_bot_reply \
-  tests.test_asr_text tests.test_tts_prefetch tests.test_device_allowlist tests.test_text_message_log
+  tests.test_asr_text tests.test_tts_prefetch tests.test_device_allowlist tests.test_text_message_log tests.test_local_music
 cd ../../../web && node --test test/*.test.mjs    # web flasher library code
 ```
 
-`tools/verify/` holds end-to-end checks against the real pipeline (run from the repo root, e.g. `python tools/verify/verify_bot_reply.py`). `verify_bot_bridge.py`, `verify_bot_reply.py` and `verify_bot_speech.py` call the Bot you configured for real; only use them in a test environment you're authorized for, and start the backend first. `verify_bot_wait_display.py` uses local test files and normally doesn't call the webhook. `tools/asr-bench/` compares speech recognizers. Per-release results are in [records/VALIDATION.md](records/VALIDATION.md) (Chinese).
+`tools/verify/` holds end-to-end checks against the real pipeline (run from the repo root, e.g. `python tools/verify/verify_bot_reply.py`). `verify_bot_bridge.py`, `verify_bot_reply.py` and `verify_bot_speech.py` call the Bot you configured for real; only use them in a test environment you're authorized for, and start the backend first. `verify_bot_wait_display.py` uses local test files and normally doesn't call the webhook. `verify_local_music.py` speaks music commands with macOS speech synthesis as a simulated device; it plays a few seconds of music and doesn't call the Bot.
+
+Run the tests with the `unittest` command above, not pytest. pytest loads upstream's `tests/conftest.py`, which replaces `httpx.AsyncClient` with a stub that refuses every connection, including the mock transports the Bot tests pass in. `tools/asr-bench/` compares speech recognizers. Per-release results are in [records/VALIDATION.md](records/VALIDATION.md) (Chinese).
 
 ## Known limitations
 
@@ -268,3 +305,8 @@ cd ../../../web && node --test test/*.test.mjs    # web flasher library code
 - Gesture thresholds were tuned on the test board and may need adjustment for a different grip.
 - LAN only, and the computer must stay on.
 - The MQTT path is compiled in but hasn't had its own on-device network test.
+- Local music:
+  - go-music-dl has no option to listen on localhost only, so it listens on port 18080 on every interface.
+  - When a song ends, the next one doesn't start on its own.
+  - A misheard title said without the singer isn't corrected.
+  - go-music-dl's endpoints were read from its web page, not a documented API; recheck them after upgrading (see `core/music/source.py`).

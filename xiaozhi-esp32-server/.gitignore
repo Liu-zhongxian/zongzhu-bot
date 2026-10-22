@@ -143,6 +143,8 @@ dmypy.json
 
 # music directory
 music/
+# 本项目的本机点歌代码（不是音乐文件）
+!main/xiaozhi-server/core/music/
 
 # pytype static type analyzer
 .pytype/

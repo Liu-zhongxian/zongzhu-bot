@@ -19,7 +19,7 @@
 | --- | --- |
 | [records/VALIDATION.md](records/VALIDATION.md) | 各版本的测试范围、实测结果和限制 |
 | [records/TASK-RECORD.md](records/TASK-RECORD.md) | 从接入 Grok Bot 到 2.5.2.x 的实施过程（脱敏） |
-| [records/REFERENCE-TASKS.md](records/REFERENCE-TASKS.md) | 参考四个仓库的改进：即时回执、开机自启、X-ASR 识别与对比数据 |
+| [records/REFERENCE-TASKS.md](records/REFERENCE-TASKS.md) | **任务说明书：全部待办的总清单**；已完成的即时回执、开机自启、X-ASR 识别与对比数据 |
 | [records/WEB-FLASH.md](records/WEB-FLASH.md) | 网页刷机和一键安装脚本的设计与测试 |
 | [records/REMOTE-PLAN.md](records/REMOTE-PLAN.md) | 脱离电脑和局域网（服务器部署）的计划与进度 |
 

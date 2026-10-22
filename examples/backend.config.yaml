@@ -20,6 +20,16 @@ selected_module:
 # asr_hotwords: [宗主, Grok, GitHub]        # 写了就整个替换默认热词
 # asr_corrections: {宗主: [中主, 钟主]}      # 正确写法: [认错的写法]，写了就整个替换默认纠错表
 # 默认值见 core/utils/asr_text.py
+# 本机点歌（可选，默认关闭）：先运行 bash tools/local_music_setup.sh，再把 enabled 改成 true。
+# 打开后"放周杰伦的晴天""暂停""下一首""音量调到三十"在这台电脑上执行，不经过 Bot；
+# 还会给语音识别加上常见歌手、歌名的热词。go-music-dl 会监听所有网卡的 port。
+local_music:
+  enabled: false
+  go_music_dl: ../../../local-music/go-music-dl/music-dl
+  port: 18080
+  mpv: ../../../local-music/mpv/mpv.app/Contents/MacOS/mpv
+  socket: ../../../local-music/mpv.sock   # 路径不能超过约 100 字节（macOS 限制）
+  # hotwords: [蔡健雅, 达尔文]             # 追加自己常点的歌手、歌名
 LLM:
   BotOnly:
     type: bot_only

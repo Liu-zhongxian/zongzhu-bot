@@ -97,6 +97,8 @@ python3 -m http.server -d _site 8000
 
 ## 8. 待办
 
+未完成项已汇总到 [REFERENCE-TASKS.md](REFERENCE-TASKS.md) 第 2 节（E1–E5、C3、C7、D4、D5、A4），状态以那里为准。
+
 ### 已完成
 
 - [x] 页面、库代码、11 项测试（含 ESP-IDF `nvs_tool.py` 校验）
