@@ -13,6 +13,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Optional
 
+from core.gateway.skills.music import SINGERS
 from core.handle import grokBotPhrases as phrases
 
 PUNCT = re.compile(r"[\s，。！？、,.!?~～:：…]+")
@@ -34,6 +35,10 @@ MUSIC_VERB = re.compile(r"放|播|听|换|切|来一首|来首")
 CLAUSE = re.compile(r"[，。！？、,.!?；;~～…]+")
 # A second clause that only adds this much keeps the command: "…的音乐，你随意播放"
 MUSICISH = re.compile(r"播放|放|歌|音乐|随意|随便|随机|听|一下|吧")
+# "周杰伦的晴天" with the verb cut off at the start of recognition (2026-10-25 实机): a known
+# singer, "的", a short title, and nothing that makes it a question about the singer
+BARE_SONG = re.compile(r"^(?P<artist>[^的]{2,8})的(?P<title>[^的]{1,10})$")
+NOT_A_TITLE = re.compile(r"[谁什么哪吗几怎为是有在呢多少]")
 GENERIC = {"歌", "音乐", "首歌", "点歌", "点音乐", "一首歌", "歌曲", "放歌", "首"}
 STOP = {"别放了", "不要放了", "停止播放", "停止音乐", "关掉音乐", "关闭音乐", "关音乐", "不听了", "音乐关掉",
         "把音乐关掉", "把音乐关了", "音乐关了", "关了音乐", "停止", "结束播放", "别唱了", "不要唱了", "关掉歌", "把歌关了"}
@@ -257,6 +262,10 @@ def _match_one(text: str, has_song: bool, playing: bool, paused: bool) -> Option
                             a.group("artist")) or None
         if title and title not in GENERIC:
             return Command("play", title=title, artist=artist)
+    m = BARE_SONG.match(t)
+    if m and m.group("artist") in SINGERS and not NOT_A_TITLE.search(m.group("title")):
+        title, artist = parse_song(t)
+        return Command("play", title=title, artist=artist)
     # Matched with single spaces kept: "放 周杰伦 晴天" splits singer and title at the space
     m = PLAY.match(POLITE.sub("", raw))
     if m:

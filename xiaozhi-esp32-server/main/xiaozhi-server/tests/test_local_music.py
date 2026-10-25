@@ -114,6 +114,15 @@ class MatchTest(unittest.TestCase):
         for text in ("别再提醒我了", "不要再发邮件了", "别再放到桌面上了", "不要再播放广告", "别再说了"):
             self.assertIsNone(match(text, **on), text)
 
+    def test_known_singer_and_title_without_a_verb(self):
+        # 2026-10-25 实机："放"没识别出来，"周杰伦的晴天。"被交给了 Bot
+        self.assertEqual(match("周杰伦的晴天。"), Command("play", title="晴天", artist="周杰伦"))
+        self.assertEqual(match("林俊杰的江南吧"), Command("play", title="江南", artist="林俊杰"))
+        self.assertEqual(match("周杰伦的歌"), Command("play", artist="周杰伦"))
+        for text in ("周杰伦的老婆是谁", "周杰伦的新专辑什么时候出", "周杰伦的演唱会在哪", "我同事的晴天",
+                     "帮我查一下周杰伦的晴天是哪年发行的", "张三的文件"):
+            self.assertIsNone(match(text), text)
+
     def test_other_speech_goes_to_the_bot(self):
         for text in ("帮我总结一下这周的 X 热点", "别暂停", "不要播放", "请回复宗主测试成功", "好"):
             self.assertIsNone(match(text, has_song=True, playing=True), text)

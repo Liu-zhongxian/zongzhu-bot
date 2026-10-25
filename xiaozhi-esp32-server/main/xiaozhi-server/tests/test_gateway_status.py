@@ -63,6 +63,12 @@ class StatusTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([(r["layer"], r["target"]) for r in recent],
                          [("agent", "Grok Bot"), ("filter", "拦下重复")])
 
+    async def test_wake_row_shows_the_board_wake_word(self):
+        self.patch_handlers()
+        conn = make_conn(config=dict(CONFIG, wakeup_words=["你好宗主", "嘿你好呀"]))
+        await gateway.dispatch(conn, "嘿，你好呀")  # what upstream passes on after a wake word
+        self.assertEqual(status.snapshot(CONFIG)["recent"][0]["text"], "你好宗主")
+
     async def test_recent_keeps_the_last_thirty(self):
         self.patch_handlers(bot=True)
         conn = make_conn()

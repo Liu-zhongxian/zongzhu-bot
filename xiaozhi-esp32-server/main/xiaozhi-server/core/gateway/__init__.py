@@ -96,6 +96,9 @@ async def dispatch(conn, text) -> bool:
     layer, target, handled = await _route(conn, text)
     if handled and layer == "agent" and getattr(conn, "bot_ui_waiting", False):
         conn.gateway_wait_since = time.time()
+    if kind == "wake":
+        # Upstream greets with a stand-in sentence ("嘿，你好呀"); show the word the board heard
+        record["text"] = getattr(conn, "device_wake_word", None) or text
     if kind:
         layer, target = kind, {"wake": "唤醒问候", "filter": "不提交"}[kind]
     elif layer == "agent" and conn.gateway_not_sent:
