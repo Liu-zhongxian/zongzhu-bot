@@ -223,6 +223,7 @@ esptool --chip esp32s3 --port /dev/cu.usbmodemXXXX --baud 921600 write-flash @fl
 | 现象 | 先查这里 |
 | --- | --- |
 | 板子一直连不上服务 | 电脑和板子是否在同一网段；`.config.yaml` 和板子 OTA 地址里的 IP 是否是电脑当前的 IP；macOS 防火墙是否放行了 Python 的 8000/8003 端口 |
+| 后端重启后板子一直"连接中"，要拔线重插才好 | `.config.yaml` 的 `server` 下没写 `auth_key`：后端每次启动随机换一个，板子开机时拿到的 token 就失效了。照 `examples/backend.config.yaml` 写一个固定的随机串，重启后端后再给板子上电一次，以后重启后端就不用再动板子 |
 | 电脑 IP 变了 | `.config.yaml` 里的 WebSocket 地址要改。板子的 OTA 地址：用方式一（`.local` 名字）刷的不用改；手填 IP 的要在配网页改 |
 | 听到"好的，正在交给 Bot"、屏幕在等待，但一直没有回复 | Bot 没把文件写到这台电脑。确认 Bot 有本机文件写入权限，写到的是 `reply_dir` 下的路径，内容里的 `request_id` 和请求里的一致 |
 | 回执之后接着说"Bot 服务拒绝了请求" | Webhook 返回了 4xx，检查 `url` 和 `token` |

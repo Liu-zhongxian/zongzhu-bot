@@ -4,6 +4,9 @@ server:
   ip: 0.0.0.0
   port: 8000
   http_port: 8003
+  # 固定的签名密钥，换成随机串（python3 -c "import secrets;print(secrets.token_urlsafe(32))"）。
+  # 不写的话后端每次启动随机生成，板子存的 token 随之失效，后端一重启板子就要重新上电才能连上。
+  auth_key: REPLACE_WITH_RANDOM_STRING
   websocket: ws://192.168.1.100:8000/xiaozhi/v1/
   vision_explain: http://192.168.1.100:8003/mcp/vision/explain
   auth:

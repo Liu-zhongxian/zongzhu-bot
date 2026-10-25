@@ -202,6 +202,7 @@ Say "你好宗主", wait for the response, then make a request. The screen first
 | --- | --- |
 | Board never connects | Board and computer on the same subnet; the IP in `.config.yaml` and in the board's OTA URL is the computer's current IP; macOS firewall allows Python on ports 8000/8003 |
 | Computer's IP changed | Update the WebSocket URL in `.config.yaml`. The board's OTA URL needs no change with option 1 (`.local` name); a typed IP must be changed on the setup page |
+| After a backend restart the board stays on "connecting" until it is unplugged and plugged back in | `server.auth_key` is missing from `.config.yaml`, so the backend picks a new random one at every start and the token the board got at boot stops working. Set a fixed random string as in `examples/backend.config.yaml`, restart the backend and power-cycle the board once; later restarts need nothing on the board |
 | You hear "好的，正在交给 Bot" ("OK, handing it to the Bot") and the screen waits, but no reply ever arrives | The Bot didn't write the file on this computer. Make sure it has local file write access, writes under `reply_dir`, and the `request_id` in the file matches the request |
 | Screen says the Bot rejected the request | The webhook returned 4xx; check `url` and `token` |
 | Screen says the reply directory is unavailable | `reply_dir` isn't an existing, writable absolute path |
