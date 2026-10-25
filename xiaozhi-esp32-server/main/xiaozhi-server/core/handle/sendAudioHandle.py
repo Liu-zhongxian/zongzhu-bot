@@ -14,8 +14,16 @@ from core.utils.audioRateController import AudioRateController
 TAG = __name__
 # 音频帧时长（毫秒）
 AUDIO_FRAME_DURATION = 60
-# 预缓冲包数量，直接发送以减少延迟
-PRE_BUFFER_COUNT = 5
+# Each sentence tops the device buffer up to this many packets (15 x 60ms = 0.9s);
+# override with tts_audio_prebuffer_count. After xiaozhi-hub-server (MIT).
+DEFAULT_PREBUFFER_COUNT = 15
+
+
+def _pre_buffer_count(conn) -> int:
+    try:
+        return max(1, int(conn.config.get("tts_audio_prebuffer_count", DEFAULT_PREBUFFER_COUNT)))
+    except (TypeError, ValueError):
+        return DEFAULT_PREBUFFER_COUNT
 
 
 async def sendAudioMessage(conn: "ConnectionHandler", sentenceType, audios, text, sentence_id=None):
@@ -74,8 +82,10 @@ async def _wait_for_audio_completion(conn: "ConnectionHandler"):
             # 自定义节奏：等待最后帧在客户端播放完成
             playback_time = 2 * rate_controller.interval_ms / 1000.0
         else:
-            # 默认节奏：前 N 帧预缓冲已直接发出，需要等待它们播放完成
-            playback_time = (PRE_BUFFER_COUNT + 2) * rate_controller.interval_ms / 1000.0
+            # Default pacing: wait out what the device still has buffered, which may
+            # have been topped up at the start of any sentence, not just the first.
+            remaining = getattr(conn, "audio_flow_control", {}).get("play_end", 0) - time.monotonic()
+            playback_time = max(remaining, 0) + 2 * rate_controller.interval_ms / 1000.0
         await asyncio.sleep(playback_time)
 
         conn.logger.bind(tag=TAG).debug("音频发送完成")
@@ -253,8 +263,18 @@ async def _send_audio_with_rate_control(
             # 自定义节奏模式：所有包入队按 send_delay 发（关闭预缓冲）
             rate_controller.add_audio(packet)
         else:
-            # 默认节奏模式（60ms/包）：前 N 包预缓冲直接发，后续入队由后台任务按 interval_ms 节奏发
-            if flow_control["packet_count"] < PRE_BUFFER_COUNT:
+            # Default pacing (60ms/packet). Whenever the queue has run dry (start of a turn,
+            # or the next sentence arriving after the last one was sent), send directly
+            # until the device holds N packets, then queue at the normal pace. Topping up
+            # to N rather than adding N keeps the buffer from growing; topping up only
+            # when nearly empty would leave a sentence that arrives with 0.2s left
+            # running on 0.2s of slack.
+            if not rate_controller.queue:
+                ahead = max(flow_control.get("play_end", 0) - time.monotonic(), 0)
+                buffered = round(ahead * 1000 / AUDIO_FRAME_DURATION)
+                flow_control["burst_left"] = max(_pre_buffer_count(conn) - buffered, 0)
+            if flow_control.get("burst_left", 0) > 0:
+                flow_control["burst_left"] -= 1
                 await _do_send_audio(conn, packet, flow_control)
             else:
                 rate_controller.add_audio(packet)
@@ -279,6 +299,10 @@ async def _do_send_audio(conn: "ConnectionHandler", opus_packet, flow_control):
     # 更新流控状态
     flow_control["packet_count"] = packet_index + 1
     flow_control["sequence"] = sequence + 1
+    # Estimated time the device finishes playing everything sent so far
+    flow_control["play_end"] = (
+        max(flow_control.get("play_end", 0), time.monotonic()) + AUDIO_FRAME_DURATION / 1000.0
+    )
 
 
 async def send_tts_message(conn: "ConnectionHandler", state, text=None):
