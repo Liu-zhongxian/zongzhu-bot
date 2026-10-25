@@ -11,7 +11,7 @@ Skills are in core/gateway/skills/ (see skill.py), AIs in core/gateway/agents/ (
 """
 import time
 
-from core.gateway import builtin, status
+from core.gateway import builtin, status, waiting
 from core.gateway.agent import Agent, hand_over
 from core.gateway.skill import Skill
 
@@ -74,9 +74,12 @@ def warm(conn):
         asyncio.create_task(grokBotPhrases.warm(conn, list(dict.fromkeys(texts))))
     for module in modules:
         module.warm(conn)
+    if agent and agent.answers_later:
+        waiting.start(conn, agent)
 
 
 def on_listen(conn):
+    waiting.resume_input(conn)
     agent = active_agent(conn.config)
     for module in ([agent] if agent else []) + active_skills(conn.config):
         module.on_listen(conn)

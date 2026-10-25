@@ -12,12 +12,15 @@ one sentence through it and turns the events into speech and screens:
                                unless the kind is UNKNOWN (it may still have been sent)
 - Done                         finished
 
-A reply that arrives later (Webhook callback, after a reconnect...) goes through `say_reply`.
+An AI whose answers come back later (`answers_later = True`) also answers the questions in
+waiting.py, which shows the waiting screen and says each answer through `say_reply`.
 """
 import json
 import re
 import time
 import uuid
+from dataclasses import dataclass
+from typing import Optional
 
 from core.gateway.agent_session import Activity, AgentSession, Done, Error, ErrorKind, TextDelta
 from core.handle import grokBotPhrases as phrases
@@ -26,11 +29,22 @@ HANDING_OVER = "handing_over"
 WAITING_FOR_REPLY = "waiting_for_reply"
 
 
+@dataclass
+class Reply:
+    """An answer that came back after the hand-over."""
+    request_id: str
+    text: str
+    created: Optional[float] = None  # when the request was sent (time.time())
+    ref: object = None  # whatever the module needs back in `delivered`
+
+
 class Agent:
     name = ""
     title = ""  # shown on the gateway page
     ack = ""  # cached phrase said while the sentence is sent off
     accepted = ""  # said instead when the ack is not cached yet and the AI accepted the sentence
+    answers_later = False  # True: answers come back after the hand-over (see waiting.py)
+    earlier = "稍早的回复："  # put before an answer to a request from an earlier connection
 
     def enabled(self, config) -> bool:
         return True
@@ -47,6 +61,24 @@ class Agent:
 
     def session(self, conn) -> AgentSession:
         raise NotImplementedError
+
+    # Only for answers_later; see waiting.py
+    def watches(self, conn) -> bool:
+        """Whether answers can come back now (e.g. the return path is configured)."""
+        return self.answers_later
+
+    def waiting_since(self, conn) -> float:
+        return 0
+
+    def next_reply(self, conn) -> Optional[Reply]:
+        return None
+
+    def delivered(self, conn, reply: Reply):
+        pass
+
+    def slow_hint(self, conn):
+        """(seconds, text) to show when the answer takes that long, or None."""
+        return None
 
 
 def _bot_ui(conn):

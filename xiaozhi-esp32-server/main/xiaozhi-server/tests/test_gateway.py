@@ -1,12 +1,14 @@
 import asyncio
 import json
 import sys
+import time
 import unittest
 from types import SimpleNamespace
 from unittest import mock
 
 from core import gateway
-from core.gateway.agent import HANDING_OVER, WAITING_FOR_REPLY, Agent, hand_over, say_reply
+from core.gateway import waiting
+from core.gateway.agent import HANDING_OVER, WAITING_FOR_REPLY, Agent, Reply, hand_over, say_reply
 from core.gateway.agent_session import Activity, AgentSession, Done, Error, ErrorKind, TextDelta
 
 
@@ -208,6 +210,119 @@ class HandOverTest(unittest.IsolatedAsyncioTestCase):
                          [("bot_wait", "reply"), ("tts", "start"), ("tts", "sentence_start")])
         self.assertFalse(conn.bot_ui_waiting)
         self.speak_txt.assert_called_once_with(conn, "查好了。")
+
+
+class LaterAgent(FakeAgent):
+    """A fake AI whose answers come back later, held in memory."""
+    answers_later = True
+    earlier = "稍早的测试回复："
+
+    def __init__(self):
+        self.since, self.ready, self.done = 0, [], []
+
+    def waiting_since(self, conn):
+        return self.since
+
+    def next_reply(self, conn):
+        return self.ready[0] if self.ready else None
+
+    def delivered(self, conn, reply):
+        self.ready.remove(reply)
+        self.done.append(reply.request_id)
+
+    def slow_hint(self, conn):
+        return (20, "测试 AI 有点慢。")
+
+
+class WaitingTest(unittest.IsolatedAsyncioTestCase):
+    """Waiting is the gateway's: any AI with answers_later gets the same screen and delivery."""
+
+    def setUp(self):
+        self.speak_txt = mock.MagicMock()
+        self.audio = SimpleNamespace(send_stt_message=mock.AsyncMock(), send_tts_message=mock.AsyncMock())
+        patcher = mock.patch.dict(sys.modules, {
+            "core.handle.sendAudioHandle": self.audio,
+            "core.handle.intentHandler": SimpleNamespace(speak_txt=self.speak_txt),
+        })
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.agent = LaterAgent()
+        self.conn = SimpleNamespace(
+            config={}, logger=mock.MagicMock(), session_id="s1", features={"bot_ui": True},
+            websocket=SimpleNamespace(send=mock.AsyncMock()), client_abort=False, client_is_speaking=False,
+            client_have_voice=False, just_woken_up=False, stop_event=asyncio.Event(), tts=object(),
+            reset_audio_states=mock.MagicMock())
+
+    def sent(self):
+        return [json.loads(c.args[0]) for c in self.conn.websocket.send.await_args_list]
+
+    async def test_screen_waits_hints_and_says_the_answer(self):
+        self.agent.since = time.time() - 25
+        await waiting.update_screen(self.conn, self.agent)
+        await waiting.update_screen(self.conn, self.agent)  # each only once
+        self.assertEqual([(m["type"], m["state"]) for m in self.sent()],
+                         [("bot_wait", "waiting"), ("tts", "sentence_start")])
+        self.assertEqual(self.sent()[0]["elapsed"], 25)
+        self.assertEqual(self.sent()[1]["text"], "测试 AI 有点慢。")
+        self.assertTrue(self.conn.bot_ui_waiting)
+        self.agent.ready.append(Reply("r1", "答案。", created=self.agent.since))
+        self.assertTrue(await waiting.deliver(self.conn, self.agent))
+        self.assertEqual(self.agent.done, ["r1"])
+        self.assertFalse(self.conn.bot_ui_waiting)
+        self.speak_txt.assert_called_once_with(self.conn, "答案。")
+
+    async def test_wake_resumes_input_before_an_old_answer_is_said(self):
+        self.agent.since = time.time()
+        await waiting.update_screen(self.conn, self.agent)
+        waiting.resume_input(self.conn)
+        self.assertFalse(self.conn.bot_ui_waiting)
+        self.agent.ready.append(Reply("r1", "答案。"))
+        self.assertIsNone(await waiting.deliver(self.conn, self.agent))
+        self.conn.bot_reply_since = time.time()
+        self.conn.bot_input_until = 0
+        self.agent.ready[0].created = time.time() - 60
+        await waiting.deliver(self.conn, self.agent)
+        self.speak_txt.assert_called_once_with(self.conn, "稍早的测试回复：答案。")
+
+    async def test_timeout_when_the_module_stops_waiting(self):
+        self.agent.since = time.time()
+        await waiting.update_screen(self.conn, self.agent)
+        self.agent.since = 0
+        await waiting.update_screen(self.conn, self.agent)
+        self.assertEqual(self.sent()[-1]["state"], "timeout")
+        self.assertFalse(self.conn.bot_ui_waiting)
+
+    def test_progress_lines_follow_30_60_120(self):
+        self.assertIsNone(waiting.progress_text(29, 0))
+        self.assertEqual(waiting.progress_text(30, 0), "还在处理，请稍等。")
+        self.assertIsNone(waiting.progress_text(89, 1))
+        self.assertEqual(waiting.progress_text(90, 1), "已经等了1分30秒，还在处理。")
+        self.assertIsNone(waiting.progress_text(209, 2))
+        self.assertEqual(waiting.progress_text(210, 2), "已经等了3分30秒，还在处理。")
+        self.assertEqual(waiting.progress_text(330, 3), "已经等了5分30秒，还在处理。")
+
+    async def test_progress_is_off_unless_switched_on(self):
+        self.agent.since = time.time() - 40
+        self.conn.bot_ui_waiting = True
+        await waiting.speak_progress(self.conn, self.agent)
+        self.speak_txt.assert_not_called()
+        self.conn.config = {"gateway": {"progress_prompts": True}}
+        await waiting.speak_progress(self.conn, self.agent)
+        await waiting.speak_progress(self.conn, self.agent)  # the next one is due at 90 s
+        self.speak_txt.assert_called_once_with(self.conn, "还在处理，请稍等。")
+
+    async def test_hello_starts_the_watch_and_listen_resumes(self):
+        gateway.register_agent(self.agent)
+        self.addCleanup(gateway.AGENTS.pop, "test_agent")
+        self.conn.config = {"gateway": {"skills": [], "agent": "test_agent"}}
+        with mock.patch("core.gateway.waiting.watch", mock.AsyncMock()) as watch, \
+                mock.patch("core.handle.grokBotPhrases.warm", mock.AsyncMock()):
+            gateway.warm(self.conn)
+            await asyncio.sleep(0)
+        watch.assert_awaited_once_with(self.conn, self.agent)
+        self.conn.bot_ui_waiting = True
+        gateway.on_listen(self.conn)
+        self.assertFalse(self.conn.bot_ui_waiting)
 
 
 class SkillCollectionTest(unittest.IsolatedAsyncioTestCase):

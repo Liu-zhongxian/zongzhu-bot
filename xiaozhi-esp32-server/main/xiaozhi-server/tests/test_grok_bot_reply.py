@@ -7,10 +7,37 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
-from core.handle.grokBotReply import (prepare_reply, read_reply, deliver_replies,
-                                      waiting_for_reply, hold_connection, watch_replies,
-                                      update_wait_ui, resume_bot_input, accept_reply)
+from core.gateway import waiting
+from core.gateway.agents.grok_webhook import GrokWebhookAgent
+from core.handle.grokBotReply import prepare_reply, read_reply, waiting_for_reply, accept_reply
 from core.handle.grokBotHandle import submit_command, _recent
+
+AGENT = GrokWebhookAgent()
+# The waiting screen and reply delivery moved to core/gateway/waiting.py (G4); these keep the
+# old names so the assertions below are the ones written for the Grok-only code.
+hold_connection = waiting.hold_connection
+resume_bot_input = waiting.resume_input
+
+
+def _use(conn, directory, wait_seconds=300, hint_seconds=30):
+    webhook = Path(directory) / "webhook.json"
+    webhook.write_text(json.dumps({"reply_dir": str(directory), "reply_wait_seconds": wait_seconds,
+                                   "approval_hint_seconds": hint_seconds}))
+    conn.config = dict(getattr(conn, "config", {}), grok_bot={"config_file": str(webhook)})
+
+
+async def deliver_replies(conn, directory):
+    _use(conn, directory)
+    return await waiting.deliver(conn, AGENT)
+
+
+async def update_wait_ui(conn, directory, wait_seconds, hint_seconds=30):
+    _use(conn, directory, wait_seconds, hint_seconds)
+    await waiting.update_screen(conn, AGENT)
+
+
+async def watch_replies(conn):
+    await waiting.watch(conn, AGENT)
 
 
 class GrokBotReplyTest(unittest.IsolatedAsyncioTestCase):
@@ -106,8 +133,8 @@ class GrokBotReplyTest(unittest.IsolatedAsyncioTestCase):
         self.conn.config = {"grok_bot": {"config_file": str(config)}}
         self.conn.client_is_speaking = True
         self.conn.bot_reply_sentence_id = self.conn.sentence_id = "reply-playing"
-        with patch("core.handle.grokBotReply.asyncio.sleep", AsyncMock(side_effect=[None, asyncio.CancelledError])), \
-             patch("core.handle.grokBotReply.hold_connection", AsyncMock()) as hold:
+        with patch("core.gateway.waiting.asyncio.sleep", AsyncMock(side_effect=[None, asyncio.CancelledError])), \
+             patch("core.gateway.waiting.hold_connection", AsyncMock()) as hold:
             with self.assertRaises(asyncio.CancelledError):
                 await watch_replies(self.conn)
             hold.assert_awaited_once_with(self.conn)
