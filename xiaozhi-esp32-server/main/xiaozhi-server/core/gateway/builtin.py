@@ -1,15 +1,5 @@
-"""The skill and AI this project had before the gateway, wrapped unchanged."""
-from core.gateway.skill import Skill
-
-
-class LocalMusicSkill(Skill):
-    name = "local_music"
-    title = "点歌"
-
-    async def handle(self, conn, text):
-        from core.handle.localCommandHandle import handle_local_command
-
-        return await handle_local_command(conn, text)
+"""The skill and AI this project had before the gateway."""
+from core.gateway.skills.music import MusicSkill
 
 
 async def grok_bot(conn, text):
@@ -18,5 +8,5 @@ async def grok_bot(conn, text):
     return await handle_grok_bot(conn, text)
 
 
-SKILLS = [LocalMusicSkill()]
+SKILLS = [MusicSkill()]
 AGENTS = {"grok_bot": grok_bot}

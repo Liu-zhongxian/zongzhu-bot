@@ -100,7 +100,7 @@ Prefer not to use the web page, want to build the firmware yourself, or the page
 
 This project's own changes are in:
 - **Firmware**: `xiaozhi-esp32/main/boards/common/zongzhu/` and the board directories.
-- **Backend**: under `xiaozhi-esp32-server/main/xiaozhi-server/core/`, the files `handle/grokBot*.py`, `handle/localCommandHandle.py`, `music/` and `utils/asr_text.py`.
+- **Backend**: under `xiaozhi-esp32-server/main/xiaozhi-server/core/`, the files `handle/grokBot*.py`, `gateway/` (the gateway; local music is in `gateway/skills/music/`) and `utils/asr_text.py`.
 - **Everything else**: `web/`, `tools/`, `deploy/`, `examples/` and `docs/`.
 
 The rest of the two upstream directories is kept mostly as is, so that later upstream merges, which keep up with Xiaozhi firmware updates, stay simple. Upstream base commits are in `UPSTREAM.json`.

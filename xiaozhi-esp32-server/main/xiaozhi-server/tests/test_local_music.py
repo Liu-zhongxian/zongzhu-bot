@@ -4,10 +4,10 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-import core.music.player  # noqa: F401 -- loaded before setUp snapshots sys.modules
-from core.handle import localCommandHandle as local
-from core.handle.localCommandHandle import Command, cn_number, match, parse_song
-from core.music.source import GoMusicDL, Song, artist_is, is_original, sounds_like
+import core.gateway.skills.music.player  # noqa: F401 -- loaded before setUp snapshots sys.modules
+from core.gateway.skills.music import command as local
+from core.gateway.skills.music.command import Command, cn_number, match, parse_song
+from core.gateway.skills.music.source import GoMusicDL, Song, artist_is, is_original, sounds_like
 
 
 class MatchTest(unittest.TestCase):
@@ -241,7 +241,7 @@ class HandleTest(unittest.IsolatedAsyncioTestCase):
 
     async def _handle(self, text, music, conn=None):
         conn = conn or self._conn()
-        with mock.patch("core.music.player.get_music", return_value=music):
+        with mock.patch("core.gateway.skills.music.player.get_music", return_value=music):
             handled = await local.handle_local_command(conn, text)
         return handled, conn
 
@@ -257,7 +257,7 @@ class HandleTest(unittest.IsolatedAsyncioTestCase):
         self.audio.send_tts_message.assert_any_call(conn, "sentence_start", "正在播放：周杰伦的晴天")
 
     async def test_volume_is_shown_and_spoken_short(self):
-        with mock.patch("core.music.player.set_system_volume", return_value=30):
+        with mock.patch("core.gateway.skills.music.player.set_system_volume", return_value=30):
             handled, conn = await self._handle("音量调到三十", FakeMusic())
         self.assertTrue(handled)
         self.speak_txt.assert_called_once_with(conn, "好的。")

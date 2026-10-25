@@ -275,7 +275,7 @@ def _strong_music_request(text: str, cmd=None, why: str = "") -> bool:
 
 def _run(music, cmd: Command):
     """Blocking work; returns the reply, or None to hand the utterance to the Bot."""
-    from core.music.player import set_muted, set_system_volume, system_volume
+    from core.gateway.skills.music.player import set_muted, set_system_volume, system_volume
 
     if cmd.action == "ask":
         return "想听什么歌？可以说：放周杰伦的晴天。"
@@ -334,7 +334,7 @@ def duck(conn) -> None:
     """The board started listening: lower the music so it hears the user."""
     if not conn.config.get("local_music", {}).get("enabled"):
         return
-    from core.music.player import current_music
+    from core.gateway.skills.music.player import current_music
     music = current_music()
     if music:
         asyncio.get_running_loop().run_in_executor(None, music.duck)
@@ -345,7 +345,7 @@ async def handle_local_command(conn, text) -> bool:
     if not config.get("enabled"):
         return False
     from core.handle.grokBotHandle import extract_command, strip_wake_phrase
-    from core.music.player import MusicError, get_music
+    from core.gateway.skills.music.player import MusicError, get_music
 
     command = extract_command(text)
     if command is None:
@@ -398,7 +398,7 @@ async def handle_local_command(conn, text) -> bool:
 
 
 async def _finish(work, log):
-    from core.music.player import MusicError
+    from core.gateway.skills.music.player import MusicError
     try:
         return await work
     except MusicError as error:
@@ -439,12 +439,11 @@ async def _say_more(conn, text):
 
 
 def warm(conn) -> None:
-    """When the board connects: synthesize the fixed replies and start the music programs."""
+    """When the board connects: start the music programs (the gateway synthesizes FIXED_REPLIES)."""
     config = conn.config.get("local_music", {})
     if not config.get("enabled"):
         return
-    from core.music.player import get_music
-    asyncio.create_task(phrases.warm(conn, FIXED_REPLIES))
+    from core.gateway.skills.music.player import get_music
     music = get_music(config)
 
     def start():

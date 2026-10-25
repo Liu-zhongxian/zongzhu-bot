@@ -43,6 +43,35 @@ def _settings(config):
     return list(skills or []), agent or None
 
 
+def active_skills(config):
+    """The skills in the configured order that are switched on; unknown names are left out."""
+    skills = (SKILLS.get(name) for name in _settings(config)[0])
+    return [skill for skill in skills if skill is not None and skill.enabled(config)]
+
+
+def hotwords(config) -> list:
+    return [word for skill in active_skills(config) for word in skill.hotwords(config)]
+
+
+def warm(conn):
+    """A board connected: synthesize every skill's fixed replies, then let each skill start up."""
+    import asyncio
+
+    from core.handle import grokBotPhrases
+
+    skills = active_skills(conn.config)
+    texts = [text for skill in skills for text in skill.phrases(conn.config)]
+    if texts:
+        asyncio.create_task(grokBotPhrases.warm(conn, texts))
+    for skill in skills:
+        skill.warm(conn)
+
+
+def on_listen(conn):
+    for skill in active_skills(conn.config):
+        skill.on_listen(conn)
+
+
 def _warn(conn, message):
     logger = getattr(conn, "logger", None)
     if logger is not None:

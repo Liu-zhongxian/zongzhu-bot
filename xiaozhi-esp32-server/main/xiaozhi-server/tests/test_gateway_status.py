@@ -26,7 +26,7 @@ class StatusTest(unittest.IsolatedAsyncioTestCase):
         status._totals.update(sentences=0, local=0)
 
     def patch_handlers(self, music=False, bot=False):
-        for target, value in (("core.handle.localCommandHandle.handle_local_command", music),
+        for target, value in (("core.gateway.skills.music.command.handle_local_command", music),
                               ("core.handle.grokBotHandle.handle_grok_bot", bot)):
             patcher = mock.patch(target, mock.AsyncMock(return_value=value))
             patcher.start()

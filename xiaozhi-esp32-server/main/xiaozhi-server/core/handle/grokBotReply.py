@@ -280,5 +280,3 @@ def start_reply_watcher(conn):
         conn.bot_reply_task = asyncio.create_task(watch_replies(conn))
     from core.handle import grokBotPhrases
     asyncio.create_task(grokBotPhrases.warm(conn))
-    from core.handle.localCommandHandle import warm as warm_local_music
-    warm_local_music(conn)

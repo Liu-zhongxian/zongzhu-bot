@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -13,7 +14,7 @@ class GatewayDispatchTest(unittest.IsolatedAsyncioTestCase):
     def patch_handlers(self, music=False, bot=False):
         music_mock = mock.AsyncMock(return_value=music)
         bot_mock = mock.AsyncMock(return_value=bot)
-        for target, new in (("core.handle.localCommandHandle.handle_local_command", music_mock),
+        for target, new in (("core.gateway.skills.music.command.handle_local_command", music_mock),
                             ("core.handle.grokBotHandle.handle_grok_bot", bot_mock)):
             patcher = mock.patch(target, new)
             patcher.start()
@@ -74,6 +75,50 @@ class GatewayDispatchTest(unittest.IsolatedAsyncioTestCase):
         agent.assert_not_awaited()
         self.assertTrue(await gateway.dispatch(conn, "讲个笑话"))
         agent.assert_awaited_once_with(conn, "讲个笑话")
+
+
+class SkillCollectionTest(unittest.IsolatedAsyncioTestCase):
+    """Hotwords, fixed replies and listen hooks come from the skills that are switched on."""
+
+    MUSIC_ON = {"local_music": {"enabled": True, "hotwords": [" 告五人 ", "", "晴天"]}}
+
+    def test_music_hotwords_follow_the_switch(self):
+        from core.utils import asr_text
+
+        base = len(asr_text.DEFAULT_HOTWORDS)
+        words = asr_text.hotwords_of(self.MUSIC_ON)
+        self.assertEqual(len(words), base + 61 + 1)  # extra "晴天" is not repeated, blanks dropped
+        self.assertIn("周杰伦", words)
+        self.assertIn("告五人", words)
+        self.assertEqual(len(asr_text.hotwords_of({})), base)
+        self.assertEqual(len(asr_text.hotwords_of(self.MUSIC_ON | {"gateway": {"skills": []}})), base)
+
+    async def test_warm_collects_the_fixed_replies_once_per_board(self):
+        warm_phrases = mock.AsyncMock()
+        with mock.patch("core.handle.grokBotPhrases.warm", warm_phrases), \
+                mock.patch("core.gateway.skills.music.command.warm") as start_music:
+            conn = make_conn(self.MUSIC_ON)
+            gateway.warm(conn)
+            await asyncio.sleep(0)
+        texts = warm_phrases.await_args.args[1]
+        self.assertEqual(len(texts), 14)
+        self.assertEqual(texts[0], "好的。")
+        start_music.assert_called_once_with(conn)
+
+    async def test_nothing_is_warmed_when_music_is_off(self):
+        with mock.patch("core.handle.grokBotPhrases.warm", mock.AsyncMock()) as warm_phrases, \
+                mock.patch("core.gateway.skills.music.command.warm") as start_music:
+            gateway.warm(make_conn({}))
+            await asyncio.sleep(0)
+        warm_phrases.assert_not_awaited()
+        start_music.assert_not_called()
+
+    def test_listen_lowers_the_music(self):
+        with mock.patch("core.gateway.skills.music.command.duck") as duck:
+            conn = make_conn(self.MUSIC_ON)
+            gateway.on_listen(conn)
+            gateway.on_listen(make_conn({}))
+        duck.assert_called_once_with(conn)
 
 
 if __name__ == "__main__":

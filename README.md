@@ -98,7 +98,7 @@ bash tools/local_music_setup.sh    # 下载 go-music-dl 和 mpv 到 local-music/
 
 本项目自己的改动集中在这几处：
 - **固件**：`xiaozhi-esp32/main/boards/common/zongzhu/`，以及各板目录。
-- **后端**：`xiaozhi-esp32-server/main/xiaozhi-server/core/` 下的 `handle/grokBot*.py`、`handle/localCommandHandle.py`、`music/`、`utils/asr_text.py`。
+- **后端**：`xiaozhi-esp32-server/main/xiaozhi-server/core/` 下的 `handle/grokBot*.py`、`gateway/`（网关；本机点歌在 `gateway/skills/music/`）、`utils/asr_text.py`。
 - **其他**：`web/`、`tools/`、`deploy/`、`examples/`、`docs/`。
 
 两个上游目录里其余的代码基本保持原样，方便以后合并上游、跟上小智固件的更新。上游基线提交记录在 `UPSTREAM.json`。

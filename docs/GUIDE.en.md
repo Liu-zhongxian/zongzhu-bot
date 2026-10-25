@@ -255,7 +255,7 @@ These builds default to the official XiaoZhi OTA server. To build in your own ba
 | Path | Contents |
 | --- | --- |
 | `xiaozhi-esp32/` | Full firmware source; this project's changes live in `main/boards/common/zongzhu/` (shared) and the board folders (`waveshare/esp32-s3-touch-amoled-1.75/`, `lckfb/szpi-esp32s3/`, `m5stack/stopwatch/`) |
-| `xiaozhi-esp32-server/main/xiaozhi-server/` | The Python backend that actually runs; the Bot bridge is `core/handle/grokBotHandle.py`, local music is `core/handle/localCommandHandle.py` and `core/music/`, recognition corrections are in `core/utils/asr_text.py` |
+| `xiaozhi-esp32-server/main/xiaozhi-server/` | The Python backend that actually runs; the Bot bridge is `core/handle/grokBotHandle.py`, local music is `core/gateway/skills/music/` (the gateway's first skill module), recognition corrections are in `core/utils/asr_text.py` |
 | `firmware/` | Release packages per board: image set, checksums, build info |
 | `web/` | The web flasher and the macOS backend installer `install-mac.sh`, published to GitHub Pages on every push to main |
 | `deploy/` | Deploying the backend to a public Linux server (Caddy, systemd, server config) |
@@ -312,4 +312,4 @@ Run the tests with the `unittest` command above, not pytest. pytest loads upstre
   - go-music-dl has no option to listen on localhost only, so it listens on port 18080 on every interface.
   - When a song ends, the next one doesn't start on its own.
   - A misheard title said without the singer isn't corrected.
-  - go-music-dl's endpoints were read from its web page, not a documented API; recheck them after upgrading (see `core/music/source.py`).
+  - go-music-dl's endpoints were read from its web page, not a documented API; recheck them after upgrading (see `core/gateway/skills/music/source.py`).
