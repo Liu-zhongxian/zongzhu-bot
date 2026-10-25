@@ -1,39 +1,23 @@
 """Simulated device: music commands are handled on this Mac and never reach the Bot.
 
 Each command is spoken with macOS `say` (Tingting), encoded to Opus and sent the
-way the board streams the microphone in manual listening mode, so the server's own
+way the board streams the microphone (sim_board.py), so the server's own
 ASR recognises it. (A listen/detect text would be taken for the board's wake word in
 Bot mode.) Plays music on this Mac for a few seconds; it does not change the
 system volume and does not call the Bot webhook.
 
-    .venv/bin/python scripts/verify/verify_local_music.py
+    .venv/bin/python tools/verify/verify_local_music.py
 """
 import asyncio
 import json
-import subprocess
-import tempfile
 import time
-from pathlib import Path
 
 import httpx
-import opuslib_next
 import websockets
 
+from sim_board import speech_frames
+
 DEVICE = "02:00:00:00:00:08"
-FRAME = 960  # 60 ms at 16 kHz
-
-
-def speech_frames(text):
-    """Opus frames of `text` spoken by macOS, 16 kHz mono like the board."""
-    with tempfile.TemporaryDirectory() as tmp:
-        aiff, pcm = Path(tmp) / "s.aiff", Path(tmp) / "s.pcm"
-        subprocess.run(["say", "-v", "Tingting", "-o", str(aiff), text], check=True)
-        subprocess.run(["ffmpeg", "-loglevel", "error", "-i", str(aiff), "-ar", "16000", "-ac", "1",
-                        "-f", "s16le", str(pcm)], check=True)
-        data = pcm.read_bytes() + bytes(FRAME * 2 * 8)  # trailing silence
-    encoder = opuslib_next.Encoder(16000, 1, opuslib_next.APPLICATION_AUDIO)
-    return [encoder.encode(data[i:i + FRAME * 2].ljust(FRAME * 2, b"\0"), FRAME)
-            for i in range(0, len(data), FRAME * 2)]
 
 
 async def main():

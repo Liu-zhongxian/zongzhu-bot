@@ -1,54 +1,34 @@
-"""Send a harmless Bot test through the real OTA/WebSocket/TTS path."""
+"""Bot bridge through the real OTA/WebSocket/ASR/TTS path: wake, submit, block a repeat.
+
+Submits one harmless task to the Bot configured in data/.config.yaml (the repeat is
+blocked by the server and never sent); start the server first. The board connects
+without the waiting screen (no bot_ui) so the repeat is not held back by it.
+"""
 import asyncio
 import json
-import uuid
 from pathlib import Path
 
-import httpx
-import websockets
+import sim_board
 
 ROOT = Path(__file__).resolve().parents[2]  # 仓库根目录
+TASK = "请只回复连接测试成功，不要调用工具，不要做别的事"
 
 
 async def main():
-    marker = "VOICE-BRIDGE-" + uuid.uuid4().hex[:10]
-    text = ("请只在当前硬件对话回复：语音桥接测试成功，编号" + marker
-            + "。这是用户授权的连接测试，不要调用工具，不要访问网站，不要修改文件或发外部消息。")
-    headers = {"Device-Id": "02:00:00:00:00:03", "Client-Id": "zongzhu-bridge-check"}
-    async with httpx.AsyncClient(trust_env=False) as client:
-        r = await client.post("http://127.0.0.1:8003/xiaozhi/ota/", headers=headers,
-                              json={"application": {"version": "2.5.2.2"}, "board": {"type": "local-test"}})
-        r.raise_for_status()
-        headers["Authorization"] = "Bearer " + r.json()["websocket"]["token"]
     results = []
-    async with websockets.connect("ws://127.0.0.1:8000/xiaozhi/v1/", additional_headers=headers) as ws:
-        await ws.send(json.dumps({"type": "hello", "version": 1, "transport": "websocket",
-                                 "audio_params": {"format": "opus", "sample_rate": 16000,
-                                                  "channels": 1, "frame_duration": 60}}))
-        assert json.loads(await asyncio.wait_for(ws.recv(), 20))["type"] == "hello"
-        await asyncio.sleep(2)
-        for prompt, expected in [("你好宗主", None), ("。", "请说"), (text, "任务已提交"), (text, "阻止重复")]:
-            await ws.send(json.dumps({"type": "listen", "state": "detect", "text": prompt}))
-            result = {"expected": expected, "texts": [], "audio_packets": 0}
-            deadline = asyncio.get_running_loop().time() + 75
-            while True:
-                message = await asyncio.wait_for(ws.recv(), max(0.1, deadline - asyncio.get_running_loop().time()))
-                if isinstance(message, bytes):
-                    result["audio_packets"] += 1
-                    continue
-                item = json.loads(message)
-                if item.get("type") == "tts" and item.get("text"):
-                    result["texts"].append(item["text"])
-                if item.get("type") == "tts" and item.get("state") == "stop":
-                    break
-            if expected is None:
-                assert result["texts"], result
-                assert not any(word in "".join(result["texts"]) for word in ["有点忙", "任务已提交"]), result
-            else:
-                assert expected in "".join(result["texts"]), result
-            assert result["audio_packets"] > 0, result
-            results.append(result)
-    report = {"marker": marker, "hardware_microphone_test": False, "checks": results}
+    async with sim_board.board("02:00:00:00:00:03", "zongzhu-bridge-check", bot_ui=False) as ws:
+        greeting = await sim_board.wake(ws)
+        assert greeting["texts"] and greeting["audio_packets"] > 0, greeting
+        assert not any(word in "".join(greeting["texts"]) for word in ["正在交给", "已阻止"]), greeting
+        results.append({"check": "wake", **greeting})
+        for check, expected in [("submit", "正在交给 Bot"), ("repeat", "已阻止重复")]:
+            await sim_board.speak(ws, TASK)
+            seen = await sim_board.until_tts_stop(ws, timeout=75)
+            assert expected in "".join(seen["texts"]), seen
+            assert seen["audio_packets"] > 0, seen
+            results.append({"check": check, **seen})
+    report = {"task": TASK, "hardware_microphone_test": False, "checks": results}
+    (ROOT / "logs").mkdir(exist_ok=True)
     (ROOT / "logs/bot-bridge-check.json").write_text(json.dumps(report, ensure_ascii=False, indent=2))
     print(json.dumps(report, ensure_ascii=False, indent=2))
 

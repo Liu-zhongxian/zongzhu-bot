@@ -317,7 +317,7 @@ cd xiaozhi-esp32-server/main/xiaozhi-server
 cd ../../../web && node --test test/*.test.mjs    # 网页刷机的库代码
 ```
 
-`tools/verify/` 里是连真实设备链路的端到端检查（在仓库根目录运行，例如 `python tools/verify/verify_bot_reply.py`）。`verify_bot_bridge.py`、`verify_bot_reply.py`、`verify_bot_speech.py` 会真的调用你配置的 Bot，只在你有权限的测试环境里用，运行前先启动后端；`verify_bot_wait_display.py` 用本机测试文件，正常情况下不会调用 Webhook；`verify_local_music.py` 用 macOS 合成语音模拟设备说点歌指令，会在电脑上放几秒歌，不调用 Bot。
+`tools/verify/` 里是连真实设备链路的端到端检查（在仓库根目录运行，例如 `python tools/verify/verify_bot_reply.py`）。`verify_bot_bridge.py`、`verify_bot_reply.py`、`verify_bot_speech.py` 会真的调用你配置的 Bot（每个脚本发一条无副作用的测试任务），只在你有权限的测试环境里用，运行前先启动后端；这几个脚本和 `verify_local_music.py` 都用 macOS 合成语音模拟板子说话（共用 `sim_board.py`），需要 macOS 和 ffmpeg；`verify_bot_wait_display.py` 用本机测试文件，正常情况下不会调用 Webhook；`verify_local_music.py` 用 macOS 合成语音模拟设备说点歌指令，会在电脑上放几秒歌，不调用 Bot。
 
 用上面的 `unittest` 命令跑，不要用 pytest：pytest 会加载上游的 `tests/conftest.py`，它把 `httpx.AsyncClient` 整个换成了一律拒绝连接的替身，Bot 测试自己传入的模拟网络也会被拦住，测试就会失败。语音识别对比用 `tools/asr-bench/`。每个版本的实测结果见 [records/VALIDATION.md](records/VALIDATION.md)。
 
