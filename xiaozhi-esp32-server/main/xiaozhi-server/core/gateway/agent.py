@@ -45,7 +45,6 @@ class Agent:
     accepted = ""  # said instead when the ack is not cached yet and the AI accepted the sentence
     answers_later = False  # True: answers come back after the hand-over (see waiting.py)
     call_names = ()  # "嗨 <name>" picks this AI (see call_names.py); `names(config)` may read config
-    earlier = "稍早的回复："  # put before an answer to a request from an earlier connection
 
     def enabled(self, config) -> bool:
         return True
@@ -84,6 +83,11 @@ class Agent:
 
     def delivered(self, conn, reply: Reply):
         pass
+
+    def done_prefix(self, conn) -> str:
+        """Put before an answer to a request sent on an earlier connection (原 A3 待汇报):
+        the board was interrupted, timed out or went to sleep, and hears it at the next chance."""
+        return f"{self.label(conn.config)}做完了："
 
     def slow_hint(self, conn):
         """(seconds, text) to show when the answer takes that long, or None."""

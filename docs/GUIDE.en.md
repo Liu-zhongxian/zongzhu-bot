@@ -11,6 +11,7 @@ The README is the summary. This page has the details: features, local music, man
 - Whatever you say after the wake word goes straight to the Bot. No "ask the robot to…" prefix needed.
 - The Bot writes its answer to a local reply file. The backend validates it and sends subtitles plus EdgeTTS speech back to the board.
 - While waiting, the screen shows a seconds counter and normal listening pauses. The default wait is 300 seconds. Timed-out tasks are kept, not resent. You can add to a request by waking it again or pressing the button.
+- If you interrupt with the button, the wait times out, or the board goes to sleep, the Bot's answer isn't lost: it's read out when the board is idle, or after the greeting at the next wake, starting with "<Bot name>做完了：" ("<Bot name> finished:"). Later additions and corrections from the Bot follow, starting with "Bot 补充：" ("Bot adds:"). Answers older than 24 hours aren't read.
 - Long replies scroll automatically, and the full text stays on screen after playback. Replies that couldn't be delivered while the board was disconnected are sent when it reconnects.
 - Saying the wake word again mid-conversation (including misrecognitions such as "你好中主" or "你好宗猪") just gets "我在" ("I'm here") and is not submitted as a task. "你好宗主, check the weather for me" has the wake word stripped and only submits "check the weather for me".
 

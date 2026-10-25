@@ -46,9 +46,10 @@ async def deliver(conn, agent):
         if reply is None:
             return
         text = reply.text
-        # A reply left over from an earlier session needs context on screen.
+        # An answer to a request from an earlier connection (interrupted, timed out, or the board
+        # slept in between) needs context: "硬件做完了：……"
         if isinstance(reply.created, (int, float)) and reply.created < getattr(conn, "bot_reply_since", 0):
-            text = agent.earlier + text
+            text = agent.done_prefix(conn) + text
         await say_reply(conn, TextDelta(text), reply.request_id)
         agent.delivered(conn, reply)
         conn.logger.bind(tag=TAG).info(f"迟到的回复已交给板子朗读和显示: {reply.request_id}")

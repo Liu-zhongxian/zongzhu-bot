@@ -152,12 +152,20 @@ def mark_follow_up_sent(path):
     path.rename(path.with_name(path.name.removesuffix(".json") + ".sent.json"))
 
 
-def next_reply(directory, device):
-    """The oldest readable reply for this device as (pending file, request id, text, created), else None."""
+def next_reply(directory, device, max_age=REPLY_TOKEN_SECONDS, now=None):
+    """The oldest readable reply for this device as (pending file, request id, text, created), else None.
+
+    Answers to requests older than max_age seconds are left unsaid (and on disk).
+    """
+    now = time.time() if now is None else now
     for pending in sorted(Path(directory).glob("ESP32-*.pending.json"), key=lambda p: p.stat().st_mtime):
         reply = read_reply(pending, device)
-        if reply is not None:
-            return (pending, *reply)
+        if reply is None:
+            continue
+        created = reply[2]
+        if isinstance(created, (int, float)) and now - created >= max_age:
+            continue
+        return (pending, *reply)
     return None
 
 

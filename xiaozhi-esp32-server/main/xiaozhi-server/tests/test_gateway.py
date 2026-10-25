@@ -218,7 +218,6 @@ class HandOverTest(unittest.IsolatedAsyncioTestCase):
 class LaterAgent(FakeAgent):
     """A fake AI whose answers come back later, held in memory."""
     answers_later = True
-    earlier = "稍早的测试回复："
 
     def __init__(self):
         self.since, self.ready, self.done = 0, [], []
@@ -285,7 +284,7 @@ class WaitingTest(unittest.IsolatedAsyncioTestCase):
         self.conn.bot_input_until = 0
         self.agent.ready[0].created = time.time() - 60
         await waiting.deliver(self.conn, self.agent)
-        self.speak_txt.assert_called_once_with(self.conn, "稍早的测试回复：答案。")
+        self.speak_txt.assert_called_once_with(self.conn, "测试 AI做完了：答案。")
 
     async def test_timeout_when_the_module_stops_waiting(self):
         self.agent.since = time.time()

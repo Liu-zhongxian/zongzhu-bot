@@ -23,7 +23,8 @@ def _use(conn, directory, wait_seconds=300, hint_seconds=30):
     webhook = Path(directory) / "webhook.json"
     webhook.write_text(json.dumps({"reply_dir": str(directory), "reply_wait_seconds": wait_seconds,
                                    "approval_hint_seconds": hint_seconds}))
-    conn.config = dict(getattr(conn, "config", {}), grok_bot={"config_file": str(webhook)})
+    config = getattr(conn, "config", {})
+    conn.config = dict(config, grok_bot=dict(config.get("grok_bot", {}), config_file=str(webhook)))
 
 
 async def deliver_replies(conn, directory):
@@ -172,7 +173,7 @@ class GrokBotReplyTest(unittest.IsolatedAsyncioTestCase):
         self.conn.bot_reply_since = json.loads(self.pending.read_text())["created"] + 1
         await deliver_replies(self.conn, self.directory)
         message = json.loads(self.conn.websocket.send.call_args.args[0])
-        self.assertEqual(message["text"], "稍早的 Bot 回复：这是 Bot 的实际回复。")
+        self.assertEqual(message["text"], "Bot做完了：这是 Bot 的实际回复。")
 
     def test_partial_invalid_oversized_or_symlink_reply_rejected(self):
         self.result.write_text('{"request_id":')
@@ -286,6 +287,31 @@ class GrokBotReplyTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.conn.bot_ui_waiting)
         self.assertEqual(self.conn.websocket.send.await_count, 2)
 
+
+    async def test_interrupted_task_is_reported_by_name_at_the_next_connection(self):
+        # 原 A3: interrupted by the button, the board slept; the answer comes at the next connection
+        self.conn.features = {"bot_ui": True}
+        self.conn.reset_audio_states = Mock()
+        await update_wait_ui(self.conn, self.directory, 300)
+        resume_bot_input(self.conn)  # button while waiting
+        self.write_reply(text="新闻整理好了。")
+        await deliver_replies(self.conn, self.directory)
+        self.speak.assert_not_called()  # the user is talking now
+        next_conn = SimpleNamespace(**dict(vars(self.conn), bot_input_until=0, bot_ui_waiting=False,
+                                           bot_reply_since=json.loads(self.pending.read_text())["created"] + 60,
+                                           websocket=SimpleNamespace(send=AsyncMock())))
+        next_conn.config = {"grok_bot": {"bot_name": "硬件"}}
+        await deliver_replies(next_conn, self.directory)
+        self.speak.assert_called_once_with(next_conn, "硬件做完了：新闻整理好了。")
+
+    async def test_answers_older_than_a_day_are_not_said(self):
+        metadata = json.loads(self.pending.read_text())
+        metadata["created"] -= 25 * 3600
+        self.pending.write_text(json.dumps(metadata))
+        self.write_reply()
+        await deliver_replies(self.conn, self.directory)
+        self.speak.assert_not_called()
+        self.assertTrue(self.pending.exists())
 
     def write_follow_up(self, n, text, request_id=None):
         path = self.directory / f"{request_id or self.request_id}.more-{n}.json"

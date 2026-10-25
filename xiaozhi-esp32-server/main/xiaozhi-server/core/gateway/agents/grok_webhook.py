@@ -68,7 +68,6 @@ class GrokWebhookAgent(Agent):
     ack = phrases.ACK
     accepted = "任务已提交，Bot 回复后会显示在屏幕上。"
     answers_later = True
-    earlier = "稍早的 Bot 回复："
     call_names = ("Grok Bot", "Grok")  # without `grok_bot.bot_name`
 
     def enabled(self, config):
@@ -81,6 +80,9 @@ class GrokWebhookAgent(Agent):
     def label(self, config):
         name = self.bot_name(config)
         return f"{self.title} · {name}" if name else self.title
+
+    def done_prefix(self, conn):
+        return f"{self.bot_name(conn.config) or 'Bot'}做完了："
 
     def names(self, config):
         name = self.bot_name(config)
