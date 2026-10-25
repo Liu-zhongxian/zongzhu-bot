@@ -8,7 +8,9 @@ Config (`gateway` in .config.yaml, optional):
 
 Without the section the order is the one before the gateway: local music, then the Bot.
 """
-from core.gateway import builtin
+import time
+
+from core.gateway import builtin, status
 from core.gateway.skill import Skill
 
 TAG = "gateway"
@@ -49,17 +51,29 @@ def _warn(conn, message):
 
 async def dispatch(conn, text) -> bool:
     """True when a skill or the AI took the sentence; False leaves it to the upstream chat flow."""
+    record = status.begin(conn, text)
+    kind = status.classify(conn, text)
+    layer, target, handled = await _route(conn, text)
+    if handled and layer == "agent" and getattr(conn, "bot_ui_waiting", False):
+        conn.gateway_wait_since = time.time()
+    status.finish(record, kind or layer, {"wake": "唤醒问候", "filter": "不提交"}.get(kind, target))
+    return handled
+
+
+async def _route(conn, text):
     skill_names, agent_name = _settings(conn.config)
     for name in skill_names:
         skill = SKILLS.get(name)
         if skill is None:
             _warn(conn, f"未知技能，已跳过: {name}")
         elif await skill.handle(conn, text):
-            return True
+            return "skill", getattr(skill, "title", "") or name, True
     if agent_name is None:
-        return False
+        return "upstream", "上游对话", False
     agent = AGENTS.get(agent_name)
     if agent is None:
         _warn(conn, f"未知 AI，交给上游对话: {agent_name}")
-        return False
-    return bool(await agent(conn, text))
+        return "upstream", "上游对话", False
+    if await agent(conn, text):
+        return "agent", status.AGENT_NAMES.get(agent_name, agent_name), True
+    return "upstream", "上游对话", False

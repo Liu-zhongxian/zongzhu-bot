@@ -6,6 +6,7 @@ class Skill:
     """
 
     name = ""
+    title = ""  # shown on the gateway page
 
     async def handle(self, conn, text: str) -> bool:
         raise NotImplementedError

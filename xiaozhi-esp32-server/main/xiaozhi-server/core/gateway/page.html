@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>宗主网关</title>
+<style>
+/* Look from docs/records/gateway-mockup.html (approved 2026-10-25) */
+:root {
+  --bg: #f1f4f9; --panel: #ffffff; --side: #151b2e; --side-text: #c9d0e0; --side-active: #222a42;
+  --text: #1c2333; --muted: #6b7489; --line: #e3e8f0; --accent: #5b5bd6; --accent-soft: #ecebfd;
+  --ok: #18a058; --ok-soft: #e3f6ec; --warn: #d97706; --warn-soft: #fdf1df; --bad: #dc3545; --bad-soft: #fde6e8;
+  --gray-soft: #eef0f4; --shadow: 0 1px 2px rgba(20,30,60,.06), 0 2px 8px rgba(20,30,60,.04);
+  --l-rule: #0e9f8e; --l-front: #5b5bd6; --l-name: #c2410c; --l-filter: #8a94a8;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1320; --panel: #171c2c; --side: #0b0e18; --side-text: #aab3c8; --side-active: #1d2438;
+    --text: #e6e9f2; --muted: #8b94a9; --line: #262d42; --accent: #8b8bf0; --accent-soft: #23264a;
+    --ok-soft: #12301f; --warn-soft: #33260f; --bad-soft: #3a1519; --gray-soft: #20263a;
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1320; --panel: #171c2c; --side: #0b0e18; --side-text: #aab3c8; --side-active: #1d2438;
+  --text: #e6e9f2; --muted: #8b94a9; --line: #262d42; --accent: #8b8bf0; --accent-soft: #23264a;
+  --ok-soft: #12301f; --warn-soft: #33260f; --bad-soft: #3a1519; --gray-soft: #20263a; --shadow: none;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+.app { display: flex; min-height: 100vh; }
+aside { width: 220px; flex: none; background: var(--side); color: var(--side-text); padding: 20px 14px;
+  display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; color: #fff; padding: 0 8px 20px; }
+.brand i { width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(135deg,#6d6df2,#2bb5c9);
+  display: grid; place-items: center; font-style: normal; font-size: 15px; }
+nav button { all: unset; display: flex; gap: 10px; align-items: center; width: 100%; box-sizing: border-box;
+  padding: 9px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 2px; border-left: 3px solid transparent; }
+nav button:hover { background: var(--side-active); }
+nav button[aria-current="true"] { background: var(--side-active); color: #fff; border-left-color: var(--accent); }
+nav .count { margin-left: auto; font-size: 12px; opacity: .7; }
+.side-foot { margin-top: auto; font-size: 12.5px; border-top: 1px solid #262d42; padding: 14px 8px 0; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); margin-right: 6px; vertical-align: 1px; }
+.dot.off { background: #7a8294; } .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); }
+main { flex: 1; min-width: 0; padding: 28px 36px 60px; }
+.banner { background: var(--bad-soft); color: var(--bad); border-radius: 8px; padding: 8px 14px; font-size: 13px; margin-bottom: 18px; }
+.banner[hidden] { display: none; }
+h1 { font-size: 24px; margin: 0 0 4px; }
+.lead { color: var(--muted); margin: 0 0 22px; }
+h2 { font-size: 14px; color: var(--muted); font-weight: 600; margin: 26px 0 12px; display: flex; align-items: center; gap: 10px; }
+h2::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; box-shadow: var(--shadow); }
+.card h3 { margin: 0 0 2px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.card .sub { color: var(--muted); font-size: 12.5px; }
+.kv { display: grid; grid-template-columns: 76px 1fr; gap: 4px 8px; margin-top: 10px; font-size: 13px; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; overflow-wrap: anywhere; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; background: var(--gray-soft); color: var(--muted); white-space: nowrap; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); } .pill.acc { background: var(--accent-soft); color: var(--accent); }
+.off { opacity: .55; }
+.empty { color: var(--muted); padding: 18px; text-align: center; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+.stat .n { font-size: 26px; font-weight: 700; } .stat .sub { margin-top: -2px; }
+.later { color: var(--muted); font-size: 12.5px; margin-top: 26px; }
+table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 13px; }
+th { color: var(--muted); font-weight: 600; background: var(--gray-soft); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td .fix { color: var(--muted); font-size: 12px; }
+td.nowrap { white-space: nowrap; }
+.layer { font-weight: 600; white-space: nowrap; }
+.layer.skill { color: var(--l-rule); } .layer.agent { color: var(--l-front); } .layer.upstream { color: var(--l-name); }
+.layer.filter, .layer.wake { color: var(--l-filter); }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.chips button { all: unset; cursor: pointer; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); font-size: 13px; }
+.chips button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.mobile-nav { display: none; }
+@media (max-width: 760px) {
+  aside { display: none; }
+  main { padding: 16px 16px 40px; }
+  .mobile-nav { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 14px; }
+  .mobile-nav button { all: unset; padding: 6px 12px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); white-space: nowrap; }
+  .mobile-nav button[aria-current="true"] { border-color: var(--accent); color: var(--accent); }
+  .tablewrap { overflow-x: auto; }
+  table { min-width: 640px; }
+}
+section[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div class="brand"><i>宗</i>宗主网关</div>
+    <nav id="nav"></nav>
+    <div class="side-foot">
+      <div id="foot-online"><span class="dot off"></span>正在连接后端…</div>
+      <div id="foot-up" style="margin-top:4px;opacity:.7"></div>
+      <div style="margin-top:4px;opacity:.7">只看不改</div>
+    </div>
+  </aside>
+
+  <main>
+    <div class="banner" id="banner" hidden>连不上后端，页面上是最后一次拿到的数据。后端重启后会自动恢复。</div>
+    <div class="mobile-nav" id="mnav"></div>
+
+    <section data-page="overview">
+      <h1>总览</h1>
+      <p class="lead">哪几块板子在线、现在在做什么。每 3 秒刷新。</p>
+      <div class="stats">
+        <div class="card stat"><div class="n" id="s-online">—</div><div class="sub">板子在线</div></div>
+        <div class="card stat"><div class="n" id="s-total">—</div><div class="sub">后端启动以来说的话</div></div>
+        <div class="card stat"><div class="n" id="s-local">—</div><div class="sub">本机就处理完（不经过 AI）</div></div>
+        <div class="card stat"><div class="n" id="s-last">—</div><div class="sub">上一句多久出声</div></div>
+      </div>
+      <h2>板子</h2>
+      <div class="grid" id="boards"></div>
+      <p class="later">模块状态、转交任务、工作原理三块，跟着后面的任务（G2–G7）逐步加上。</p>
+    </section>
+
+    <section data-page="log" hidden>
+      <h1>最近的话</h1>
+      <p class="lead">最近 30 句：识别出来的话、走了哪一层、交给了谁、多久出声。只存在内存里，后端重启后清空。</p>
+      <div class="chips" id="chips"></div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>时间</th><th>板子</th><th>说的话</th><th>走了哪一层</th><th>交给</th><th>出声</th></tr></thead>
+        <tbody id="log"></tbody>
+      </table></div>
+    </section>
+  </main>
+</div>
+
+<script>
+const PAGES = [["overview", "◎", "总览"], ["log", "☰", "最近的话"]];
+const LAYERS = { skill: "① 本机技能", agent: "转交 AI", filter: "过滤掉", wake: "唤醒", upstream: "上游对话" };
+let data = null, fetchedAt = 0, filter = "all";
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const clock = t => new Date(t * 1000).toLocaleTimeString("zh-CN", { hour12: false });
+const duration = s => s >= 3600 ? `${Math.floor(s / 3600)} 小时 ${Math.floor(s % 3600 / 60)} 分`
+  : s >= 60 ? `${Math.floor(s / 60)} 分 ${s % 60} 秒` : `${s} 秒`;
+
+function show(id) {
+  document.querySelectorAll("section").forEach(s => s.hidden = s.dataset.page !== id);
+  document.querySelectorAll("[data-go]").forEach(b => b.setAttribute("aria-current", b.dataset.go === id));
+  try { localStorage.setItem("gw-page", id); } catch (e) {}
+}
+function renderNav() {
+  const n = data ? data.recent.length : 0;
+  for (const target of ["nav", "mnav"]) {
+    const current = document.querySelector(`#${target} [aria-current="true"]`)?.dataset.go;
+    document.getElementById(target).innerHTML = PAGES.map(([id, icon, name]) =>
+      `<button data-go="${id}" aria-current="${id === current}">${target === "nav" ? icon + " " : ""}${name}${id === "log" && n && target === "nav" ? `<span class="count">${n}</span>` : ""}</button>`).join("");
+  }
+}
+document.addEventListener("click", e => { const b = e.target.closest("[data-go]"); if (b) show(b.dataset.go); });
+
+function stateText(state) {
+  if (state.kind === "waiting") {
+    const s = state.seconds == null ? null : state.seconds + Math.floor((Date.now() - fetchedAt) / 1000);
+    return `<span class="pill acc">等 Bot 回复${s == null ? "" : " " + duration(s)}</span>`;
+  }
+  if (state.kind === "speaking") return `<span class="pill ok">正在说</span>`;
+  if (state.kind === "listening") return `<span class="pill ok">在听</span>`;
+  return `<span class="pill">离线</span>`;
+}
+function renderBoards() {
+  const el = document.getElementById("boards");
+  if (!data.boards.length) { el.innerHTML = `<div class="card empty">后端启动以来还没有板子连上来。</div>`; return; }
+  el.innerHTML = data.boards.map(b => `
+    <div class="card ${b.online ? "" : "off"}">
+      <h3><span class="dot ${b.online ? "" : "off"}"></span>${esc(b.name)}</h3>
+      <div class="sub">${esc([b.type, b.version].filter(Boolean).join(" · "))}</div>
+      <dl class="kv"><dt>现在</dt><dd>${stateText(b.state)}</dd>
+      <dt>唤醒词</dt><dd>${esc(b.wake || "—")}</dd>
+      <dt>交给</dt><dd>${esc(b.agent)}</dd>
+      <dt>地址</dt><dd>${esc(b.ip || "—")}</dd>
+      ${b.online ? "" : `<dt>上次</dt><dd>${b.seen ? clock(b.seen) : "—"}</dd>`}</dl>
+    </div>`).join("");
+}
+function renderStats() {
+  const online = data.boards.filter(b => b.online).length;
+  document.getElementById("s-online").textContent = `${online} / ${data.boards.length}`;
+  document.getElementById("s-total").textContent = data.totals.sentences;
+  document.getElementById("s-local").textContent = data.totals.sentences
+    ? Math.round(100 * data.totals.local / data.totals.sentences) + "%" : "—";
+  const last = data.recent.find(r => r.layer !== "wake" && r.first_audio != null);
+  document.getElementById("s-last").textContent = last ? last.first_audio + " 秒" : "—";
+  document.getElementById("foot-online").innerHTML = `<span class="dot ${online ? "" : "off"}"></span>${online} 块板子在线`;
+  document.getElementById("foot-up").textContent = `后端运行 ${duration(data.uptime)} · 端口 ${data.port}`;
+}
+function renderChips() {
+  document.getElementById("chips").innerHTML = [["all", "全部"], ...Object.entries(LAYERS)].map(([k, v]) =>
+    `<button data-f="${k}" aria-pressed="${k === filter}">${v}</button>`).join("");
+}
+document.getElementById("chips").addEventListener("click", e => {
+  const b = e.target.closest("[data-f]"); if (!b) return;
+  filter = b.dataset.f; renderChips(); renderLog();
+});
+function renderLog() {
+  const rows = data.recent.filter(r => filter === "all" || r.layer === filter);
+  document.getElementById("log").innerHTML = rows.length ? rows.map(r => `
+    <tr>
+      <td class="nowrap">${clock(r.time)}</td><td class="nowrap">${esc(r.board || "—")}</td>
+      <td>${esc(r.text)}${r.raw ? `<div class="fix">识别原文：${esc(r.raw)}</div>` : ""}</td>
+      <td class="layer ${esc(r.layer)}">${esc(LAYERS[r.layer] || r.layer)}</td><td>${esc(r.target)}</td>
+      <td class="nowrap">${r.first_audio == null ? "—" : r.first_audio + " 秒" + (r.layer === "agent" ? "（回执）" : "")}</td>
+    </tr>`).join("") : `<tr><td colspan="6" class="empty">还没有${filter === "all" ? "" : "这一类的"}话。</td></tr>`;
+}
+function render() { renderNav(); renderStats(); renderBoards(); renderLog(); }
+
+async function refresh() {
+  try {
+    const response = await fetch("/gateway/api/status", { cache: "no-store" });
+    if (!response.ok) throw new Error(response.status);
+    data = await response.json(); fetchedAt = Date.now();
+    document.getElementById("banner").hidden = true;
+    render();
+  } catch (e) {
+    document.getElementById("banner").hidden = false;
+  }
+}
+
+renderNav(); renderChips();
+let start = "overview";
+try { start = localStorage.getItem("gw-page") || start; } catch (e) {}
+show(PAGES.some(p => p[0] === start) ? start : "overview");
+refresh();
+setInterval(refresh, 3000);
+setInterval(() => { if (data) renderBoards(); }, 1000);
+</script>
+</body>
+</html>

@@ -4,6 +4,7 @@ from core.gateway.skill import Skill
 
 class LocalMusicSkill(Skill):
     name = "local_music"
+    title = "点歌"
 
     async def handle(self, conn, text):
         from core.handle.localCommandHandle import handle_local_command

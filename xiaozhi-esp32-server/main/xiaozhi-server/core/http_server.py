@@ -4,6 +4,7 @@ from config.logger import setup_logging
 from core.api.ota_handler import OTAHandler
 from core.api.vision_handler import VisionHandler
 from core.api.bot_reply_handler import BotReplyHandler
+from core.gateway.page import GatewayPageHandler
 
 TAG = __name__
 
@@ -15,6 +16,7 @@ class SimpleHttpServer:
         self.ota_handler = OTAHandler(config)
         self.vision_handler = VisionHandler(config)
         self.bot_reply_handler = BotReplyHandler(config)
+        self.gateway_page_handler = GatewayPageHandler(config)
 
     def _get_websocket_url(self, local_ip: str, port: int) -> str:
         """获取websocket地址
@@ -75,6 +77,9 @@ class SimpleHttpServer:
                             "/mcp/vision/explain", self.vision_handler.handle_options
                         ),
                         web.post("/bot/reply", self.bot_reply_handler.handle_post),
+                        # Gateway page, read-only (core/gateway/page.py)
+                        web.get("/gateway", self.gateway_page_handler.handle_page),
+                        web.get("/gateway/api/status", self.gateway_page_handler.handle_status),
                     ]
                 )
 

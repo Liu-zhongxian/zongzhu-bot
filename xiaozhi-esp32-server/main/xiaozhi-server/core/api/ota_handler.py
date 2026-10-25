@@ -12,6 +12,7 @@ from aiohttp import web
 from core.auth import AuthManager
 from core.utils.util import get_local_ip, get_vision_url
 from core.api.base_handler import BaseHandler
+from core.gateway import status as gateway_status
 
 TAG = __name__
 
@@ -219,6 +220,7 @@ class OTAHandler(BaseHandler):
                     device_version = ""
             if not device_version:
                 device_version = "0.0.0"
+            gateway_status.note_ota(device_id, device_model, device_version, request.remote or "")
 
             return_json = {
                 "server_time": {

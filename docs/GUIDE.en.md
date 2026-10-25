@@ -142,6 +142,8 @@ Speech recognition defaults to X-ASR and needs no torch; hotwords and post-recog
 
 `start.sh` runs in the foreground; closing the terminal stops the service. Don't run more than one. The backend uses port 8000 (WebSocket) and 8003 (HTTP/OTA).
 
+Open `http://localhost:8003/gateway` in a browser for the gateway page: which boards are online and what they're doing, and for the last 30 sentences which layer handled each one, who got it and how long until sound. It's read-only, shows no keys, and other devices on the LAN can open it too. Data lives in memory and is cleared when the backend restarts.
+
 To start the backend in the background at login (restarted if it exits; the Mac does not idle-sleep while it runs):
 
 ```sh
@@ -291,7 +293,7 @@ In each board's directory:
 cd xiaozhi-esp32-server/main/xiaozhi-server
 ../../../.venv/bin/python -m unittest tests.test_grok_bot tests.test_grok_bot_phrases tests.test_grok_bot_reply \
   tests.test_asr_text tests.test_tts_prefetch tests.test_device_allowlist tests.test_text_message_log tests.test_local_music \
-  tests.test_audio_prebuffer tests.test_gateway
+  tests.test_audio_prebuffer tests.test_gateway tests.test_gateway_status
 cd ../../../web && node --test test/*.test.mjs    # web flasher library code
 ```
 

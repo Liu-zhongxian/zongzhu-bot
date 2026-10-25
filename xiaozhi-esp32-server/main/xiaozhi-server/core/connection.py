@@ -37,6 +37,7 @@ from core.providers.tools.unified_tool_handler import UnifiedToolHandler
 from plugins_func.loadplugins import auto_import_modules
 from plugins_func.register import Action, ActionResponse, all_function_registry, module_func_map
 from core.auth import AuthenticationError
+from core.gateway import status as gateway_status
 from config.config_loader import get_private_config_from_api
 from core.providers.tts.dto.dto import ContentType, TTSMessageDTO, SentenceType
 from config.logger import setup_logging, build_module_string, create_connection_logger
@@ -219,6 +220,7 @@ class ConnectionHandler:
             )
 
             self.device_id = self.headers.get("device-id", None)
+            gateway_status.connected(self)
 
             # 认证通过,继续处理
             self.websocket = ws
@@ -1542,6 +1544,7 @@ class ConnectionHandler:
 
     async def close(self, ws=None):
         """资源清理方法"""
+        gateway_status.disconnected(self)
         try:
             reply_task = getattr(self, "bot_reply_task", None)
             if reply_task and not reply_task.done():

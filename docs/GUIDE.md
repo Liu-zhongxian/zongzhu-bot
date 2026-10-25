@@ -164,6 +164,8 @@ done
 
 `start.sh` 在前台运行，关掉终端服务就停了，不要同时开多个。后端占用 8000（WebSocket）和 8003（HTTP/OTA）两个端口。
 
+浏览器打开 `http://localhost:8003/gateway` 是网关页面：哪几块板子在线、在做什么，最近 30 句话各走了哪一层、交给了谁、多久出声。只能看、不能改，不显示任何密钥；局域网里的其他设备也能打开。数据只在内存里，后端重启后清空。
+
 想让后端开机自动在后台运行（进程退出会自动拉起，运行期间 Mac 不会因空闲睡眠）：
 
 ```sh
@@ -313,7 +315,7 @@ python scripts/build.py lckfb/szpi-esp32s3 --name lichuang-dev-zongzhu          
 cd xiaozhi-esp32-server/main/xiaozhi-server
 ../../../.venv/bin/python -m unittest tests.test_grok_bot tests.test_grok_bot_phrases tests.test_grok_bot_reply \
   tests.test_asr_text tests.test_tts_prefetch tests.test_device_allowlist tests.test_text_message_log tests.test_local_music \
-  tests.test_audio_prebuffer tests.test_gateway
+  tests.test_audio_prebuffer tests.test_gateway tests.test_gateway_status
 cd ../../../web && node --test test/*.test.mjs    # 网页刷机的库代码
 ```
 
