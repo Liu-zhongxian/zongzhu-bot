@@ -82,10 +82,16 @@ async def dispatch(conn, text) -> bool:
     """True when a skill or the AI took the sentence; False leaves it to the upstream chat flow."""
     record = status.begin(conn, text)
     kind = status.classify(conn, text)
+    conn.gateway_not_sent = None
     layer, target, handled = await _route(conn, text)
     if handled and layer == "agent" and getattr(conn, "bot_ui_waiting", False):
         conn.gateway_wait_since = time.time()
-    status.finish(record, kind or layer, {"wake": "唤醒问候", "filter": "不提交"}.get(kind, target))
+    if kind:
+        layer, target = kind, {"wake": "唤醒问候", "filter": "不提交"}[kind]
+    elif layer == "agent" and conn.gateway_not_sent:
+        # The AI took the sentence but did not send it (a repeat within 30s, missing config...)
+        layer, target = "filter", status.not_sent_reason(conn.gateway_not_sent)
+    status.finish(record, layer, target)
     return handled
 
 

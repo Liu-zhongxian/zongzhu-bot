@@ -81,9 +81,10 @@ async def main():
         await say("继续", settle=2)
         await say("快进五秒", settle=2)
         await say("从头播放", settle=2)
-        await say("别放了", settle=0)
+        await say("别再放了", settle=0)  # 2026-10-25 实机：多一个"再"字曾被交给 Bot
 
     ok = all(r["bot_wait"] and r["audio_packets"] and r["tts_stop"] for r in report)
+    ok = ok and report[-1]["bot_wait"] == "已停止播放。"
     print("通过" if ok else "未通过")
     return ok
 

@@ -100,6 +100,20 @@ class MatchTest(unittest.TestCase):
         for text in ("快进五秒", "从头开始", "单曲循环", "停止", "跳过"[:0] or "从头再来"):
             self.assertIsNone(match(text), text)
 
+    def test_dont_with_words_slipped_in(self):
+        on = dict(has_song=True, playing=True)
+        # 2026-10-25 实机："别再放了"曾被交给 Bot
+        for text in ("别再放了", "不要再放了", "你别再放了吧", "不用再放了", "别再唱了", "别播了", "不要再播音乐了",
+                     "别放音乐了", "别继续放了", "先别放了", "别再放这首歌了"):
+            self.assertEqual(match(text, **on), Command("stop"), text)
+        self.assertEqual(match("不要再循环了", **on), Command("loop", level=0))
+        self.assertEqual(match("还是下一首吧", **on), Command("next"))
+        self.assertEqual(match("再下一首", **on), Command("next"))
+        # Without music, and "don't" followed by anything else, stay with the Bot
+        self.assertIsNone(match("别再放了"))
+        for text in ("别再提醒我了", "不要再发邮件了", "别再放到桌面上了", "不要再播放广告", "别再说了"):
+            self.assertIsNone(match(text, **on), text)
+
     def test_other_speech_goes_to_the_bot(self):
         for text in ("帮我总结一下这周的 X 热点", "别暂停", "不要播放", "请回复宗主测试成功", "好"):
             self.assertIsNone(match(text, has_song=True, playing=True), text)

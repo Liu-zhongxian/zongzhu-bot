@@ -248,6 +248,7 @@ async def handle_grok_bot(conn, text):
     submission = prepare_submission(command, conn.headers.get("device-id", "unknown"),
                                     config.get("config_file", ""))
     if isinstance(submission, str):
+        conn.gateway_not_sent = submission  # shown on the gateway page as not submitted
         if not conn.client_abort:
             speak_txt(conn, submission)
         return True

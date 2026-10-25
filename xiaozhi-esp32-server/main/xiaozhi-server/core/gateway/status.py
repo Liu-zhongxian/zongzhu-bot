@@ -62,6 +62,11 @@ def classify(conn, text):
     return "filter" if had and not rest.strip("，。！？,.!? ") else None
 
 
+def not_sent_reason(message):
+    """Short page label for an AI's reason not to submit (the full sentence was spoken)."""
+    return "拦下重复" if message.startswith("刚才已尝试提交") else "没提交"
+
+
 def begin(conn, text):
     raw, fixed, started = getattr(conn, "gateway_asr", ("", "", None))
     conn.gateway_asr = ("", "", None)

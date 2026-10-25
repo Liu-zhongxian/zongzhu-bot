@@ -16,7 +16,11 @@ from typing import Optional
 from core.handle import grokBotPhrases as phrases
 
 PUNCT = re.compile(r"[\s，。！？、,.!?~～:：…]+")
-POLITE = re.compile(r"^(?:请|麻烦你|麻烦|帮我|帮忙|给我|你|就|嗯|呃|那就|那|然后|再给我|再|先|赶紧|快点|马上|现在|可以|能不能|好的|好)+")
+POLITE = re.compile(r"^(?:请|麻烦你|麻烦|帮我|帮忙|给我|你|就|嗯|呃|那就|那|然后|再给我|再|先|赶紧|快点|马上|现在|可以|能不能|好的|好|还是)+")
+# Words slipped in after a "don't": "别再放了", "不要再唱了", "不用继续放了" (2026-10-25 实机："别再放了"曾被交给 Bot)
+NEG_INSERT = re.compile(r"^(别|不要|不用)(?:再|还|又|都|也|继续|给我|先)+")
+# "别放了", "不要播音乐了", "别唱这首歌了", with the trailing particles already taken off
+NEG_STOP = re.compile(r"^(?:别|不要|不用)(?:放|播|唱)(?:音乐|歌|这首歌?)?了?$")
 # Trailing particles: "暂停一下吧" is "暂停", "快进十秒好吗" is "快进十秒"
 TAIL = re.compile(r"(?:吧|呀|啊|呢|哈|啦|呗|嘛|了|好吗|好不好|可以吗|行吗|谢谢|一下)+$")
 NUM = r"\d{1,3}|[零一二两三四五六七八九十百]+"
@@ -179,12 +183,14 @@ def _goes_with(other: str, clause: str) -> bool:
 
 def _match_one(text: str, has_song: bool, playing: bool, paused: bool) -> Optional[Command]:
     raw = PUNCT.sub(" ", text).strip()
-    full = POLITE.sub("", raw.replace(" ", ""))
+    full = NEG_INSERT.sub(r"\1", POLITE.sub("", raw.replace(" ", "")))
     t = TAIL.sub("", full) or full
     if not t:
         return None
     if t in LOOP_OFF or full in LOOP_OFF:
         return Command("loop", level=0) if has_song else None
+    if NEG_STOP.match(t):
+        return Command("stop") if has_song else None
     if re.match(r"^(?:别|不要|不用)(?!放了|唱了)", full):
         return None
     if t in STOP or full in STOP:

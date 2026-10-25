@@ -47,6 +47,22 @@ class StatusTest(unittest.IsolatedAsyncioTestCase):
         # the wake greeting is not counted as something said
         self.assertEqual(status.snapshot(CONFIG)["totals"], {"sentences": 3, "local": 2})
 
+    async def test_repeat_blocked_by_the_bot_is_not_shown_as_handed_over(self):
+        conn = make_conn()
+
+        async def bot(conn, text):  # what handle_grok_bot does for a repeat within 30s
+            conn.gateway_not_sent = "刚才已尝试提交同一条指令，已阻止重复发送。请在 Bot 对话里查看。"
+            return True
+
+        self.patch_handlers()
+        with mock.patch("core.handle.grokBotHandle.handle_grok_bot", bot):
+            await gateway.dispatch(conn, "别再放了")
+        self.patch_handlers(bot=True)
+        await gateway.dispatch(conn, "别再放了")  # the flag does not stick to the next sentence
+        recent = status.snapshot(CONFIG)["recent"]
+        self.assertEqual([(r["layer"], r["target"]) for r in recent],
+                         [("agent", "Grok Bot"), ("filter", "拦下重复")])
+
     async def test_recent_keeps_the_last_thirty(self):
         self.patch_handlers(bot=True)
         conn = make_conn()
