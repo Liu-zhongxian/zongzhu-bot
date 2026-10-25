@@ -34,36 +34,55 @@ def _match_word(raw, i, word):
     return i
 
 
-def strip_wake_phrase(text, wake_words=()):
-    """Return (had_wake_phrase, remainder) for a leading, possibly misheard wake phrase.
+def _bare_names(wake_words):
+    """The name alone ("宗主" for "你好宗主"), which ASR also returns for a cut-off wake word."""
+    return {"宗主", *(w[2:] for w in wake_words if w and len(w) > 2 and w.startswith(("你好", "您好")))}
 
-    `wake_words` (e.g. the one the board reported) are matched exactly; "你好宗主" also
-    has a fuzzy rule for the ways ASR mishears it.
-    """
-    raw = text.strip()
+
+def _wake_end(raw, wake_words):
+    """End index of one leading, possibly misheard wake phrase in `raw`; None if absent."""
     i = 0
     while i < len(raw) and (raw[i] in _FILLER or _PUNCT.match(raw[i])):
         i += 1
     for word in wake_words:
         end = _match_word(raw, i, word) if word else None
         if end is not None:
-            return True, _PUNCT.sub(" ", raw[end:]).strip()
+            return end
+    # A bare name only counts on its own ("宗主。你好宗主"), not as the start of a sentence.
+    for name in _bare_names(wake_words):
+        end = _match_word(raw, i, name)
+        if end is not None and (end == len(raw) or _PUNCT.match(raw[end])):
+            return end
     if not raw.startswith(("你好", "您好"), i):
-        return False, text
+        return None
     j = i + 2
     while j < len(raw) and _PUNCT.match(raw[j]):
         j += 1
     word = raw[j:j + 3]
     if not word or word[0] not in _ZONG:
-        return False, text
+        return None
     hit = next((k for k in range(1, len(word)) if word[k] in _ZHU), None)
     if hit is None:
-        return False, text
+        return None
     end = j + hit + 1
     # A trailing filler right after the name ("中猪公") belongs to the wake phrase.
     if end < len(raw) and end - j < 3 and raw[end] in _FILLER | set("公"):
         end += 1
-    return True, _PUNCT.sub(" ", raw[end:]).strip()
+    return end
+
+
+def strip_wake_phrase(text, wake_words=()):
+    """Return (had_wake_phrase, remainder) for leading, possibly misheard wake phrases.
+
+    `wake_words` (e.g. the one the board reported) are matched exactly; "你好宗主" also
+    has a fuzzy rule for the ways ASR mishears it. Repeats are all removed: a wake word
+    said again while the board listens can come back as "宗主。你好宗主。" (2026-10-25).
+    """
+    rest = text.strip()
+    had = False
+    while (end := _wake_end(rest, wake_words)) is not None:
+        had, rest = True, rest[end:].strip()
+    return (True, _PUNCT.sub(" ", rest).strip()) if had else (False, text)
 
 
 def extract_command(text):

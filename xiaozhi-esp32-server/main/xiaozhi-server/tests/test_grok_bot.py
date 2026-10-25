@@ -99,6 +99,15 @@ class GrokBotTest(unittest.IsolatedAsyncioTestCase):
         # The fuzzy rule for the default wake word still applies alongside.
         self.assertEqual(strip_wake_phrase("你好中主", ["你好小雨"]), (True, ""))
 
+    def test_repeated_and_cut_off_wake_phrases_are_all_stripped(self):
+        for text in ["宗主。你好宗主。", "宗主", "你好宗主，你好宗主", "嗯，宗主，你好中主"]:
+            self.assertEqual(strip_wake_phrase(text, ["你好宗主"]), (True, ""), text)
+        self.assertEqual(strip_wake_phrase("宗主，帮我查天气", ["你好宗主"]), (True, "帮我查天气"))
+        self.assertEqual(strip_wake_phrase("小雨。你好小雨，整理新闻", ["你好小雨"]), (True, "整理新闻"))
+        # A name that starts a sentence is not a wake word
+        for text in ["宗主你好", "小雨伞在哪", "种猪价格"]:
+            self.assertFalse(strip_wake_phrase(text, ["你好宗主", "你好小雨"])[0], text)
+
     async def test_board_reported_wake_word_stays_local(self):
         conn = SimpleNamespace(config={"grok_bot": {"enabled": True}, "wakeup_words": []},
                                device_wake_word="你好小雨")
@@ -123,9 +132,11 @@ class GrokBotTest(unittest.IsolatedAsyncioTestCase):
                                logger=mock.MagicMock(), headers={"device-id": "device-1"})
         speak = mock.MagicMock()
         with mock.patch("core.handle.grokBotHandle.prepare_submission") as submit, _fake_handlers(speak):
-            self.assertTrue(await handle_grok_bot(conn, "个你好，中猪公"))
+            for text in ["个你好，中猪公", "宗主。你好宗主。"]:
+                speak.reset_mock()
+                self.assertTrue(await handle_grok_bot(conn, text))
+                speak.assert_called_once_with(conn, "我在。")
             submit.assert_not_called()
-            speak.assert_called_once_with(conn, "我在。")
 
     async def test_wake_prefix_is_stripped_before_submit(self):
         conn = SimpleNamespace(config={"grok_bot": {"enabled": True, "config_file": str(self.config)},
