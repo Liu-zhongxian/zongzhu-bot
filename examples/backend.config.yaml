@@ -44,6 +44,8 @@ grok_bot:
 #   skills: [local_music]   # 按顺序尝试；[] 表示不用本机技能
 #   agent: grok_bot         # 其余的话交给谁；留空则交给上游的对话模型
 #   progress_prompts: false # 等 AI 回复时语音报进度（30 秒、再 60 秒、之后每 120 秒），默认关
+#   call_names:             # 呼名"嗨 <称呼>"，不写用模块自带的
+#     grok_bot: [孙悟空, 悟空, Grok Bot, Grok, 格罗克]
 prompt: 你是宗主，用简洁自然的中文回答用户，适合语音播报。
 wakeup_words: [你好宗主, 你好小智, 嘿你好呀]
 enable_greeting: true

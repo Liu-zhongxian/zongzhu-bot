@@ -1,11 +1,13 @@
 import asyncio
 import json
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
 from core import gateway
-from core.gateway import status
+from core.gateway import agent_store, status
 from core.gateway.page import GatewayPageHandler
 
 CONFIG = {"wakeup_words": ["你好宗主"], "server": {"http_port": 8003},
@@ -24,6 +26,10 @@ class StatusTest(unittest.IsolatedAsyncioTestCase):
         for store in (status._boards, status._conns, status._recent):
             store.clear()
         status._totals.update(sentences=0, local=0)
+        # the board's chosen AI is read from data/agent_sessions.json; keep the real one out of it
+        patcher = mock.patch.object(agent_store, "PATH", Path(tempfile.mkdtemp()) / "agent_sessions.json")
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def patch_handlers(self, music=False, bot=False):
         for target, value in (("core.gateway.skills.music.command.handle_local_command", music),

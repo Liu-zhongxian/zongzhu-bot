@@ -69,6 +69,7 @@ class GrokWebhookAgent(Agent):
     accepted = "任务已提交，Bot 回复后会显示在屏幕上。"
     answers_later = True
     earlier = "稍早的 Bot 回复："
+    call_names = ("孙悟空", "悟空", "Grok Bot", "Grok", "格罗克")
 
     def enabled(self, config):
         return bool((config.get("grok_bot") or {}).get("enabled"))

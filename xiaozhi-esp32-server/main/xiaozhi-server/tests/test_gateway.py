@@ -1,13 +1,16 @@
 import asyncio
 import json
 import sys
+import tempfile
 import time
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
 from core import gateway
-from core.gateway import waiting
+from core.gateway import agent_store, waiting
+from core.gateway.call_names import match_call_name
 from core.gateway.agent import HANDING_OVER, WAITING_FOR_REPLY, Agent, Reply, hand_over, say_reply
 from core.gateway.agent_session import Activity, AgentSession, Done, Error, ErrorKind, TextDelta
 
@@ -367,6 +370,118 @@ class SkillCollectionTest(unittest.IsolatedAsyncioTestCase):
             gateway.on_listen(conn)
             gateway.on_listen(make_conn({}))
         duck.assert_called_once_with(conn)
+
+
+class CallNameMatchTest(unittest.TestCase):
+    """Cases from xiaozhi-hub-server tests/agent/test_call_names.py, with our names."""
+
+    NAMES = {"grok_bot": ["孙悟空", "悟空", "Grok Bot", "Grok"]}
+
+    def test_only_the_name(self):
+        for text in ["Hi, 孙悟空.", "Hi, 孙悟空. Hi, 孙悟空.", "High grok.", "嗨 孙悟空", "hey，悟空！",
+                     "He grok.", "Heい grok。", "Hei 孙悟空", "H, 孙悟空.", "嗨 Grok Bot"]:
+            self.assertEqual(match_call_name(text, self.NAMES), ("grok_bot", ""), text)
+
+    def test_name_with_a_task(self):
+        for text, rest in [("嗨孙悟空帮我查天气。", "帮我查天气。"), ("嗨悟空,今天天气怎么样？", "今天天气怎么样？"),
+                           ("higrok,今天天气怎么样？", "今天天气怎么样？"), ("Hi Grok, 用 Python 写个脚本", "用 Python 写个脚本"),
+                           ("嘿，孙悟空，嘿，孙悟空，整理新闻", "整理新闻")]:
+            self.assertEqual(match_call_name(text, self.NAMES), ("grok_bot", rest), text)
+
+    def test_not_a_call(self):
+        for text in ["孙悟空是谁", "嗨你好。", "嗨,你怎么看？", "嗨 grokking 是什么", "今天嗨 孙悟空一下",
+                     "Hello 孙悟空", "Help grok 怎么用", "Hey.", "H5 grok 页面", ""]:
+            self.assertIsNone(match_call_name(text, self.NAMES), text)
+
+    def test_name_written_as_a_string(self):
+        self.assertEqual(match_call_name("嗨 悟空", {"a": "悟空"}), ("a", ""))
+        self.assertIsNone(match_call_name("嗨 悟 一下", {"a": "悟空"}))
+
+
+class OtherAgent(FakeAgent):
+    name = "other_ai"
+    title = "另一个 AI"
+    call_names = ("小助手",)
+
+
+class CallNameDispatchTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        patcher = mock.patch.object(agent_store, "PATH", Path(self.temp.name) / "agent_sessions.json")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.speak_txt = mock.MagicMock()
+        self.audio = SimpleNamespace(send_stt_message=mock.AsyncMock(), send_tts_message=mock.AsyncMock())
+        patcher = mock.patch.dict(sys.modules, {
+            "core.handle.sendAudioHandle": self.audio,
+            "core.handle.intentHandler": SimpleNamespace(speak_txt=self.speak_txt),
+        })
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.cached = mock.AsyncMock(return_value=True)
+        patcher = mock.patch("core.handle.grokBotPhrases.speak", self.cached)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.handed = []
+
+        async def hand_over(conn, agent, text):
+            self.handed.append((agent.name, text))
+            return True
+        patcher = mock.patch("core.gateway.hand_over", hand_over)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.music = mock.AsyncMock(return_value=False)
+        patcher = mock.patch("core.gateway.skills.music.command.handle_local_command", self.music)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        gateway.register_agent(OtherAgent())
+        self.addCleanup(gateway.AGENTS.pop, "other_ai")
+        self.config = {"grok_bot": {"enabled": True}, "wakeup_words": ["你好宗主"]}
+
+    def conn(self):
+        return SimpleNamespace(config=self.config, logger=mock.MagicMock(), device_id="aa:bb:cc:dd:ee:01",
+                               client_abort=False, device_wake_word="你好宗主")
+
+    async def test_name_alone_answers_here_and_sends_nothing(self):
+        conn = self.conn()
+        self.assertTrue(await gateway.dispatch(conn, "嗨，孙悟空。"))
+        self.audio.send_stt_message.assert_awaited_once_with(conn, "嗨，孙悟空。")
+        self.cached.assert_awaited_once_with(conn, "我在。")
+        self.assertEqual(self.handed, [])
+        self.music.assert_not_awaited()
+
+    async def test_name_with_a_task_goes_straight_to_that_ai(self):
+        conn = self.conn()
+        self.music.return_value = True  # music would take "暂停" if it were asked
+        self.assertTrue(await gateway.dispatch(conn, "你好宗主，嗨孙悟空，暂停"))
+        self.assertEqual(self.handed, [("grok_bot", "暂停")])
+        self.music.assert_not_awaited()
+
+    async def test_calling_another_ai_switches_and_is_remembered(self):
+        conn = self.conn()
+        await gateway.dispatch(conn, "嗨 小助手，讲个笑话")
+        await gateway.dispatch(conn, "再讲一个")
+        self.assertEqual(self.handed, [("other_ai", "讲个笑话"), ("other_ai", "再讲一个")])
+        # a reconnect (new conn) or a restart keeps the choice
+        self.assertEqual(gateway.agent_name(self.conn()), "other_ai")
+        await gateway.dispatch(self.conn(), "嗨 悟空")
+        self.assertEqual(gateway.agent_name(self.conn()), "grok_bot")
+
+    async def test_a_remembered_ai_that_is_switched_off_falls_back(self):
+        agent_store.put("aa:bb:cc:dd:ee:01", "missing_ai")
+        self.assertEqual(gateway.agent_name(self.conn()), "grok_bot")
+
+    async def test_page_shows_the_call_and_the_board_ai(self):
+        conn = self.conn()
+        await gateway.dispatch(conn, "嗨 小助手")
+        record = gateway.status.snapshot(self.config)["recent"][0]
+        self.assertEqual((record["layer"], record["target"]), ("call", "另一个 AI"))
+
+    def test_call_names_are_hotwords(self):
+        words = gateway.hotwords(self.config)
+        self.assertIn("孙悟空", words)
+        self.assertIn("Grok Bot", words)
 
 
 if __name__ == "__main__":

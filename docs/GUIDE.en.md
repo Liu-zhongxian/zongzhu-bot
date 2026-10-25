@@ -144,6 +144,8 @@ Speech recognition defaults to X-ASR and needs no torch; hotwords and post-recog
 
 Open `http://localhost:8003/gateway` in a browser for the gateway page: which boards are online and what they're doing, and for the last 30 sentences which layer handled each one, who got it and how long until sound. It's read-only, shows no keys, and other devices on the LAN can open it too. Data lives in memory and is cleared when the backend restarts.
 
+**Calling by name**: starting a sentence with "嗨 孙悟空" ("hi, Sun Wukong"; "嘿", "悟空", "Grok" and "Grok Bot" work too) addresses the Grok Bot. Anything after the name goes straight to it, skipping local music; the name alone gets "我在。" ("I'm here.") and nothing is submitted. Once a second AI is added, the board keeps using whichever AI was called last, stored in `data/agent_sessions.json` across reconnects and restarts. Names can be changed under `gateway.call_names` in `.config.yaml`.
+
 To start the backend in the background at login (restarted if it exits; the Mac does not idle-sleep while it runs):
 
 ```sh

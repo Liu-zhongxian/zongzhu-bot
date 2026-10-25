@@ -70,8 +70,9 @@ tr:last-child td { border-bottom: 0; }
 td .fix { color: var(--muted); font-size: 12px; }
 td.nowrap { white-space: nowrap; }
 .layer { font-weight: 600; white-space: nowrap; }
-.layer.skill { color: var(--l-rule); } .layer.agent { color: var(--l-front); } .layer.upstream { color: var(--l-name); }
+.layer.skill { color: var(--l-rule); } .layer.agent { color: var(--l-front); } .layer.upstream { color: var(--l-filter); }
 .layer.filter, .layer.wake { color: var(--l-filter); }
+.layer.call { color: var(--l-name); }
 .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 .chips button { all: unset; cursor: pointer; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); font-size: 13px; }
 .chips button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
@@ -132,7 +133,7 @@ section[hidden] { display: none; }
 
 <script>
 const PAGES = [["overview", "◎", "总览"], ["log", "☰", "最近的话"]];
-const LAYERS = { skill: "① 本机技能", agent: "转交 AI", filter: "过滤掉", wake: "唤醒", upstream: "上游对话" };
+const LAYERS = { skill: "① 本机技能", agent: "转交 AI", call: "呼名", filter: "过滤掉", wake: "唤醒", upstream: "上游对话" };
 let data = null, fetchedAt = 0, filter = "all";
 
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);

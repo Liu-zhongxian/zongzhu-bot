@@ -44,6 +44,7 @@ class Agent:
     ack = ""  # cached phrase said while the sentence is sent off
     accepted = ""  # said instead when the ack is not cached yet and the AI accepted the sentence
     answers_later = False  # True: answers come back after the hand-over (see waiting.py)
+    call_names = ()  # "嗨 <name>" picks this AI (see call_names.py)
     earlier = "稍早的回复："  # put before an answer to a request from an earlier connection
 
     def enabled(self, config) -> bool:

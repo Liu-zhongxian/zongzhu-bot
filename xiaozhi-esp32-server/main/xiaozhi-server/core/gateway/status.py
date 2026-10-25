@@ -84,7 +84,7 @@ def finish(record, layer, target):
     record["layer"], record["target"] = layer, target
     if layer not in ("wake",):
         _totals["sentences"] += 1
-        _totals["local"] += layer in ("skill", "filter")
+        _totals["local"] += layer in ("skill", "filter", "call")
 
 
 def note_audio(conn):
@@ -101,6 +101,11 @@ def _state(conn, now):
     if getattr(conn, "client_is_speaking", False):
         return {"kind": "speaking"}
     return {"kind": "listening"}
+
+
+def _agent(conn, configured):
+    """The board's AI: chosen by calling its name on this connection, else the configured one."""
+    return (getattr(conn, "gateway_agent", None) if conn else None) or configured
 
 
 def snapshot(config):
@@ -127,7 +132,7 @@ def snapshot(config):
             "id": device_id[-5:], "name": name, "type": info.get("type", ""), "version": info.get("version", ""),
             "ip": (conn.client_ip if conn else None) or info.get("ip", ""), "online": bool(conns),
             "wake": (getattr(conn, "device_wake_word", None) if conn else None) or "",
-            "agent": AGENT_NAMES.get(agent, agent or "上游对话"),
+            "agent": AGENT_NAMES.get(_agent(conn, agent), _agent(conn, agent) or "上游对话"),
             "state": _state(conn, now) if conn else {"kind": "offline"},
             "seen": info.get("seen"),
         })
