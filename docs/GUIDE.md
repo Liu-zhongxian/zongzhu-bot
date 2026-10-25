@@ -277,7 +277,7 @@ python scripts/build.py lckfb/szpi-esp32s3 --name lichuang-dev-zongzhu          
 | 路径 | 内容 |
 | --- | --- |
 | `xiaozhi-esp32/` | 完整固件源码；本项目的改动集中在 `main/boards/common/zongzhu/`（各板共用）和各板目录（`waveshare/esp32-s3-touch-amoled-1.75/`、`lckfb/szpi-esp32s3/`、`m5stack/stopwatch/`） |
-| `xiaozhi-esp32-server/main/xiaozhi-server/` | 实际运行的 Python 后端；Bot 桥接在 `core/handle/grokBotHandle.py`，本机点歌在 `core/gateway/skills/music/`（网关的第一个技能模块），识别纠错在 `core/utils/asr_text.py` |
+| `xiaozhi-esp32-server/main/xiaozhi-server/` | 实际运行的 Python 后端；Bot 桥接是网关的 AI 模块 `core/gateway/agents/grok_webhook.py`（提交和回复在 `core/handle/grokBot*.py`），本机点歌在 `core/gateway/skills/music/`（网关的第一个技能模块），识别纠错在 `core/utils/asr_text.py` |
 | `firmware/` | 各板的发布包：分段固件、校验值、构建记录 |
 | `web/` | 网页刷机页面和 macOS 后端安装脚本 `install-mac.sh`，推到 main 后自动发布到 GitHub Pages |
 | `deploy/` | 把后端部署到公网 Linux 服务器（Caddy、systemd、服务器配置） |

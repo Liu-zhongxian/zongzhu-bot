@@ -59,8 +59,6 @@ async def handleHelloMessage(conn: "ConnectionHandler", msg_json):
             conn.client_aec = True
 
     await conn.websocket.send(json.dumps(conn.welcome_msg))
-    from core.handle.grokBotReply import start_reply_watcher
-    start_reply_watcher(conn)
     from core import gateway
     gateway.warm(conn)
 

@@ -8,8 +8,14 @@ from types import SimpleNamespace
 import httpx
 from unittest import mock
 
-from core.handle.grokBotHandle import (extract_command, submit_command, handle_grok_bot,
-                                      strip_wake_phrase, _recent)
+from core.gateway.agent import hand_over
+from core.gateway.agents.grok_webhook import GrokWebhookAgent
+from core.handle.grokBotHandle import extract_command, submit_command, strip_wake_phrase, _recent
+
+
+async def handle_grok_bot(conn, text):
+    """What the gateway does with a sentence for the Grok Bot (was grokBotHandle.handle_grok_bot)."""
+    return await hand_over(conn, GrokWebhookAgent(), text)
 
 
 def _fake_handlers(speak):

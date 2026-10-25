@@ -11,7 +11,7 @@ RECENT_MAX = 30
 BOARD_NAMES = (("lichuang", "立创实战派"), ("amoled-1.75", "微雪 1.75C"), ("stopwatch", "M5Stack StopWatch"))
 # Types our check scripts use (tools/verify, probes): shown only while connected
 SIMULATED_TYPES = {"local-test", "probe"}
-AGENT_NAMES = {"grok_bot": "Grok Bot"}
+AGENT_NAMES = {}  # filled by gateway.register_agent
 
 _started = time.time()
 _boards = {}  # device id -> what its last OTA request said

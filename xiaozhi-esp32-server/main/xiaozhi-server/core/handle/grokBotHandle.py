@@ -1,5 +1,4 @@
-"""Forward conversation to the user's existing Grok Bot without a chat model."""
-import asyncio
+"""Grok Bot Webhook submission, plus the wake-phrase helpers the gateway uses (see core/gateway/agents/grok_webhook.py)."""
 import json
 import re
 import secrets
@@ -9,7 +8,6 @@ from collections import OrderedDict
 from pathlib import Path
 
 import httpx
-from core.handle import grokBotPhrases as phrases
 from core.handle.grokBotReply import prepare_reply
 
 
@@ -199,73 +197,3 @@ async def submit_command(command, device, config_file, transport=None):
     if isinstance(submission, str):
         return submission
     return (await post_submission(submission, transport))[1]
-
-
-async def _speak_after_ack(conn, status, reply):
-    """A second sentence after the cached acknowledgement, which already ended with tts stop."""
-    from core.handle.sendAudioHandle import send_tts_message
-    from core.handle.intentHandler import speak_txt
-
-    if status == "rejected" and (getattr(conn, "features", None) or {}).get("bot_ui"):
-        # Leaves any waiting screen and keeps the reason on screen, like a delivered reply.
-        await conn.websocket.send(json.dumps({
-            "type": "bot_wait", "state": "reply", "text": reply, "session_id": conn.session_id,
-        }, ensure_ascii=False))
-        conn.bot_ui_waiting = False
-    conn.sentence_id = uuid.uuid4().hex
-    await send_tts_message(conn, "start")
-    conn.client_is_speaking = True
-    speak_txt(conn, reply)
-
-
-async def handle_grok_bot(conn, text):
-    config = conn.config.get("grok_bot", {})
-    command = extract_command(text)
-    if not config.get("enabled") or command is None:
-        return False
-    device_wake = getattr(conn, "device_wake_word", None)
-    # Wake phrases use the local cached greeting; they are not Bot tasks.
-    if re.sub(r"[\W_]", "", command) in [*conn.config.get("wakeup_words", []), device_wake]:
-        return False
-    from core.handle.sendAudioHandle import send_stt_message
-    from core.handle.intentHandler import speak_txt
-
-    had_wake, rest = strip_wake_phrase(command, [device_wake] if device_wake else ())
-    if had_wake:
-        if not rest.strip("，。！？,.!? "):
-            # The user repeated the wake word mid-conversation: acknowledge, submit nothing.
-            conn.logger.bind(tag="grokBot").info(f"忽略重复唤醒词，不提交: {text}")
-            conn.client_abort = False
-            if not await phrases.speak(conn, phrases.HERE, send_start=True):
-                speak_txt(conn, phrases.HERE)
-            return True
-        command = rest
-
-    conn.bot_input_until = 0
-    conn.client_abort = False
-    conn.sentence_id = uuid.uuid4().hex
-    await send_stt_message(conn, text)
-    submission = prepare_submission(command, conn.headers.get("device-id", "unknown"),
-                                    config.get("config_file", ""))
-    if isinstance(submission, str):
-        conn.gateway_not_sent = submission  # shown on the gateway page as not submitted
-        if not conn.client_abort:
-            speak_txt(conn, submission)
-        return True
-    # The acknowledgement plays while the Webhook is in flight, so it does not claim success.
-    posting = asyncio.create_task(post_submission(submission))
-    if submission.pending and (getattr(conn, "features", None) or {}).get("bot_ui"):
-        # Stop ordinary input now: speech that continues past the submission would otherwise
-        # become separate tasks before the waiting screen appears (three in a row, 2026-10-22).
-        # Wake or button resumes input; a rejection or a delivered reply clears it as before.
-        conn.bot_ui_waiting = True
-        conn.reset_audio_states()
-    acked = await phrases.speak(conn, phrases.ACK)
-    status, reply = await posting
-    if conn.client_abort:
-        return True
-    if not acked:
-        speak_txt(conn, reply)
-    elif status != "accepted" or not submission.pending:
-        await _speak_after_ack(conn, status, reply)
-    return True

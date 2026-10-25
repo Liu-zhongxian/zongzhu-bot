@@ -8,7 +8,14 @@ from types import SimpleNamespace
 from unittest import mock
 
 from core.handle import grokBotPhrases as phrases
-from core.handle.grokBotHandle import handle_grok_bot, _recent
+from core.gateway.agent import hand_over
+from core.gateway.agents.grok_webhook import GrokWebhookAgent
+from core.handle.grokBotHandle import _recent
+
+
+async def handle_grok_bot(conn, text):
+    """What the gateway does with a sentence for the Grok Bot (was grokBotHandle.handle_grok_bot)."""
+    return await hand_over(conn, GrokWebhookAgent(), text)
 
 
 class FakeTTS:
@@ -122,7 +129,8 @@ class PhraseTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_uncached_ack_falls_back_to_the_old_reply(self):
         conn, _ = await self._run("accepted", cached=False)
-        self.speak_txt.assert_called_once_with(conn, "结果：accepted")
+        # the text post_submission returns for an accepted request that waits for the answer
+        self.speak_txt.assert_called_once_with(conn, "任务已提交，Bot 回复后会显示在屏幕上。")
 
     async def test_local_check_failure_never_posts(self):
         conn = _conn(self.config, FakeTTS())

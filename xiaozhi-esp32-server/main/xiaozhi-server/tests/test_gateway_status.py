@@ -27,7 +27,7 @@ class StatusTest(unittest.IsolatedAsyncioTestCase):
 
     def patch_handlers(self, music=False, bot=False):
         for target, value in (("core.gateway.skills.music.command.handle_local_command", music),
-                              ("core.handle.grokBotHandle.handle_grok_bot", bot)):
+                              ("core.gateway.hand_over", bot)):
             patcher = mock.patch(target, mock.AsyncMock(return_value=value))
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -50,12 +50,12 @@ class StatusTest(unittest.IsolatedAsyncioTestCase):
     async def test_repeat_blocked_by_the_bot_is_not_shown_as_handed_over(self):
         conn = make_conn()
 
-        async def bot(conn, text):  # what handle_grok_bot does for a repeat within 30s
+        async def bot(conn, agent, text):  # what hand_over does when the Bot blocks a repeat within 30s
             conn.gateway_not_sent = "刚才已尝试提交同一条指令，已阻止重复发送。请在 Bot 对话里查看。"
             return True
 
         self.patch_handlers()
-        with mock.patch("core.handle.grokBotHandle.handle_grok_bot", bot):
+        with mock.patch("core.gateway.hand_over", bot):
             await gateway.dispatch(conn, "别再放了")
         self.patch_handlers(bot=True)
         await gateway.dispatch(conn, "别再放了")  # the flag does not stick to the next sentence

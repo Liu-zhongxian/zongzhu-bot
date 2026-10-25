@@ -7,10 +7,12 @@ Config (`gateway` in .config.yaml, optional):
       agent: grok_bot         # the AI that gets the rest; empty = upstream chat model
 
 Without the section the order is the one before the gateway: local music, then the Bot.
+Skills are in core/gateway/skills/ (see skill.py), AIs in core/gateway/agents/ (see agent.py).
 """
 import time
 
 from core.gateway import builtin, status
+from core.gateway.agent import Agent, hand_over
 from core.gateway.skill import Skill
 
 TAG = "gateway"
@@ -25,15 +27,15 @@ def register_skill(skill: Skill):
     SKILLS[skill.name] = skill
 
 
-def register_agent(name: str, handler):
-    """`handler(conn, text) -> bool`; True when the AI took the sentence."""
-    AGENTS[name] = handler
+def register_agent(agent: Agent):
+    AGENTS[agent.name] = agent
+    status.AGENT_NAMES[agent.name] = agent.title or agent.name
 
 
 for _skill in builtin.SKILLS:
     register_skill(_skill)
-for _name, _handler in builtin.AGENTS.items():
-    register_agent(_name, _handler)
+for _agent in builtin.AGENTS:
+    register_agent(_agent)
 
 
 def _settings(config):
@@ -49,27 +51,35 @@ def active_skills(config):
     return [skill for skill in skills if skill is not None and skill.enabled(config)]
 
 
+def active_agent(config):
+    """The configured AI when it is known and switched on, else None."""
+    agent = AGENTS.get(_settings(config)[1])
+    return agent if agent is not None and agent.enabled(config) else None
+
+
 def hotwords(config) -> list:
     return [word for skill in active_skills(config) for word in skill.hotwords(config)]
 
 
 def warm(conn):
-    """A board connected: synthesize every skill's fixed replies, then let each skill start up."""
+    """A board connected: synthesize the fixed replies (AI first), then let each module start up."""
     import asyncio
 
     from core.handle import grokBotPhrases
 
-    skills = active_skills(conn.config)
-    texts = [text for skill in skills for text in skill.phrases(conn.config)]
+    agent = active_agent(conn.config)
+    modules = ([agent] if agent else []) + active_skills(conn.config)
+    texts = [text for module in modules for text in module.phrases(conn.config)]
     if texts:
-        asyncio.create_task(grokBotPhrases.warm(conn, texts))
-    for skill in skills:
-        skill.warm(conn)
+        asyncio.create_task(grokBotPhrases.warm(conn, list(dict.fromkeys(texts))))
+    for module in modules:
+        module.warm(conn)
 
 
 def on_listen(conn):
-    for skill in active_skills(conn.config):
-        skill.on_listen(conn)
+    agent = active_agent(conn.config)
+    for module in ([agent] if agent else []) + active_skills(conn.config):
+        module.on_listen(conn)
 
 
 def _warn(conn, message):
@@ -109,6 +119,6 @@ async def _route(conn, text):
     if agent is None:
         _warn(conn, f"未知 AI，交给上游对话: {agent_name}")
         return "upstream", "上游对话", False
-    if await agent(conn, text):
-        return "agent", status.AGENT_NAMES.get(agent_name, agent_name), True
+    if await hand_over(conn, agent, text):
+        return "agent", agent.title or agent_name, True
     return "upstream", "上游对话", False

@@ -127,44 +127,10 @@ async def deliver_replies(conn, directory):
             # A reply left over from an earlier session needs context on screen.
             if isinstance(created, (int, float)) and created < getattr(conn, "bot_reply_since", 0):
                 text = "稍早的 Bot 回复：" + text
-            from core.handle.intentHandler import speak_txt
+            from core.gateway.agent import say_reply
+            from core.gateway.agent_session import TextDelta
 
-            sentence_id = uuid.uuid4().hex
-            conn.sentence_id = sentence_id
-            conn.bot_reply_sentence_id = sentence_id
-            conn.client_abort = False
-            conn.client_is_speaking = True
-            conn.last_activity_time = time.time() * 1000
-            try:
-                if (getattr(conn, "features", None) or {}).get("bot_ui"):
-                    await conn.websocket.send(json.dumps({
-                        "type": "bot_wait", "state": "reply", "text": text,
-                        "session_id": conn.session_id,
-                    }, ensure_ascii=False))
-                    conn.bot_ui_waiting = False
-                await conn.websocket.send(json.dumps({
-                    "type": "tts", "state": "start", "session_id": conn.session_id,
-                    "request_id": request_id,
-                }))
-                # Show the complete answer while synthesis starts; the existing
-                # TTS queue then supplies audio, sentence subtitles and stop.
-                if not conn.client_abort and conn.sentence_id == sentence_id:
-                    await conn.websocket.send(json.dumps({
-                        "type": "tts", "state": "sentence_start", "text": text,
-                        "session_id": conn.session_id, "request_id": request_id,
-                    }, ensure_ascii=False))
-                if not conn.client_abort and conn.sentence_id == sentence_id:
-                    speak_txt(conn, text)
-            except Exception:
-                if conn.sentence_id == sentence_id:
-                    conn.client_is_speaking = False
-                    try:
-                        await conn.websocket.send(json.dumps({
-                            "type": "tts", "state": "stop", "session_id": conn.session_id,
-                        }))
-                    except Exception:
-                        pass
-                raise
+            await say_reply(conn, TextDelta(text), request_id)
             pending.rename(pending.with_name(request_id + ".sent.json"))
             conn.logger.bind(tag=__name__).info(f"Bot reply dispatched for speech and display: {request_id}")
             return True
@@ -278,5 +244,3 @@ def start_reply_watcher(conn):
     task = getattr(conn, "bot_reply_task", None)
     if task is None or task.done():
         conn.bot_reply_task = asyncio.create_task(watch_replies(conn))
-    from core.handle import grokBotPhrases
-    asyncio.create_task(grokBotPhrases.warm(conn))
