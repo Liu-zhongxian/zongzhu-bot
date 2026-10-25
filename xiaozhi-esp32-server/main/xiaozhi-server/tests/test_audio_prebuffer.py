@@ -21,8 +21,16 @@ class PrebufferTest(unittest.IsolatedAsyncioTestCase):
     async def push(self, conn, count, flow, controller):
         await send._send_audio_with_rate_control(conn, [b"x"] * count, controller, flow, 0)
 
-    async def test_turn_start_sends_fifteen_packets_directly(self):
+    async def test_turn_start_sends_only_five_packets_directly(self):
+        # The board may not be speaking yet and would drop a bigger burst
         conn, flow, controller = make_conn(), {"packet_count": 0, "sequence": 0}, AudioRateController(60)
+        await self.push(conn, 40, flow, controller)
+        self.assertEqual(conn.websocket.send.await_count, 5)
+        self.assertEqual(len(controller.queue), 35)
+
+    async def test_later_sentence_on_empty_device_tops_up_to_fifteen(self):
+        conn, controller = make_conn(), AudioRateController(60)
+        flow = {"packet_count": 30, "sequence": 30, "paced": True, "play_end": time.monotonic() - 1}
         await self.push(conn, 40, flow, controller)
         self.assertEqual(conn.websocket.send.await_count, 15)
         self.assertEqual(len(controller.queue), 25)
@@ -30,14 +38,14 @@ class PrebufferTest(unittest.IsolatedAsyncioTestCase):
     async def test_next_sentence_only_tops_up_to_fifteen(self):
         conn, controller = make_conn(), AudioRateController(60)
         # The device still holds about 10 packets of the previous sentence
-        flow = {"packet_count": 30, "sequence": 30, "play_end": time.monotonic() + 0.6}
+        flow = {"packet_count": 30, "sequence": 30, "paced": True, "play_end": time.monotonic() + 0.6}
         await self.push(conn, 20, flow, controller)
         self.assertEqual(conn.websocket.send.await_count, 5)
         self.assertEqual(len(controller.queue), 15)
 
     async def test_full_device_buffer_sends_nothing_directly(self):
         conn, controller = make_conn(), AudioRateController(60)
-        flow = {"packet_count": 30, "sequence": 30, "play_end": time.monotonic() + 1.5}
+        flow = {"packet_count": 30, "sequence": 30, "paced": True, "play_end": time.monotonic() + 1.5}
         await self.push(conn, 10, flow, controller)
         self.assertEqual(conn.websocket.send.await_count, 0)
         self.assertEqual(len(controller.queue), 10)
@@ -45,20 +53,20 @@ class PrebufferTest(unittest.IsolatedAsyncioTestCase):
     async def test_packets_queue_behind_a_non_empty_queue(self):
         conn, controller = make_conn(), AudioRateController(60)
         controller.add_audio(b"pending")
-        flow = {"packet_count": 30, "sequence": 30}
+        flow = {"packet_count": 30, "sequence": 30, "paced": True}
         await self.push(conn, 10, flow, controller)
         self.assertEqual(conn.websocket.send.await_count, 0)
         self.assertEqual(len(controller.queue), 11)
 
     async def test_count_is_configurable_and_bad_values_fall_back(self):
-        for config, expected in (({"tts_audio_prebuffer_count": 5}, 5), ({"tts_audio_prebuffer_count": "x"}, 15),
+        for config, expected in (({"tts_audio_prebuffer_count": 8}, 8), ({"tts_audio_prebuffer_count": "x"}, 15),
                                  ({"tts_audio_prebuffer_count": 0}, 1)):
-            conn, flow, controller = make_conn(config), {"packet_count": 0, "sequence": 0}, AudioRateController(60)
+            conn, flow, controller = make_conn(config), {"packet_count": 30, "sequence": 30, "paced": True}, AudioRateController(60)
             await self.push(conn, 20, flow, controller)
             self.assertEqual(conn.websocket.send.await_count, expected, config)
 
     async def test_play_end_advances_one_frame_per_packet(self):
-        conn, flow, controller = make_conn(), {"packet_count": 0, "sequence": 0}, AudioRateController(60)
+        conn, flow, controller = make_conn(), {"packet_count": 30, "sequence": 30, "paced": True}, AudioRateController(60)
         before = time.monotonic()
         await self.push(conn, 15, flow, controller)
         self.assertAlmostEqual(flow["play_end"] - before, 0.9, delta=0.05)

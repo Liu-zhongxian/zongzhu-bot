@@ -17,6 +17,10 @@ AUDIO_FRAME_DURATION = 60
 # Each sentence tops the device buffer up to this many packets (15 x 60ms = 0.9s);
 # override with tts_audio_prebuffer_count. After xiaozhi-hub-server (MIT).
 DEFAULT_PREBUFFER_COUNT = 15
+# The first burst of a turn stays at upstream's 5: the board drops audio that arrives
+# before its main loop has handled "tts start" and switched to speaking, which right
+# after a wake word can take a few hundred ms (application.cc OnIncomingAudio).
+TURN_START_PREBUFFER_COUNT = 5
 
 
 def _pre_buffer_count(conn) -> int:
@@ -272,11 +276,16 @@ async def _send_audio_with_rate_control(
             if not rate_controller.queue:
                 ahead = max(flow_control.get("play_end", 0) - time.monotonic(), 0)
                 buffered = round(ahead * 1000 / AUDIO_FRAME_DURATION)
-                flow_control["burst_left"] = max(_pre_buffer_count(conn) - buffered, 0)
+                target = _pre_buffer_count(conn)
+                if not flow_control.get("paced"):
+                    # nothing has gone out at the normal pace yet: the board may not be speaking
+                    target = min(target, TURN_START_PREBUFFER_COUNT)
+                flow_control["burst_left"] = max(target - buffered, 0)
             if flow_control.get("burst_left", 0) > 0:
                 flow_control["burst_left"] -= 1
                 await _do_send_audio(conn, packet, flow_control)
             else:
+                flow_control["paced"] = True
                 rate_controller.add_audio(packet)
 
 
