@@ -8,8 +8,7 @@ if TYPE_CHECKING:
 from core.utils.util import audio_to_data
 from core.handle.abortHandle import handleAbortMessage
 from core.handle.intentHandler import handle_user_intent
-from core.handle.grokBotHandle import handle_grok_bot
-from core.handle.localCommandHandle import handle_local_command
+from core import gateway
 from core.utils.output_counter import check_device_output_limit
 from core.handle.sendAudioHandle import send_stt_message, SentenceType
 
@@ -97,12 +96,8 @@ async def startToChat(conn: "ConnectionHandler", text):
     if conn.client_is_speaking and conn.client_listen_mode != "manual":
         await handleAbortMessage(conn)
 
-    # Music and volume commands run on this Mac; everything else goes to the Bot.
-    if await handle_local_command(conn, actual_text):
-        return
-
-    # Bot conversation bypasses the chat model and its API quota.
-    if await handle_grok_bot(conn, actual_text):
+    # Skills on this Mac (music, volume) first, then the current AI; see core/gateway.
+    if await gateway.dispatch(conn, actual_text):
         return
 
     # 首先进行意图分析，使用实际文本内容
