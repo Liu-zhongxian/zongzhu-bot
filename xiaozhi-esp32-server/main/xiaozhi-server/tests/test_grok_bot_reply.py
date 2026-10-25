@@ -287,6 +287,53 @@ class GrokBotReplyTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.conn.websocket.send.await_count, 2)
 
 
+    def write_follow_up(self, n, text, request_id=None):
+        path = self.directory / f"{request_id or self.request_id}.more-{n}.json"
+        path.write_text(json.dumps({"request_id": request_id or self.request_id, "text": text}), encoding="utf-8")
+        return path
+
+    async def test_follow_ups_are_said_after_the_first_answer(self):
+        # 2026-10-25 实机: the first answer was wrong, the correction only reached the Grok chat
+        self.write_follow_up(1, "更正：其实能看到。")
+        await deliver_replies(self.conn, self.directory)
+        self.speak.assert_not_called()  # nothing before the first answer
+        self.write_reply(text="看不到其他 Bot。")
+        await deliver_replies(self.conn, self.directory)
+        self.conn.client_is_speaking = False
+        await deliver_replies(self.conn, self.directory)
+        self.conn.client_is_speaking = False
+        self.write_follow_up(2, "New Bot 回复了：你好。")
+        await deliver_replies(self.conn, self.directory)
+        self.conn.client_is_speaking = False
+        await deliver_replies(self.conn, self.directory)  # each said once
+        said = [c.args[1] for c in self.speak.call_args_list]
+        self.assertEqual(said, ["看不到其他 Bot。", "Bot 补充：更正：其实能看到。", "Bot 补充：New Bot 回复了：你好。"])
+        self.assertTrue((self.directory / f"{self.request_id}.more-2.sent.json").exists())
+
+    async def test_follow_ups_only_for_this_board_and_recent_requests(self):
+        self.write_reply()
+        await deliver_replies(self.conn, self.directory)
+        self.conn.client_is_speaking = False
+        self.speak.reset_mock()
+        sent = self.directory / f"{self.request_id}.sent.json"
+        other = "ESP32-" + "c" * 32
+        prepare_reply(self.directory, other, "board-2")[0].rename(self.directory / f"{other}.sent.json")
+        self.write_follow_up(1, "别的板子的。", other)
+        metadata = json.loads(sent.read_text())
+        metadata["created"] -= 2 * 24 * 3600
+        sent.write_text(json.dumps(metadata))
+        self.write_follow_up(1, "两天前的请求。")
+        await deliver_replies(self.conn, self.directory)
+        self.speak.assert_not_called()
+
+    def test_instructions_tell_the_bot_where_follow_ups_go(self):
+        _recent.clear()
+        config = self.directory / "config.json"
+        config.write_text(json.dumps({"url": "https://example.test", "token": "t", "reply_dir": str(self.directory)}))
+        from core.handle.grokBotHandle import prepare_submission
+        submission = prepare_submission("帮我查天气", "board-1", config)
+        self.assertIn(submission.payload["request_id"] + ".more-1.json", submission.payload["command"])
+
     async def test_hello_without_features_is_not_an_error(self):
         # conn.features stays None when the board's hello has no features field.
         self.conn.features = None

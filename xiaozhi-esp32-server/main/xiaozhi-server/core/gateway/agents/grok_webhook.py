@@ -106,14 +106,23 @@ class GrokWebhookAgent(Agent):
                                       webhook.get("reply_wait_seconds", replies.REPLY_WAIT_SECONDS))
 
     def next_reply(self, conn):
-        found = replies.next_reply(self._webhook(conn)["reply_dir"], self._device(conn))
-        if found is None:
-            return None
-        pending, request_id, text, created = found
-        return Reply(request_id, text, created, ref=pending)
+        directory, device = self._webhook(conn)["reply_dir"], self._device(conn)
+        found = replies.next_reply(directory, device)
+        if found is not None:
+            pending, request_id, text, created = found
+            return Reply(request_id, text, created, ref=("first", pending))
+        found = replies.next_follow_up(directory, device)
+        if found is not None:
+            path, request_id, text = found
+            return Reply(request_id, "Bot 补充：" + text, ref=("more", path))
+        return None
 
     def delivered(self, conn, reply):
-        replies.mark_sent(reply.ref, reply.request_id)
+        kind, path = reply.ref
+        if kind == "first":
+            replies.mark_sent(path, reply.request_id)
+        else:
+            replies.mark_follow_up_sent(path)
 
     def slow_hint(self, conn):
         seconds = self._webhook(conn).get("approval_hint_seconds", APPROVAL_HINT_SECONDS)

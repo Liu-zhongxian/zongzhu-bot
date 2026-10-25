@@ -78,31 +78,78 @@ def accept_reply(directory, request_id, token, text):
     return 200
 
 
+def _metadata(path, request_id, device):
+    """The request record (.pending.json or .sent.json) when it belongs to this device, else None."""
+    if not re.fullmatch(r"ESP32-[0-9a-f]{32}", request_id) or path.is_symlink():
+        return None
+    if path.stat().st_size > 4096:
+        return None
+    metadata = json.loads(path.read_text(encoding="utf-8"))
+    if metadata.get("request_id") != request_id or metadata.get("device") != device:
+        return None
+    return metadata
+
+
+def _result_text(reply, request_id):
+    """The bounded text of a result file written for this request, else None."""
+    if reply.is_symlink() or reply.stat().st_size > 65536:
+        return None
+    data = json.loads(reply.read_text(encoding="utf-8"))
+    text = data.get("text")
+    if data.get("request_id") != request_id or not isinstance(text, str):
+        return None
+    if not text.strip() or len(text) > 8000:
+        return None
+    reply.chmod(0o600)
+    return text.strip()
+
+
 def read_reply(pending, device):
     """Only accept a bounded reply for a request created for this device."""
     try:
         request_id = pending.name.removesuffix(".pending.json")
-        if not re.fullmatch(r"ESP32-[0-9a-f]{32}", request_id) or pending.is_symlink():
+        metadata = _metadata(pending, request_id, device)
+        if metadata is None:
             return None
-        if pending.stat().st_size > 4096:
-            return None
-        metadata = json.loads(pending.read_text(encoding="utf-8"))
-        if metadata.get("request_id") != request_id or metadata.get("device") != device:
-            return None
-        reply = pending.with_name(request_id + ".json")
-        if reply.is_symlink() or reply.stat().st_size > 65536:
-            return None
-        data = json.loads(reply.read_text(encoding="utf-8"))
-        text = data.get("text")
-        if data.get("request_id") != request_id or not isinstance(text, str):
-            return None
-        if not text.strip() or len(text) > 8000:
-            return None
-        reply.chmod(0o600)
-        return request_id, text.strip(), metadata.get("created")
+        text = _result_text(pending.with_name(request_id + ".json"), request_id)
+        return None if text is None else (request_id, text, metadata.get("created"))
     except (OSError, ValueError, AttributeError, TypeError):
         # The Bot may still be writing. Invalid/incomplete files are not displayed.
         return None
+
+
+# More from the Bot after its first answer to a request (a correction, or what another Bot it
+# passed the task to replied): <request id>.more-<n>.json, same format. 2026-10-25 实机: the
+# first answer said it could not see the other Bots, the correction stayed in the Grok chat.
+FOLLOW_UP = re.compile(r"(ESP32-[0-9a-f]{32})\.more-([0-9]{1,2})\.json")
+
+
+def next_follow_up(directory, device, max_age=REPLY_TOKEN_SECONDS, now=None):
+    """The oldest unsaid follow-up for this device as (file, request id, text), else None.
+
+    Only for requests whose first answer was already said (.sent.json) within max_age seconds.
+    """
+    now = time.time() if now is None else now
+    directory = Path(directory)
+    for path in sorted(directory.glob("ESP32-*.more-*.json"), key=lambda p: p.stat().st_mtime):
+        match = FOLLOW_UP.fullmatch(path.name)
+        if not match:
+            continue
+        request_id = match.group(1)
+        try:
+            metadata = _metadata(directory / (request_id + ".sent.json"), request_id, device)
+            if metadata is None or not 0 <= now - float(metadata["created"]) < max_age:
+                continue
+            text = _result_text(path, request_id)
+        except (OSError, ValueError, KeyError, AttributeError, TypeError):
+            continue
+        if text is not None:
+            return path, request_id, text
+    return None
+
+
+def mark_follow_up_sent(path):
+    path.rename(path.with_name(path.name.removesuffix(".json") + ".sent.json"))
 
 
 def next_reply(directory, device):

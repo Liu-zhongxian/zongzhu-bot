@@ -16,6 +16,8 @@ from core.utils.util import remove_punctuation_and_length, opus_datas_to_wav_byt
 from core.providers.tools.device_mcp import MCPClient, send_mcp_initialize_message
 
 TAG = __name__
+# 发缓存的唤醒问候前等板子切到"说话"（见 checkWakeupWords）
+WAKE_REPLY_DELAY = 0.5
 
 WAKEUP_CONFIG = {
     "refresh_time": 10,
@@ -108,6 +110,11 @@ async def checkWakeupWords(conn: "ConnectionHandler", text):
 
     # 获取音频数据
     opus_packets = await audio_to_data(response.get("file_path"), use_cache=False)
+    # 等板子切到"说话"再发：板子刚唤醒、刚连上时忙，处理 tts start 要慢几百毫秒，之前到的音频被丢掉，
+    # 问候语开头几个字没了，后端又以为板子缓冲里有包，接着就卡（2026-10-25 实机）。缓存的音频紧跟着
+    # tts start 就到，正常合成的句子中间有 1–2 秒合成时间，碰不到。做法和等多久照 xiaozhi-hub-server
+    # call_names.py 的 CACHED_REPLY_DELAY。
+    await asyncio.sleep(WAKE_REPLY_DELAY)
     # 播放唤醒词回复
     conn.client_abort = False
 
