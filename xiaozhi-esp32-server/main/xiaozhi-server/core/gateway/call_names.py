@@ -1,18 +1,19 @@
-"""呼名：句首"嗨 / 嘿 + 称呼"（如"嗨 孙悟空"）指定交给哪个 AI。
+"""呼名：句首"嗨 / 嘿 + 称呼"（如"嗨 硬件"）指定交给哪个 AI。
 
 匹配规则照搬 justhalfbit/xiaozhi-hub-server `core/agent/call_names.py`（commit adb936d，MIT）：
 招呼语的写法来自它的真机实测（"嘿"常被识别成 he、h，后面偶尔带日文假名）；称呼后面紧跟英文字母
 不算（"嗨 Grok Bot 怎么配置"里的 Grok 不是在叫人）；连说两遍一起去掉。hub 的录入别名、管理后台和
 按模型切换的部分没有搬，切换和记住由网关做（core/gateway/__init__.py、agent_store.py）。
 
-称呼来自每个 AI 模块的 `call_names`，配置 `gateway.call_names: {模块名: [称呼, ...]}` 可以整个替换。
+称呼来自每个 AI 模块（`Agent.names(config)`；Grok Bot 用配置里 Bot 在 Grok 里的名字 `grok_bot.bot_name`，
+hub 里的"孙悟空"就是它作者的 Bot 名字），配置 `gateway.call_names: {模块名: [称呼, ...]}` 可以整个替换。
 """
 import re
 
 # "嘿"常被识别成 he，有时后面还带一个日文假名，偶尔只剩一个 h（hub 实测 "He cloud."、"Heい cloud。"、"H, cloud."）
 _PREFIXES = ["hiigh", "high", "hey", "hei", "hai", "hi", "he", "h", "嗨", "嘿"]
 # 单个 h 后面必须是停顿，否则 "hello"、"haiku" 这类词开头的 h 会被当成招呼语
-_PREFIX = "(?:" + "|".join(p if p != "h" else r"h(?=[\s,，.。!！?？、~～])" for p in _PREFIXES) + r")[぀-ヿ]*"
+_PREFIX = "(?:" + "|".join(p if p != "h" else r"h(?=[\s,，.。!！?？、~～])" for p in _PREFIXES) + r")[\u3040-\u30ff]*"
 _SEP = r"[\s,，.。!！?？、~～]*"
 
 

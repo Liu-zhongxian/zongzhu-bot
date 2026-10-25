@@ -39,13 +39,15 @@ LLM:
 grok_bot:
   enabled: true
   config_file: ../../../private/grok-bot-webhook.json
+  # 可选：Bot 在 Grok 里的名字，作为呼名（"嗨 <名字>，……"），网关页面显示 Grok Bot · <名字>
+  # bot_name: 硬件
 # 中控网关（可选）：一句话先依次问本机技能，都不接再交给 agent；不写这一节就是下面的默认值。
 # gateway:
 #   skills: [local_music]   # 按顺序尝试；[] 表示不用本机技能
 #   agent: grok_bot         # 其余的话交给谁；留空则交给上游的对话模型
 #   progress_prompts: false # 等 AI 回复时语音报进度（30 秒、再 60 秒、之后每 120 秒），默认关
-#   call_names:             # 呼名"嗨 <称呼>"，不写用模块自带的
-#     grok_bot: [孙悟空, 悟空, Grok Bot, Grok, 格罗克]
+#   call_names:             # 呼名"嗨 <称呼>"；不写时 Grok Bot 用 grok_bot.bot_name，没有名字时用 Grok Bot、Grok
+#     grok_bot: [硬件]
 prompt: 你是宗主，用简洁自然的中文回答用户，适合语音播报。
 wakeup_words: [你好宗主, 你好小智, 嘿你好呀]
 enable_greeting: true

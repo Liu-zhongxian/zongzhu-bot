@@ -69,10 +69,22 @@ class GrokWebhookAgent(Agent):
     accepted = "任务已提交，Bot 回复后会显示在屏幕上。"
     answers_later = True
     earlier = "稍早的 Bot 回复："
-    call_names = ("孙悟空", "悟空", "Grok Bot", "Grok", "格罗克")
+    call_names = ("Grok Bot", "Grok")  # without `grok_bot.bot_name`
 
     def enabled(self, config):
         return bool((config.get("grok_bot") or {}).get("enabled"))
+
+    def bot_name(self, config):
+        """The name the Bot has in the Grok app (`grok_bot.bot_name`, e.g. 硬件): its call name."""
+        return str((config.get("grok_bot") or {}).get("bot_name") or "").strip()
+
+    def label(self, config):
+        name = self.bot_name(config)
+        return f"{self.title} · {name}" if name else self.title
+
+    def names(self, config):
+        name = self.bot_name(config)
+        return (name,) if name else self.call_names
 
     def session(self, conn):
         return GrokWebhookSession(conn)

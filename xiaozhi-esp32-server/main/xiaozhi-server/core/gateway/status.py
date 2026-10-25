@@ -1,20 +1,28 @@
-"""What the gateway page shows: boards, live connections and the last sentences. Memory only.
+"""What the gateway page shows: boards, live connections and the last sentences.
 
+The board list is kept in data/gateway_boards.json, so a board stays on the page (as not
+connected) across backend restarts: since the fixed auth_key a board no longer reboots, so it
+sends no OTA request after a restart. Live connections and the last sentences are memory only.
 Nothing here holds keys, tokens or request headers; the page is open to the whole LAN.
 """
+import json
+import os
 import re
+import tempfile
 import time
 from collections import deque
+from pathlib import Path
 
 RECENT_MAX = 30
 # Board types the firmware reports in OTA (board.type) -> the names used in our docs
 BOARD_NAMES = (("lichuang", "立创实战派"), ("amoled-1.75", "微雪 1.75C"), ("stopwatch", "M5Stack StopWatch"))
 # Types our check scripts use (tools/verify, probes): shown only while connected
 SIMULATED_TYPES = {"local-test", "probe"}
-AGENT_NAMES = {}  # filled by gateway.register_agent
+
+BOARDS_PATH = Path("data") / "gateway_boards.json"  # relative to the server directory
 
 _started = time.time()
-_boards = {}  # device id -> what its last OTA request said
+_boards = {}  # device id -> type, version (from OTA), ip, wake word, last seen
 _conns = {}  # id(conn) -> conn, live WebSocket connections
 _recent = deque(maxlen=RECENT_MAX)
 _totals = {"sentences": 0, "local": 0}
@@ -27,18 +35,47 @@ def board_name(board_type):
     return board_type or "未知板子"
 
 
+def load():
+    try:
+        data = json.loads(BOARDS_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if isinstance(data, dict):
+        _boards.update({k: v for k, v in data.items() if isinstance(v, dict)})
+
+
+def _save():
+    real = {k: v for k, v in _boards.items() if v.get("type") not in SIMULATED_TYPES}
+    try:
+        BOARDS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=BOARDS_PATH.parent, prefix=".gateway_boards.", suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(real, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, BOARDS_PATH)
+    except OSError:
+        pass  # the page is only a view; never let it break a connection
+
+
 def note_ota(device_id, board_type, version, ip):
-    _boards[device_id] = {"type": board_type, "version": version, "ip": ip, "seen": time.time()}
+    _boards.setdefault(device_id, {}).update(type=board_type, version=version, ip=ip, seen=time.time())
+    _save()
 
 
 def connected(conn):
     _conns[id(conn)] = conn
+    if conn.device_id:
+        _boards.setdefault(conn.device_id, {}).update(ip=getattr(conn, "client_ip", "") or "", seen=time.time())
+        _save()
 
 
 def disconnected(conn):
     _conns.pop(id(conn), None)
     if conn.device_id in _boards:
         _boards[conn.device_id]["seen"] = time.time()
+        wake = getattr(conn, "device_wake_word", None)
+        if wake:
+            _boards[conn.device_id]["wake"] = wake
+        _save()
 
 
 def note_asr(conn, before, after, started=None):
@@ -103,9 +140,19 @@ def _state(conn, now):
     return {"kind": "listening"}
 
 
-def _agent(conn, configured):
-    """The board's AI: chosen by calling its name on this connection, else the configured one."""
-    return (getattr(conn, "gateway_agent", None) if conn else None) or configured
+def _agent(conn, device_id, configured):
+    """The board's AI: chosen by calling its name (this connection or saved), else the configured one."""
+    from core.gateway import agent_store
+
+    chosen = getattr(conn, "gateway_agent", None) if conn else None
+    return chosen or agent_store.get(device_id) or configured
+
+
+def _agent_label(name, config):
+    from core.gateway import AGENTS
+
+    agent = AGENTS.get(name)
+    return agent.label(config) if agent else (name or "上游对话")
 
 
 def snapshot(config):
@@ -131,8 +178,8 @@ def snapshot(config):
         boards.append({
             "id": device_id[-5:], "name": name, "type": info.get("type", ""), "version": info.get("version", ""),
             "ip": (conn.client_ip if conn else None) or info.get("ip", ""), "online": bool(conns),
-            "wake": (getattr(conn, "device_wake_word", None) if conn else None) or "",
-            "agent": AGENT_NAMES.get(_agent(conn, agent), _agent(conn, agent) or "上游对话"),
+            "wake": (getattr(conn, "device_wake_word", None) if conn else None) or info.get("wake", ""),
+            "agent": _agent_label(_agent(conn, device_id, agent), config),
             "state": _state(conn, now) if conn else {"kind": "offline"},
             "seen": info.get("seen"),
         })
@@ -143,3 +190,6 @@ def snapshot(config):
         r.pop("device", None)
     return {"now": now, "uptime": int(now - _started), "port": int(config.get("server", {}).get("http_port", 8003)),
             "boards": boards, "recent": recent, "totals": dict(_totals)}
+
+
+load()

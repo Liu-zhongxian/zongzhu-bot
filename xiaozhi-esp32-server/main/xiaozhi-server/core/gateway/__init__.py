@@ -6,9 +6,9 @@ Config (`gateway` in .config.yaml, optional):
       skills: [local_music]   # tried in this order; [] = none
       agent: grok_bot         # the AI that gets the rest; empty = upstream chat model
       call_names:             # optional: replaces a module's own call names
-        grok_bot: [孙悟空, 悟空]
+        grok_bot: [硬件]
 
-Calling an AI by name at the start ("嗨 孙悟空，帮我……") hands the rest straight to it and makes
+Calling an AI by name at the start ("嗨 硬件，帮我……") hands the rest straight to it and makes
 it this board's AI from then on (kept in data/agent_sessions.json); the name alone gets "我在。".
 
 Without the section the order is the one before the gateway: local music, then the Bot.
@@ -35,7 +35,6 @@ def register_skill(skill: Skill):
 
 def register_agent(agent: Agent):
     AGENTS[agent.name] = agent
-    status.AGENT_NAMES[agent.name] = agent.title or agent.name
 
 
 for _skill in builtin.SKILLS:
@@ -61,7 +60,7 @@ def agent_call_names(config) -> dict:
     """{AI module name: [call names]} for the AIs that are switched on."""
     custom = (config.get("gateway") or {}).get("call_names")
     custom = custom if isinstance(custom, dict) else {}
-    return {name: custom.get(name, agent.call_names) for name, agent in AGENTS.items() if agent.enabled(config)}
+    return {name: custom.get(name, agent.names(config)) for name, agent in AGENTS.items() if agent.enabled(config)}
 
 
 def agent_name(conn):
@@ -161,12 +160,12 @@ async def _answer_call(conn, heard, name, rest):
         conn.gateway_agent = name
         if getattr(conn, "device_id", None):
             agent_store.put(conn.device_id, name)
-        conn.logger.bind(tag=TAG).info(f"呼名：这块板子改用 {agent.title or name}")
+        conn.logger.bind(tag=TAG).info(f"呼名：这块板子改用 {agent.label(conn.config)}")
         if agent.answers_later:
             waiting.start(conn, agent)
     if rest:
         if await hand_over(conn, agent, rest):
-            return "agent", agent.title or name, True
+            return "agent", agent.label(conn.config), True
         return "upstream", "上游对话", False
     # Only the name: answer at once, send nothing to the AI
     from core.handle import grokBotPhrases as phrases
@@ -178,7 +177,7 @@ async def _answer_call(conn, heard, name, rest):
     await send_stt_message(conn, heard)
     if not await phrases.speak(conn, phrases.HERE):
         speak_txt(conn, phrases.HERE)
-    return "call", agent.title or name, True
+    return "call", agent.label(conn.config), True
 
 
 async def _route(conn, text):
@@ -197,5 +196,5 @@ async def _route(conn, text):
         _warn(conn, f"未知 AI，交给上游对话: {current}")
         return "upstream", "上游对话", False
     if await hand_over(conn, agent, text):
-        return "agent", agent.title or current, True
+        return "agent", agent.label(conn.config), True
     return "upstream", "上游对话", False

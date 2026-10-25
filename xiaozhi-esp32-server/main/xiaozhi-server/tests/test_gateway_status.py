@@ -27,7 +27,12 @@ class StatusTest(unittest.IsolatedAsyncioTestCase):
             store.clear()
         status._totals.update(sentences=0, local=0)
         # the board's chosen AI is read from data/agent_sessions.json; keep the real one out of it
-        patcher = mock.patch.object(agent_store, "PATH", Path(tempfile.mkdtemp()) / "agent_sessions.json")
+        temp = Path(tempfile.mkdtemp())
+        for target, name in ((agent_store, "agent_sessions.json"),):
+            patcher = mock.patch.object(target, "PATH", temp / name)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(status, "BOARDS_PATH", temp / "gateway_boards.json")
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -129,6 +134,23 @@ class StatusTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((boards[0]["wake"], boards[0]["agent"]), ("你好宗主", "Grok Bot"))
         status.disconnected(live)
         self.assertFalse(status.snapshot(CONFIG)["boards"][0]["online"])
+
+    def test_board_stays_on_the_page_across_a_restart(self):
+        # 2026-10-25: since the fixed auth_key the board no longer reboots after a backend restart,
+        # so no OTA comes in; the page used to forget it and showed it only while connected
+        status.note_ota("94:a9:90:2d:a3:70", "lichuang-dev", "2.5.2.9", "192.168.1.20")
+        status.note_ota("02:00:00:00:00:04", "local-test", "2.5.2.9", "127.0.0.1")
+        live = make_conn()
+        status.connected(live)
+        status.disconnected(live)
+        status._boards.clear()  # what a restart does to memory
+        status.load()
+        self.assertEqual(list(status._boards), ["94:a9:90:2d:a3:70"])  # check scripts are not kept
+        board = status.snapshot(CONFIG)["boards"][0]
+        self.assertEqual((board["name"], board["online"], board["wake"]), ("立创实战派", False, "你好宗主"))
+        # a board seen only over WebSocket (no OTA since the restart) is listed too
+        status.connected(make_conn(device="aa:bb:cc:dd:ee:02"))
+        self.assertIn("板子 ee:02", [b["name"] for b in status.snapshot(CONFIG)["boards"]])
 
     async def test_status_endpoint_is_json_and_holds_no_config_secrets(self):
         status.note_ota("94:a9:90:2d:a3:70", "lichuang-dev", "2.5.2.9", "192.168.1.20")

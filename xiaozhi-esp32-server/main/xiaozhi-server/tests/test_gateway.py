@@ -373,29 +373,30 @@ class SkillCollectionTest(unittest.IsolatedAsyncioTestCase):
 
 
 class CallNameMatchTest(unittest.TestCase):
-    """Cases from xiaozhi-hub-server tests/agent/test_call_names.py, with our names."""
+    """Cases from xiaozhi-hub-server tests/agent/test_call_names.py, with our Bot's name."""
 
-    NAMES = {"grok_bot": ["孙悟空", "悟空", "Grok Bot", "Grok"]}
+    NAMES = {"grok_bot": ["硬件"], "other": ["Grok Bot", "Grok"]}
 
     def test_only_the_name(self):
-        for text in ["Hi, 孙悟空.", "Hi, 孙悟空. Hi, 孙悟空.", "High grok.", "嗨 孙悟空", "hey，悟空！",
-                     "He grok.", "Heい grok。", "Hei 孙悟空", "H, 孙悟空.", "嗨 Grok Bot"]:
+        for text in ["Hi, 硬件.", "Hi, 硬件. Hi, 硬件.", "High 硬件.", "嗨 硬件", "hey，硬件！",
+                     "He 硬件.", "Heい 硬件。", "Hei 硬件", "H, 硬件.", "嘿，硬件。"]:
             self.assertEqual(match_call_name(text, self.NAMES), ("grok_bot", ""), text)
+        self.assertEqual(match_call_name("嗨 Grok Bot", self.NAMES), ("other", ""))
 
     def test_name_with_a_task(self):
-        for text, rest in [("嗨孙悟空帮我查天气。", "帮我查天气。"), ("嗨悟空,今天天气怎么样？", "今天天气怎么样？"),
-                           ("higrok,今天天气怎么样？", "今天天气怎么样？"), ("Hi Grok, 用 Python 写个脚本", "用 Python 写个脚本"),
-                           ("嘿，孙悟空，嘿，孙悟空，整理新闻", "整理新闻")]:
+        for text, rest in [("嗨硬件帮我查天气。", "帮我查天气。"), ("嗨，硬件，今天天气怎么样？", "今天天气怎么样？"),
+                           ("hi硬件,今天天气怎么样？", "今天天气怎么样？"), ("Hi 硬件, 用 Python 写个脚本", "用 Python 写个脚本"),
+                           ("嘿，硬件，嘿，硬件，整理新闻", "整理新闻")]:
             self.assertEqual(match_call_name(text, self.NAMES), ("grok_bot", rest), text)
 
     def test_not_a_call(self):
-        for text in ["孙悟空是谁", "嗨你好。", "嗨,你怎么看？", "嗨 grokking 是什么", "今天嗨 孙悟空一下",
-                     "Hello 孙悟空", "Help grok 怎么用", "Hey.", "H5 grok 页面", ""]:
+        for text in ["硬件怎么选", "嗨你好。", "嗨,你怎么看？", "嗨 grokking 是什么", "今天嗨 硬件一下",
+                     "Hello 硬件", "Help grok 怎么用", "Hey.", "H5 硬件 页面", ""]:
             self.assertIsNone(match_call_name(text, self.NAMES), text)
 
     def test_name_written_as_a_string(self):
-        self.assertEqual(match_call_name("嗨 悟空", {"a": "悟空"}), ("a", ""))
-        self.assertIsNone(match_call_name("嗨 悟 一下", {"a": "悟空"}))
+        self.assertEqual(match_call_name("嗨 硬件", {"a": "硬件"}), ("a", ""))
+        self.assertIsNone(match_call_name("嗨 硬 一下", {"a": "硬件"}))
 
 
 class OtherAgent(FakeAgent):
@@ -437,7 +438,7 @@ class CallNameDispatchTest(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(patcher.stop)
         gateway.register_agent(OtherAgent())
         self.addCleanup(gateway.AGENTS.pop, "other_ai")
-        self.config = {"grok_bot": {"enabled": True}, "wakeup_words": ["你好宗主"]}
+        self.config = {"grok_bot": {"enabled": True, "bot_name": "硬件"}, "wakeup_words": ["你好宗主"]}
 
     def conn(self):
         return SimpleNamespace(config=self.config, logger=mock.MagicMock(), device_id="aa:bb:cc:dd:ee:01",
@@ -445,8 +446,8 @@ class CallNameDispatchTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_name_alone_answers_here_and_sends_nothing(self):
         conn = self.conn()
-        self.assertTrue(await gateway.dispatch(conn, "嗨，孙悟空。"))
-        self.audio.send_stt_message.assert_awaited_once_with(conn, "嗨，孙悟空。")
+        self.assertTrue(await gateway.dispatch(conn, "嗨，硬件。"))
+        self.audio.send_stt_message.assert_awaited_once_with(conn, "嗨，硬件。")
         self.cached.assert_awaited_once_with(conn, "我在。")
         self.assertEqual(self.handed, [])
         self.music.assert_not_awaited()
@@ -454,7 +455,7 @@ class CallNameDispatchTest(unittest.IsolatedAsyncioTestCase):
     async def test_name_with_a_task_goes_straight_to_that_ai(self):
         conn = self.conn()
         self.music.return_value = True  # music would take "暂停" if it were asked
-        self.assertTrue(await gateway.dispatch(conn, "你好宗主，嗨孙悟空，暂停"))
+        self.assertTrue(await gateway.dispatch(conn, "你好宗主，嗨硬件，暂停"))
         self.assertEqual(self.handed, [("grok_bot", "暂停")])
         self.music.assert_not_awaited()
 
@@ -465,7 +466,7 @@ class CallNameDispatchTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.handed, [("other_ai", "讲个笑话"), ("other_ai", "再讲一个")])
         # a reconnect (new conn) or a restart keeps the choice
         self.assertEqual(gateway.agent_name(self.conn()), "other_ai")
-        await gateway.dispatch(self.conn(), "嗨 悟空")
+        await gateway.dispatch(self.conn(), "嗨 硬件")
         self.assertEqual(gateway.agent_name(self.conn()), "grok_bot")
 
     async def test_a_remembered_ai_that_is_switched_off_falls_back(self):
@@ -479,9 +480,16 @@ class CallNameDispatchTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((record["layer"], record["target"]), ("call", "另一个 AI"))
 
     def test_call_names_are_hotwords(self):
-        words = gateway.hotwords(self.config)
-        self.assertIn("孙悟空", words)
-        self.assertIn("Grok Bot", words)
+        self.assertIn("硬件", gateway.hotwords(self.config))
+
+    def test_bot_name_is_the_call_name_and_the_label(self):
+        bot = gateway.AGENTS["grok_bot"]
+        self.assertEqual(gateway.agent_call_names(self.config)["grok_bot"], ("硬件",))
+        self.assertEqual(bot.label(self.config), "Grok Bot · 硬件")
+        # without a configured name: the module's own call names
+        plain = {"grok_bot": {"enabled": True}}
+        self.assertEqual(gateway.agent_call_names(plain)["grok_bot"], ("Grok Bot", "Grok"))
+        self.assertEqual(bot.label(plain), "Grok Bot")
 
 
 if __name__ == "__main__":
