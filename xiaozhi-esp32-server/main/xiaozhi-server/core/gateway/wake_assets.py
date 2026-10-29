@@ -12,7 +12,6 @@ pack_assets_simple()），两边改出来的文件逐字节一样：
   数据里每个文件前面有 "ZZ"（0x5A5A），offset 从数据区开头算
   校验和 = (文件表 + 数据) 所有字节之和 & 0xFFFF
 """
-import asyncio
 import hashlib
 import json
 import os
@@ -21,6 +20,8 @@ import struct
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+
+from core.gateway.board_tools import call_board_tool
 
 _NAME_LEN = 32
 _TABLE_ENTRY = 44
@@ -145,44 +146,6 @@ def download_url(config: dict, filename: str) -> str:
     from core.utils.util import get_vision_url
 
     return get_vision_url(config).replace("/mcp/vision/explain", f"/gateway/assets/{filename}")
-
-
-async def _mcp_ready(conn, wait: float):
-    """板子刚被唤醒连上时，MCP 初始化和工具列表要几秒（实测 5 秒，2026-10-30），等它好。"""
-    if not (getattr(conn, "features", None) or {}).get("mcp"):
-        return None
-    deadline = asyncio.get_running_loop().time() + wait
-    while True:
-        client = getattr(conn, "mcp_client", None)
-        if client is not None and await client.is_ready():
-            return client
-        if asyncio.get_running_loop().time() >= deadline:
-            return None
-        await asyncio.sleep(0.2)
-
-
-async def call_board_tool(conn, name: str, arguments: dict, timeout: float = 10, ready_wait: float = 10):
-    """直接调板子上的 MCP 工具。core/providers/tools/device_mcp 的 call_mcp_tool 只认工具列表里的工具，
-    而 self.assets.set_download_url、self.reboot 是 [user] 工具，不在列表里；固件调用时不查这个标记。"""
-    from core.providers.tools.device_mcp.mcp_handler import send_mcp_message
-
-    client = await _mcp_ready(conn, ready_wait)
-    if client is None:
-        raise RuntimeError("板子的 MCP 没准备好（连上后等了 10 秒），请重新唤醒板子再试")
-    call_id = await client.get_next_id()
-    future = asyncio.get_running_loop().create_future()
-    await client.register_call_result_future(call_id, future)
-    await send_mcp_message(conn, {"jsonrpc": "2.0", "id": call_id, "method": "tools/call",
-                                  "params": {"name": name, "arguments": arguments}})
-    try:
-        result = await asyncio.wait_for(future, timeout)
-    except asyncio.TimeoutError:
-        raise RuntimeError(f"板子没有回应 {name}") from None
-    finally:
-        await client.cleanup_call_result(call_id)
-    if isinstance(result, dict) and result.get("isError"):
-        raise RuntimeError(f"板子执行 {name} 出错：{result}")
-    return result
 
 
 async def change_wake_word(conn, source: bytes, text: str, command: str, reboot: bool = True) -> dict:

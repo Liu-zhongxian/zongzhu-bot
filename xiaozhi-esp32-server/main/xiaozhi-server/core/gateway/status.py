@@ -66,6 +66,20 @@ def connected(conn):
     if conn.device_id:
         _boards.setdefault(conn.device_id, {}).update(ip=getattr(conn, "client_ip", "") or "", seen=time.time())
         _save()
+        from core.gateway import board_info
+
+        board_info.start(conn)
+
+
+def is_live(conn):
+    return id(conn) in _conns
+
+
+def note_info(device_id, info):
+    """G18a: what the board reported over MCP (core/gateway/board_info.py)."""
+    if device_id:
+        _boards.setdefault(device_id, {})["info"] = info
+        _save()
 
 
 def disconnected(conn):
@@ -182,6 +196,7 @@ def snapshot(config):
             "agent": _agent_label(_agent(conn, device_id, agent), config),
             "state": _state(conn, now) if conn else {"kind": "offline"},
             "seen": info.get("seen"),
+            "info": info.get("info"),
         })
     boards.sort(key=lambda b: (not b["online"], b["name"]))
     recent = [{k: v for k, v in r.items() if not k.startswith("_")} | {"board": names.get(r["device"], "")}

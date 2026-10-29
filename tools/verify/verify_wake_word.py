@@ -63,9 +63,12 @@ async def main():
         print(output)
         assert cli.returncode == 0, "脚本失败"
         await asyncio.wait_for(responder, 10)
-    names = [name for name, _ in calls]
+    # The gateway also reads the board's status on connect (G18a); only the changes matter here.
+    changes = [(name, args) for name, args in calls if not name.startswith("self.get_")]
+    names = [name for name, _ in changes]
     assert names == ["self.assets.set_download_url", "self.reboot"], names
-    url = calls[0][1]["url"]
+    print("另外读了板子信息：", sorted({name for name, _ in calls} - set(names)))
+    url = changes[0][1]["url"]
     async with httpx.AsyncClient(trust_env=False) as client:
         response = await client.get(url)
         response.raise_for_status()

@@ -87,6 +87,13 @@ td.nowrap { white-space: nowrap; }
   table { min-width: 640px; }
 }
 section[hidden] { display: none; }
+.devices { display: grid; gap: 14px; }
+.device .kv { grid-template-columns: 96px 1fr; }
+.device h4 { margin: 14px 0 0; font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.device .cols { display: grid; gap: 4px 28px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.tools .pill { cursor: help; }
+.note { color: var(--muted); font-size: 12.5px; margin-top: 10px; }
 </style>
 </head>
 <body>
@@ -119,6 +126,12 @@ section[hidden] { display: none; }
       <p class="later">模块状态、转交任务、工作原理三块，跟着后面的任务（G2–G7）逐步加上。</p>
     </section>
 
+    <section data-page="devices" hidden>
+      <h1>设备</h1>
+      <p class="lead">板子醒着时自己报上来的信息：网络、固件、内存、音量和屏幕、MCP 工具。连上后几秒内读一次，之后每分钟读一次；板子待机时连接是断的，显示上次读到的值。</p>
+      <div class="devices" id="devices"></div>
+    </section>
+
     <section data-page="log" hidden>
       <h1>最近的话</h1>
       <p class="lead">最近 30 句：识别出来的话、走了哪一层、交给了谁、多久出声。只存在内存里，后端重启后清空。</p>
@@ -132,7 +145,8 @@ section[hidden] { display: none; }
 </div>
 
 <script>
-const PAGES = [["overview", "◎", "总览"], ["log", "☰", "最近的话"]];
+const PAGES = [["overview", "◎", "总览"], ["devices", "▣", "设备"], ["log", "☰", "最近的话"]];
+const SIGNAL = { strong: "强", medium: "中", weak: "弱" };
 const LAYERS = { skill: "① 本机技能", agent: "转交 AI", call: "呼名", filter: "过滤掉", wake: "唤醒", upstream: "上游对话" };
 let data = null, fetchedAt = 0, filter = "all";
 
@@ -179,6 +193,44 @@ function renderBoards() {
       ${b.online ? "" : `<dt>上次</dt><dd>${b.seen ? clock(b.seen) : "—"}</dd>`}</dl>
     </div>`).join("");
 }
+const ago = t => duration(Math.max(0, Math.round(Date.now() / 1000 - t)));
+const mb = n => n == null ? "—" : (n / 1048576).toFixed(n % 1048576 ? 1 : 0) + " MB";
+// The firmware writes __DATE__ "T" __TIME__ "Z", but that is the build machine's local time, not UTC.
+const built = s => s ? s.replace(/T(?=\d)/, " ").replace(/Z$/, "") : s;
+const kv = rows => `<dl class="kv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v ?? "—"}</dd>`).join("")}</dl>`;
+function renderDevices() {
+  const el = document.getElementById("devices");
+  if (!data.boards.length) { el.innerHTML = `<div class="card empty">后端启动以来还没有板子连上来。</div>`; return; }
+  el.innerHTML = data.boards.map(b => {
+    const i = b.info;
+    const head = `<h3><span class="dot ${b.online ? "" : "off"}"></span>${esc(b.name)}</h3>
+      <div class="sub">${esc([b.id, b.type].filter(Boolean).join(" · "))}</div>`;
+    if (!i) return `<div class="card device ${b.online ? "" : "off"}">${head}
+      <p class="note">${b.online ? "正在读……板子连上后几秒钟内会读到。" : "还没读到过：唤醒板子后几秒钟内自动读取。"}</p></div>`;
+    const w = i.wifi || {}, f = i.firmware || {}, tools = i.tools || [];
+    const signal = w.rssi != null ? `${w.rssi} dBm${w.signal ? "（" + (SIGNAL[w.signal] || w.signal) + "）" : ""}`
+      : SIGNAL[w.signal] || w.signal;
+    const battery = i.battery ? `${i.battery.level}%${i.battery.charging ? "，充电中" : ""}` : null;
+    return `<div class="card device ${b.online ? "" : "off"}">${head}
+      <div class="cols">
+        <div><h4>网络</h4>${kv([["WiFi", esc(w.ssid) || null], ["信号", esc(signal) || null],
+          ["信道", w.channel], ["IP", esc(i.ip || b.ip) || null]])}</div>
+        <div><h4>固件</h4>${kv([["版本", esc(f.version) || null], ["编译于", esc(built(f.built)) || null],
+          ["运行分区", esc(f.partition) || null], ["ESP-IDF", esc(f.idf) || null]])}</div>
+        <div><h4>硬件</h4>${kv([["芯片", esc(i.chip) || null], ["Flash", mb(i.flash)],
+          ["最低剩余内存", i.heap_min == null ? null : Math.round(i.heap_min / 1024) + " KB"],
+          ["屏幕", i.display ? i.display.join(" × ") : null],
+          ...(i.temperature != null ? [["芯片温度", i.temperature.toFixed(1) + " ℃"]] : []),
+          ...(battery ? [["电量", battery]] : [])])}</div>
+        <div><h4>声音和屏幕</h4>${kv([["音量", i.volume], ["亮度", i.brightness], ["主题", esc(i.theme) || null]])}</div>
+      </div>
+      <h4>MCP 工具（${tools.length}）</h4>
+      <div class="tools">${tools.length ? tools.map(t => `<span class="pill ${t.user_only ? "" : "acc"}" title="${esc(t.description)}">${esc(t.name)}${t.user_only ? " · 仅后端" : ""}</span>`).join("") : `<span class="note">没读到</span>`}</div>
+      <p class="note">紫色是 AI 能调的工具；"仅后端"的不给 AI，只有后端能调（改唤醒词、重启、升级固件都用它们）。最低剩余内存是开机以来的最低值；固件不报 PSRAM。
+        ${b.online ? "" : "板子待机中，"}读取于 ${clock(i.read_at)}（${ago(i.read_at)}前）。</p>
+    </div>`;
+  }).join("");
+}
 function renderStats() {
   const online = data.boards.filter(b => b.online).length;
   document.getElementById("s-online").textContent = `${online} / ${data.boards.length}`;
@@ -208,7 +260,7 @@ function renderLog() {
       <td class="nowrap">${r.first_audio == null ? "—" : r.first_audio + " 秒" + (r.layer === "agent" ? "（回执）" : "")}</td>
     </tr>`).join("") : `<tr><td colspan="6" class="empty">还没有${filter === "all" ? "" : "这一类的"}话。</td></tr>`;
 }
-function render() { renderNav(); renderStats(); renderBoards(); renderLog(); }
+function render() { renderNav(); renderStats(); renderBoards(); renderDevices(); renderLog(); }
 
 async function refresh() {
   try {
