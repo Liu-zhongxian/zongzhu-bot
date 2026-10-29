@@ -139,7 +139,7 @@ done
 ./start.sh
 ```
 
-Speech recognition defaults to X-ASR and needs no torch; hotwords and post-recognition corrections are described in `examples/backend.config.yaml`. To go back to FunASR (SenseVoiceSmall, about 900MB), also install `requirements-macos-funasr.txt`, download its model as upstream describes, and change `ASR: SherpaXASR` to `ASR: FunASR`. The comparison is in [records/REFERENCE-TASKS.md](records/REFERENCE-TASKS.md), section 7 (Chinese).
+Speech recognition defaults to X-ASR and needs no torch; hotwords and post-recognition corrections are described in `examples/backend.config.yaml`. To go back to FunASR (SenseVoiceSmall, about 900MB), also install `requirements-macos-funasr.txt`, download its model as upstream describes, and change `ASR: SherpaXASR` to `ASR: FunASR`.
 
 `start.sh` runs in the foreground; closing the terminal stops the service. Don't run more than one. The backend uses port 8000 (WebSocket) and 8003 (HTTP/OTA).
 
@@ -153,7 +153,7 @@ To start the backend in the background at login (restarted if it exits; the Mac 
 bash tools/autostart.sh enable    # enable and start now; status, restart, disable
 ```
 
-If the repository is in Desktop, Documents or Downloads, macOS asks once whether "宗主后端" (the launcher app) may access that folder; choose Allow. Details: [records/REFERENCE-TASKS.md](records/REFERENCE-TASKS.md), section 4.
+If the repository is in Desktop, Documents or Downloads, macOS asks once whether "宗主后端" (the launcher app) may access that folder; choose Allow.
 
 ### 3. Flash the firmware
 
@@ -266,7 +266,7 @@ These builds default to the official XiaoZhi OTA server. To build in your own ba
 | `tools/` | `build_firmware.py` (builds with the OTA URL, packages, flashes), `build_web.py` (assembles the site), `autostart.sh` (start at login), `local_music_setup.sh` (downloads go-music-dl and mpv), `verify/` (end-to-end checks), `asr-bench/` (recognizer comparison) |
 | `local-music/` | Programs downloaded by `local_music_setup.sh` and go-music-dl's data (including sign-in cookies); local only, not in Git |
 | `examples/` | Config templates without real credentials |
-| `docs/` | This guide and per-board notes; `docs/records/` holds development and acceptance records, indexed in [docs/README.md](README.md) (Chinese) |
+| `docs/` | This guide and per-board notes, indexed in [docs/README.md](README.md) (Chinese) |
 | `requirements-macos*.txt` | Backend dependencies: default (X-ASR), optional FunASR, and the full tested set |
 
 <details>
@@ -303,7 +303,7 @@ cd ../../../web && node --test test/*.test.mjs    # web flasher library code
 
 `tools/verify/` holds end-to-end checks against the real pipeline (run from the repo root, e.g. `python tools/verify/verify_bot_reply.py`). `verify_bot_bridge.py`, `verify_bot_reply.py` and `verify_bot_speech.py` call the Bot you configured for real (one harmless test task each); only use them in a test environment you're authorized for, and start the backend first. They and `verify_local_music.py` speak through a simulated board using macOS speech synthesis (shared `sim_board.py`), so they need macOS and ffmpeg. `verify_bot_wait_display.py` uses local test files and normally doesn't call the webhook. `verify_local_music.py` speaks music commands with macOS speech synthesis as a simulated device; it plays a few seconds of music and doesn't call the Bot.
 
-Run the tests with the `unittest` command above, not pytest. pytest loads upstream's `tests/conftest.py`, which replaces `httpx.AsyncClient` with a stub that refuses every connection, including the mock transports the Bot tests pass in. `tools/asr-bench/` compares speech recognizers. Per-release results are in [records/VALIDATION.md](records/VALIDATION.md) (Chinese).
+Run the tests with the `unittest` command above, not pytest. pytest loads upstream's `tests/conftest.py`, which replaces `httpx.AsyncClient` with a stub that refuses every connection, including the mock transports the Bot tests pass in. `tools/asr-bench/` compares speech recognizers.
 
 ## Known limitations
 

@@ -90,8 +90,7 @@ bash tools/local_music_setup.sh    # 下载 go-music-dl 和 mpv 到 local-music/
 | | |
 | --- | --- |
 | [docs/GUIDE.md](docs/GUIDE.md) | 使用说明：功能、本机点歌、手动安装、刷机、常见问题、Bot 接口、构建、测试、已知限制 |
-| [docs/README.md](docs/README.md) | 全部文档目录，包括各板说明和开发记录 |
-| [docs/records/REFERENCE-TASKS.md](docs/records/REFERENCE-TASKS.md) | 任务说明书：做过什么、为什么这样做、还有哪些待办 |
+| [docs/README.md](docs/README.md) | 全部文档目录，包括各板说明 |
 | [deploy/README.md](deploy/README.md) | 部署到公网服务器 |
 
 ## 关于这个仓库
