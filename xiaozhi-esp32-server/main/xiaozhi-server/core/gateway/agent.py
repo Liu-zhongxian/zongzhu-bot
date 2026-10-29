@@ -109,7 +109,7 @@ def _session(conn, agent):
 
 async def hand_over(conn, agent, text) -> bool:
     """True when the AI took the sentence (or it was only the wake word again)."""
-    from core.handle.grokBotHandle import extract_command, strip_wake_phrase
+    from core.handle.grokBotHandle import extract_command, strip_wake_phrase, wake_options
 
     command = extract_command(text)
     if not agent.enabled(conn.config) or command is None:
@@ -121,7 +121,7 @@ async def hand_over(conn, agent, text) -> bool:
     from core.handle.intentHandler import speak_txt
     from core.handle.sendAudioHandle import send_stt_message
 
-    had_wake, rest = strip_wake_phrase(command, [device_wake] if device_wake else ())
+    had_wake, rest = strip_wake_phrase(command, **wake_options(conn))
     if had_wake:
         if not rest.strip("，。！？,.!? "):
             # The user repeated the wake word mid-conversation: acknowledge, send nothing.

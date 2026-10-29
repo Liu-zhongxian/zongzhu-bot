@@ -89,13 +89,13 @@ def note_asr(conn, before, after, started=None):
 
 def classify(conn, text):
     """'wake' for the wake greeting, 'filter' for a repeated wake word only, else None."""
-    from core.handle.grokBotHandle import extract_command, strip_wake_phrase
+    from core.handle.grokBotHandle import extract_command, strip_wake_phrase, wake_options
 
     command = extract_command(text) or ""
     wake = getattr(conn, "device_wake_word", None)
     if re.sub(r"[\W_]", "", command) in [*conn.config.get("wakeup_words", []), wake]:
         return "wake"
-    had, rest = strip_wake_phrase(command, [wake] if wake else ())
+    had, rest = strip_wake_phrase(command, **wake_options(conn))
     return "filter" if had and not rest.strip("，。！？,.!? ") else None
 
 

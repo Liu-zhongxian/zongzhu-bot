@@ -144,13 +144,12 @@ async def dispatch(conn, text) -> bool:
 def _call_name(conn, text):
     """(AI module name, rest) when the sentence starts by calling an AI, else None."""
     from core.gateway.call_names import match_call_name
-    from core.handle.grokBotHandle import extract_command, strip_wake_phrase
+    from core.handle.grokBotHandle import extract_command, strip_wake_phrase, wake_options
 
     command = extract_command(text)
     if not command:
         return None
-    wake = getattr(conn, "device_wake_word", None)
-    had_wake, rest = strip_wake_phrase(command, [wake] if wake else ())
+    had_wake, rest = strip_wake_phrase(command, **wake_options(conn))
     return match_call_name(rest if had_wake else command, agent_call_names(conn.config))
 
 

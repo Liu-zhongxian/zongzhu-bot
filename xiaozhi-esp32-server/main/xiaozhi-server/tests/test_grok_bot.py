@@ -10,7 +10,7 @@ from unittest import mock
 
 from core.gateway.agent import hand_over
 from core.gateway.agents.grok_webhook import GrokWebhookAgent
-from core.handle.grokBotHandle import extract_command, submit_command, strip_wake_phrase, _recent
+from core.handle.grokBotHandle import extract_command, submit_command, strip_wake_phrase, wake_options, _recent, _similar
 
 
 async def handle_grok_bot(conn, text):
@@ -113,6 +113,30 @@ class GrokBotTest(unittest.IsolatedAsyncioTestCase):
         # A name that starts a sentence is not a wake word
         for text in ["宗主你好", "小雨伞在哪", "种猪价格"]:
             self.assertFalse(strip_wake_phrase(text, ["你好宗主", "你好小雨"])[0], text)
+
+    def test_near_sound_chars_come_from_pinyin(self):
+        # G8: what used to be hard-coded for 宗主 is now generated from the wake word.
+        self.assertLessEqual(set("宗总综踪棕纵中钟忠终种众重肿仲粽"), _similar("宗"))
+        self.assertLessEqual(set("主住注猪朱珠竹逐助祝煮柱著诸蛛驻铸筑属嘱"), _similar("主"))
+        # Any other "你好<name>" word gets the same fuzzy rule.
+        for text in ["你好晓宇", "你好，小语。", "嗯，你好消雨", "你好晓宇啊"]:
+            self.assertEqual(strip_wake_phrase(text, ["你好小雨"]), (True, ""), text)
+        self.assertEqual(strip_wake_phrase("你好晓宇，帮我查天气", ["你好小雨"]), (True, "帮我查天气"))
+        for text in ["你好小明", "你好，笑话讲一个"]:
+            self.assertFalse(strip_wake_phrase(text, ["你好小雨"])[0], text)
+
+    def test_similar_chars_can_be_added_in_config(self):
+        self.assertFalse(strip_wake_phrase("你好钢主", ["你好宗主"])[0])
+        self.assertEqual(strip_wake_phrase("你好钢主", ["你好宗主"], {"宗": "钢"}), (True, ""))
+        conn = SimpleNamespace(device_wake_word="你好小雨", config={"gateway": {"similar_chars": {"雨": "鱼"}}})
+        self.assertEqual(wake_options(conn), {"wake_words": ["你好小雨"], "similar": {"雨": "鱼"}})
+        self.assertEqual(strip_wake_phrase("你好小鱼，放歌", **wake_options(conn)), (True, "放歌"))
+
+    def test_latin_wake_word_is_matched_as_lowercase_words(self):
+        for text in ["Hi ESP", "hi, esp.", "嗯，HI ESP"]:
+            self.assertEqual(strip_wake_phrase(text, ["Hi ESP"]), (True, ""), text)
+        self.assertEqual(strip_wake_phrase("hi esp, play music", ["Hi ESP"]), (True, "play music"))
+        self.assertFalse(strip_wake_phrase("hi espresso please", ["Hi ESP"])[0])
 
     async def test_board_reported_wake_word_stays_local(self):
         conn = SimpleNamespace(config={"grok_bot": {"enabled": True}, "wakeup_words": []},

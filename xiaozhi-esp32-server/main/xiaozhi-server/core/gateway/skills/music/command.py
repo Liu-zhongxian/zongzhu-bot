@@ -359,7 +359,7 @@ async def handle_local_command(conn, text) -> bool:
     config = conn.config.get("local_music", {})
     if not config.get("enabled"):
         return False
-    from core.handle.grokBotHandle import extract_command, strip_wake_phrase
+    from core.handle.grokBotHandle import extract_command, strip_wake_phrase, wake_options
     from core.gateway.skills.music.player import MusicError, get_music
 
     command = extract_command(text)
@@ -368,7 +368,7 @@ async def handle_local_command(conn, text) -> bool:
     device_wake = getattr(conn, "device_wake_word", None)
     if re.sub(r"[\W_]", "", command) in [*conn.config.get("wakeup_words", []), device_wake]:
         return False  # the wake greeting, not a command
-    _, command = strip_wake_phrase(command, [device_wake] if device_wake else ())
+    _, command = strip_wake_phrase(command, **wake_options(conn))
     if not command.strip("，。！？,.!? "):
         return False
 
