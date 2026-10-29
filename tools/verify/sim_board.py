@@ -36,8 +36,11 @@ def speech_frames(text):
 
 
 @asynccontextmanager
-async def board(device, client_id, bot_ui=True):
-    """A connected board past the hello exchange; bot_ui=True behaves like our firmware."""
+async def board(device, client_id, bot_ui=True, mcp=False):
+    """A connected board past the hello exchange; bot_ui=True behaves like our firmware.
+
+    mcp=True also declares MCP; the caller then answers the server's MCP requests.
+    """
     headers = {"Device-Id": device, "Client-Id": client_id}
     async with httpx.AsyncClient(trust_env=False) as client:
         response = await client.post(OTA_URL, headers=headers,
@@ -47,8 +50,8 @@ async def board(device, client_id, bot_ui=True):
     async with websockets.connect(WS_URL, additional_headers=headers) as ws:
         hello = {"type": "hello", "version": 1, "transport": "websocket",
                  "audio_params": {"format": "opus", "sample_rate": 16000, "channels": 1, "frame_duration": 60}}
-        if bot_ui:
-            hello["features"] = {"bot_ui": True}
+        if bot_ui or mcp:
+            hello["features"] = {k: True for k, on in (("bot_ui", bot_ui), ("mcp", mcp)) if on}
         await ws.send(json.dumps(hello))
         assert json.loads(await asyncio.wait_for(ws.recv(), 20))["type"] == "hello"
         yield ws

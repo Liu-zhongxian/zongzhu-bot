@@ -77,9 +77,11 @@ class SimpleHttpServer:
                             "/mcp/vision/explain", self.vision_handler.handle_options
                         ),
                         web.post("/bot/reply", self.bot_reply_handler.handle_post),
-                        # Gateway page, read-only (core/gateway/page.py)
+                        # Gateway page (core/gateway/page.py)
                         web.get("/gateway", self.gateway_page_handler.handle_page),
                         web.get("/gateway/api/status", self.gateway_page_handler.handle_status),
+                        web.get("/gateway/assets/{filename}", self.gateway_page_handler.handle_assets),
+                        web.post("/gateway/api/wake_word", self.gateway_page_handler.handle_wake_word),
                     ]
                 )
 
