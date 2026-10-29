@@ -92,8 +92,7 @@ Prefer not to use the web page, want to build the firmware yourself, or the page
 | | |
 | --- | --- |
 | [docs/GUIDE.en.md](docs/GUIDE.en.md) | Full guide: features, local music, manual setup, flashing, troubleshooting, Bot interface, building, tests, known limitations |
-| [docs/README.md](docs/README.md) | Index of all docs, including board notes and development records (Chinese) |
-| [docs/records/REFERENCE-TASKS.md](docs/records/REFERENCE-TASKS.md) | Task book: what was done and why, and what's left (Chinese) |
+| [docs/README.md](docs/README.md) | Index of all docs, including board notes (Chinese) |
 | [deploy/README.md](deploy/README.md) | Deploying to a public server (Chinese) |
 
 ## About this repository

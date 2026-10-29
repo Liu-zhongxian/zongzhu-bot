@@ -160,7 +160,7 @@ done
 ./start.sh
 ```
 
-语音识别默认用 X-ASR，不需要 torch；热词和识别后纠错的写法见 `examples/backend.config.yaml`。想换回 FunASR（SenseVoiceSmall，约 900MB）：再装 `requirements-macos-funasr.txt`，按上游说明下载模型，把配置里的 `ASR: SherpaXASR` 改成 `ASR: FunASR`。两者对比见 [records/REFERENCE-TASKS.md](records/REFERENCE-TASKS.md) 第 7 节。
+语音识别默认用 X-ASR，不需要 torch；热词和识别后纠错的写法见 `examples/backend.config.yaml`。想换回 FunASR（SenseVoiceSmall，约 900MB）：再装 `requirements-macos-funasr.txt`，按上游说明下载模型，把配置里的 `ASR: SherpaXASR` 改成 `ASR: FunASR`。
 
 `start.sh` 在前台运行，关掉终端服务就停了，不要同时开多个。后端占用 8000（WebSocket）和 8003（HTTP/OTA）两个端口。
 
@@ -170,7 +170,7 @@ done
 bash tools/autostart.sh enable    # 开启并马上启动；status 自检，restart 重启，disable 取消
 ```
 
-仓库在"桌面""文稿""下载"里时，第一次会弹出"宗主后端"想访问文件夹的窗口，点"允许"。原理和注意事项见 [records/REFERENCE-TASKS.md](records/REFERENCE-TASKS.md) 第 4 节。
+仓库在"桌面""文稿""下载"里时，第一次会弹出"宗主后端"想访问文件夹的窗口，点"允许"。
 
 ### 3. 刷固件
 
@@ -282,7 +282,7 @@ python scripts/build.py lckfb/szpi-esp32s3 --name lichuang-dev-zongzhu          
 | `tools/` | `build_firmware.py`（编进 OTA 地址、打包、刷写）、`build_web.py`（组装网页）、`autostart.sh`（开机自启）、`local_music_setup.sh`（下载点歌用的 go-music-dl 和 mpv）、`verify/`（端到端检查）、`asr-bench/`（识别对比） |
 | `local-music/` | `local_music_setup.sh` 下载的程序和 go-music-dl 的数据（含登录 Cookie）；只在本机，不进 Git |
 | `examples/` | 不含真实凭证的配置模板 |
-| `docs/` | 本文、各板说明；`docs/records/` 是开发过程和验收记录，目录见 [docs/README.md](README.md) |
+| `docs/` | 本文、各板说明，目录见 [docs/README.md](README.md) |
 | `requirements-macos*.txt` | 后端依赖：默认（X-ASR）、可选的 FunASR、当前测试过的完整版本 |
 
 <details>
@@ -318,7 +318,7 @@ cd ../../../web && node --test test/*.test.mjs    # 网页刷机的库代码
 
 `tools/verify/` 里是连真实设备链路的端到端检查（在仓库根目录运行，例如 `python tools/verify/verify_bot_reply.py`）。`verify_bot_bridge.py`、`verify_bot_reply.py`、`verify_bot_speech.py` 会真的调用你配置的 Bot，只在你有权限的测试环境里用，运行前先启动后端；`verify_bot_wait_display.py` 用本机测试文件，正常情况下不会调用 Webhook；`verify_local_music.py` 用 macOS 合成语音模拟设备说点歌指令，会在电脑上放几秒歌，不调用 Bot。
 
-用上面的 `unittest` 命令跑，不要用 pytest：pytest 会加载上游的 `tests/conftest.py`，它把 `httpx.AsyncClient` 整个换成了一律拒绝连接的替身，Bot 测试自己传入的模拟网络也会被拦住，测试就会失败。语音识别对比用 `tools/asr-bench/`。每个版本的实测结果见 [records/VALIDATION.md](records/VALIDATION.md)。
+用上面的 `unittest` 命令跑，不要用 pytest：pytest 会加载上游的 `tests/conftest.py`，它把 `httpx.AsyncClient` 整个换成了一律拒绝连接的替身，Bot 测试自己传入的模拟网络也会被拦住，测试就会失败。语音识别对比用 `tools/asr-bench/`。
 
 ## 已知限制
 
