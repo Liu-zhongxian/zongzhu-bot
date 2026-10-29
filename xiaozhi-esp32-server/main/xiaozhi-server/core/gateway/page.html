@@ -94,6 +94,22 @@ section[hidden] { display: none; }
 .tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .tools .pill { cursor: help; }
 .note { color: var(--muted); font-size: 12.5px; margin-top: 10px; }
+.ctl { display: grid; grid-template-columns: 96px 1fr 36px; gap: 8px 10px; align-items: center; margin-top: 10px; font-size: 13px; }
+.ctl label { color: var(--muted); }
+.ctl input[type=range] { width: 100%; accent-color: var(--accent); }
+.ctl output { text-align: right; font-variant-numeric: tabular-nums; }
+.btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.btn { all: unset; cursor: pointer; padding: 5px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); font-size: 13px; }
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.btn.danger:hover { border-color: var(--bad); color: var(--bad); }
+.btn[disabled] { opacity: .45; pointer-events: none; }
+.login { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.login input { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
+#toast { position: fixed; right: 20px; bottom: 20px; max-width: min(420px, calc(100vw - 32px)); padding: 10px 14px; border-radius: 10px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: 0 4px 16px rgba(0,0,0,.15); font-size: 13px; }
+#toast.bad { border-color: var(--bad); color: var(--bad); }
+#toast[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -104,7 +120,7 @@ section[hidden] { display: none; }
     <div class="side-foot">
       <div id="foot-online"><span class="dot off"></span>正在连接后端…</div>
       <div id="foot-up" style="margin-top:4px;opacity:.7"></div>
-      <div style="margin-top:4px;opacity:.7">只看不改</div>
+
     </div>
   </aside>
 
@@ -128,8 +144,12 @@ section[hidden] { display: none; }
 
     <section data-page="devices" hidden>
       <h1>设备</h1>
-      <p class="lead">板子醒着时自己报上来的信息：网络、固件、内存、音量和屏幕、MCP 工具。连上后几秒内读一次，之后每分钟读一次；板子待机时连接是断的，显示上次读到的值。</p>
-      <div class="devices" id="devices"></div>
+      <p class="lead">板子醒着时自己报上来的信息，以及能在这里改的设置。连上后几秒内读一次，之后每分钟读一次；板子待机时连接是断的，显示上次读到的值，设置要唤醒后再改。</p>
+      <div class="card" id="login" hidden></div>
+      <div class="devices">
+        <div class="card" id="music"></div>
+        <div class="devices" id="devices"></div>
+      </div>
     </section>
 
     <section data-page="log" hidden>
@@ -143,6 +163,7 @@ section[hidden] { display: none; }
     </section>
   </main>
 </div>
+<div id="toast" hidden></div>
 
 <script>
 const PAGES = [["overview", "◎", "总览"], ["devices", "▣", "设备"], ["log", "☰", "最近的话"]];
@@ -197,6 +218,87 @@ const ago = t => duration(Math.max(0, Math.round(Date.now() / 1000 - t)));
 const mb = n => n == null ? "—" : (n / 1048576).toFixed(n % 1048576 ? 1 : 0) + " MB";
 // The firmware writes __DATE__ "T" __TIME__ "Z", but that is the build machine's local time, not UTC.
 const built = s => s ? s.replace(/T(?=\d)/, " ").replace(/Z$/, "") : s;
+let token = "", busyUntil = 0;
+try { token = localStorage.getItem("gw-token") || ""; } catch (e) {}
+const canControl = () => data && (!data.password || token);
+function toast(text, bad) {
+  const el = document.getElementById("toast");
+  el.textContent = text; el.className = bad ? "bad" : ""; el.hidden = false;
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => el.hidden = true, bad ? 8000 : 4000);
+}
+async function post(url, body) {
+  const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-Gateway-Token": token },
+    body: JSON.stringify(body) });
+  const result = await response.json().catch(() => ({ error: "后端没有回应" }));
+  if (response.status === 401) { token = ""; try { localStorage.removeItem("gw-token"); } catch (e) {} renderLogin(); }
+  if (!response.ok) throw new Error(result.error || response.status);
+  return result;
+}
+async function act(action, device, value, ask) {
+  if (ask && !confirm(ask)) return;
+  busyUntil = Date.now() + 1500;
+  try { toast((await post("/gateway/api/control", { action, device, value })).message); refresh(); }
+  catch (e) { toast(e.message, true); }
+}
+function renderLogin() {
+  const el = document.getElementById("login");
+  el.hidden = !(data && data.password && !token);
+  if (el.hidden) return;
+  if (el.querySelector("input")) return;  // keep what is being typed
+  el.innerHTML = `<div class="login"><span>输入口令后可以在这页上改设置：</span>
+    <input type="password" id="pw" autocomplete="current-password"><button class="btn" id="pw-go">进入</button></div>`;
+}
+async function login() {
+  try {
+    token = (await post("/gateway/api/login", { password: document.getElementById("pw").value })).token;
+    try { localStorage.setItem("gw-token", token); } catch (e) {}
+    document.getElementById("login").innerHTML = ""; render();
+  } catch (e) { toast(e.message, true); }
+}
+document.addEventListener("click", e => {
+  if (e.target.id === "pw-go") return login();
+  const b = e.target.closest("button[data-act]"); if (!b) return;  // sliders act on "change"
+  act(b.dataset.act, b.dataset.dev, b.dataset.val, b.dataset.ask);
+});
+document.addEventListener("keydown", e => { if (e.target.id === "pw" && e.key === "Enter") login(); });
+document.addEventListener("input", e => {
+  if (e.target.matches("input[type=range]")) { busyUntil = Date.now() + 3000; e.target.nextElementSibling.value = e.target.value; }
+});
+document.addEventListener("change", e => {
+  const r = e.target.closest("input[data-act]"); if (r) act(r.dataset.act, r.dataset.dev, Number(r.value));
+});
+const slider = (label, action, dev, value, off) => `<label>${label}</label>
+  <input type="range" min="0" max="100" value="${value ?? 50}" data-act="${action}" data-dev="${esc(dev || "")}" ${off ? "disabled" : ""}>
+  <output>${value ?? "—"}</output>`;
+function renderMusic() {
+  const m = data.music || {}, on = canControl();
+  const now = m.title ? `${esc(m.artist)}的${esc(m.title)}` : "没有在放歌";
+  const state = { playing: `<span class="pill ok">正在放</span>`, paused: `<span class="pill">已暂停</span>` }[m.state] || "";
+  document.getElementById("music").innerHTML = `<h3>点歌（这台 Mac）</h3>
+    <div class="sub">歌在这台 Mac 上放，板子待机也能控制。</div>
+    <dl class="kv"><dt>现在</dt><dd>${now} ${state}</dd></dl>
+    ${on ? `<div class="btns">
+      <button class="btn" data-act="music_previous">⏮ 上一首</button>
+      ${m.state === "paused" ? `<button class="btn" data-act="music_resume">▶ 继续</button>`
+        : `<button class="btn" data-act="music_pause" ${m.state === "playing" ? "" : "disabled"}>⏸ 暂停</button>`}
+      <button class="btn" data-act="music_next" ${m.title ? "" : "disabled"}>下一首 ⏭</button>
+      <button class="btn" data-act="music_stop" ${m.title ? "" : "disabled"}>⏹ 停止</button></div>
+    <div class="ctl">${slider("电脑音量", "mac_volume", "", m.mac_volume)}</div>` : ""}`;
+}
+function boardControls(b, i) {
+  if (!canControl()) return "";
+  const off = !b.online, tools = new Set((i?.tools || []).map(t => t.name));
+  const theme = i?.theme;
+  return `<h4>设置${off ? "（板子待机中：唤醒后再改）" : ""}</h4>
+    <div class="ctl">${slider("板子音量", "volume", b.id, i?.volume, off)}${slider("屏幕亮度", "brightness", b.id, i?.brightness, off)}</div>
+    <div class="btns">
+      <button class="btn ${theme === "light" ? "on" : ""}" data-act="theme" data-dev="${esc(b.id)}" data-val="light" ${off ? "disabled" : ""}>浅色主题</button>
+      <button class="btn ${theme === "dark" ? "on" : ""}" data-act="theme" data-dev="${esc(b.id)}" data-val="dark" ${off ? "disabled" : ""}>深色主题</button>
+      <button class="btn danger" data-act="reboot" data-dev="${esc(b.id)}" data-ask="重启${esc(b.name)}？重启后十几秒会自己连回来。" ${off ? "disabled" : ""}>重启板子</button>
+      ${tools.has("self.system.reconfigure_wifi") ? `<button class="btn danger" data-act="wifi_config" data-dev="${esc(b.id)}"
+        data-ask="让${esc(b.name)}进入配网模式？板子会断开 WiFi，要用手机连它的配网热点重新选 WiFi。" ${off ? "disabled" : ""}>WiFi 配网</button>` : ""}
+    </div>`;
+}
 const kv = rows => `<dl class="kv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v ?? "—"}</dd>`).join("")}</dl>`;
 function renderDevices() {
   const el = document.getElementById("devices");
@@ -224,6 +326,7 @@ function renderDevices() {
           ...(battery ? [["电量", battery]] : [])])}</div>
         <div><h4>声音和屏幕</h4>${kv([["音量", i.volume], ["亮度", i.brightness], ["主题", esc(i.theme) || null]])}</div>
       </div>
+      ${boardControls(b, i)}
       <h4>MCP 工具（${tools.length}）</h4>
       <div class="tools">${tools.length ? tools.map(t => `<span class="pill ${t.user_only ? "" : "acc"}" title="${esc(t.description)}">${esc(t.name)}${t.user_only ? " · 仅后端" : ""}</span>`).join("") : `<span class="note">没读到</span>`}</div>
       <p class="note">紫色是 AI 能调的工具；"仅后端"的不给 AI，只有后端能调（改唤醒词、重启、升级固件都用它们）。最低剩余内存是开机以来的最低值；固件不报 PSRAM。
@@ -260,7 +363,11 @@ function renderLog() {
       <td class="nowrap">${r.first_audio == null ? "—" : r.first_audio + " 秒" + (r.layer === "agent" ? "（回执）" : "")}</td>
     </tr>`).join("") : `<tr><td colspan="6" class="empty">还没有${filter === "all" ? "" : "这一类的"}话。</td></tr>`;
 }
-function render() { renderNav(); renderStats(); renderBoards(); renderDevices(); renderLog(); }
+function render() {
+  renderNav(); renderStats(); renderBoards(); renderLog(); renderLogin();
+  // Re-rendering would reset a slider while it is being dragged
+  if (Date.now() > busyUntil && !document.querySelector("#devices input:active, #music input:active")) { renderDevices(); renderMusic(); }
+}
 
 async function refresh() {
   try {

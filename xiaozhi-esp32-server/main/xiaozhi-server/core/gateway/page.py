@@ -1,14 +1,16 @@
-"""GET /gateway (the page) and GET /gateway/api/status (read-only JSON).
+"""GET /gateway (the page) and GET /gateway/api/status (JSON).
 
-G8b adds GET /gateway/assets/<file> (the board downloads its new assets image) and
-POST /gateway/api/wake_word (change a board's wake word). The POST only answers this Mac
-(tools/wake_word.py) until the page gets a password (G18b).
+G8b: GET /gateway/assets/<file> (the board downloads its new assets image) and
+POST /gateway/api/wake_word (change a board's wake word; this Mac, or the page's token).
+G18b: POST /gateway/api/login (password -> token) and POST /gateway/api/control (board
+settings, reboot, Wi-Fi set-up, music); changes need the token only when gateway.password is set (core/gateway/control.py).
 """
+import asyncio
 from pathlib import Path
 
 from aiohttp import web
 
-from core.gateway import status, wake_assets
+from core.gateway import control, status, wake_assets
 
 PAGE = Path(__file__).with_name("page.html")
 NO_STORE = {"Cache-Control": "no-store"}
@@ -36,7 +38,47 @@ class GatewayPageHandler:
         return web.Response(text=PAGE.read_text(encoding="utf-8"), content_type="text/html", headers=NO_STORE)
 
     async def handle_status(self, request):
-        return web.json_response(status.snapshot(self.config), headers=NO_STORE)
+        music = await asyncio.to_thread(control.music_status)
+        return web.json_response(status.snapshot(self.config) | {"music": music,
+                                 "password": control.password_required(self.config)},
+                                 headers=NO_STORE)
+
+    def _token_ok(self, request):
+        return control.allowed(self.config, request.headers.get("X-Gateway-Token", ""))
+
+    async def handle_login(self, request):
+        if not control.password_required(self.config):
+            return web.json_response({"token": ""})  # no password set: everything is open
+        try:
+            password = str((await request.json()).get("password", ""))
+        except ValueError:
+            password = ""
+        token = control.login(self.config, password)
+        if token is None:
+            await asyncio.sleep(1)  # slow down guessing
+            return web.json_response({"error": "口令不对"}, status=403)
+        return web.json_response({"token": token})
+
+    async def handle_control(self, request):
+        """Body: {"action": ..., "device": <board id>, "value": ...}."""
+        if not self._token_ok(request):
+            return web.json_response({"error": "要先输入口令"}, status=401)
+        try:
+            body = await request.json()
+            action = body["action"]
+        except (ValueError, KeyError, TypeError):
+            return web.json_response({"error": "请求格式不对"}, status=400)
+        try:
+            if action in control.MUSIC_ACTIONS:
+                return web.json_response(await control.music_action(action, body.get("value")))
+            if action not in control.BOARD_ACTIONS:
+                return web.json_response({"error": f"不认识的操作 {action}"}, status=400)
+            conn, reason = _board_conn(body.get("device"))
+            if conn is None:
+                return web.json_response({"error": reason.replace("再马上运行", "再点")}, status=409)
+            return web.json_response(await control.board_action(conn, action, body.get("value")))
+        except control.ControlError as e:
+            return web.json_response({"error": str(e)}, status=400)
 
     async def handle_assets(self, request):
         path = wake_assets.path_of(request.match_info.get("filename", ""))
@@ -46,8 +88,8 @@ class GatewayPageHandler:
 
     async def handle_wake_word(self, request):
         """Body: the board's current assets image; query: device, text, command, reboot=0|1."""
-        if request.remote not in LOCAL:
-            return web.json_response({"error": "只能在运行后端的这台电脑上改唤醒词"}, status=403)
+        if request.remote not in LOCAL and not (control.password_required(self.config) and self._token_ok(request)):
+            return web.json_response({"error": "要在运行后端的这台电脑上改，或者先在网关页面输入口令"}, status=403)
         source = bytearray()
         async for chunk in request.content.iter_chunked(64 * 1024):
             source += chunk

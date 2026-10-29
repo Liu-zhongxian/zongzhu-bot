@@ -82,6 +82,8 @@ class SimpleHttpServer:
                         web.get("/gateway/api/status", self.gateway_page_handler.handle_status),
                         web.get("/gateway/assets/{filename}", self.gateway_page_handler.handle_assets),
                         web.post("/gateway/api/wake_word", self.gateway_page_handler.handle_wake_word),
+                        web.post("/gateway/api/login", self.gateway_page_handler.handle_login),
+                        web.post("/gateway/api/control", self.gateway_page_handler.handle_control),
                     ]
                 )
 
