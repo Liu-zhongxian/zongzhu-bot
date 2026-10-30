@@ -48,3 +48,7 @@ output/
 config-local.py
 
 **/models
+
+# 宗主：接入小米音箱的工作目录（官方固件、镜像、备份、token）和第三方刷机工具
+speaker/work/
+speaker/firmware/tools/

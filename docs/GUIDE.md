@@ -2,7 +2,7 @@
 
 中文 | [English](GUIDE.en.md) · [返回 README](../README.md)
 
-首页 README 只放概要。这里是完整说明：功能细节、本机点歌、不用网页的手动安装、刷机、Bot 接口、构建、测试和已知限制。
+首页 README 只放概要。这里是完整说明：功能细节、本机点歌、接入小米音箱、不用网页的手动安装、刷机、Bot 接口、构建、测试和已知限制。
 
 ## 功能
 
@@ -119,6 +119,28 @@
 | 只搜到翻唱或者"没找到" | 网易云没有这首歌的版权时，会去其他平台找；常听的平台可以在 go-music-dl 里扫码登录 |
 | 歌手名老是识别错 | 在配置的 `local_music.hotwords` 里加上这位歌手和歌名（会追加到语音识别的热词里），然后重启后端 |
 | 说完很久才有反应 | 后端刚重启后的第一句，要等短句合成好（每句 1–3 秒），之后就快了；"这是什么歌"要现场念歌名，约 2 秒 |
+
+## 接入小米智能音箱 Pro（可选）
+
+给小米智能音箱 Pro（OH2P）刷 [open-xiaoai](https://github.com/idootop/open-xiaoai) 的补丁固件后，音箱就像一块没有屏幕的宗主板子：喊"你好宗主"，音箱回"在"，后面的话交给后端，走的是同一个网关（点歌、Bot、呼名），回答从音箱里念出来。小爱同学照常能用。
+
+```
+音箱（补丁固件 + Client）──4399──▶ 电脑上的 xiaoai-bridge ──小智协议──▶ 宗主后端
+```
+
+- **音箱上**：补丁固件开 SSH、关小米自动升级、开机运行 `/data/init.sh`；open-xiaoai 的 Client 把麦克风和播放交给电脑。
+- **电脑上**：`xiaoai-bridge/` 在本机识别唤醒词"你好宗主"、检测说完没有，再像一块小智板子一样连后端（向 OTA 要 token，空闲被断开后，下次唤醒自动重连）。网关页面上显示为"小米音箱 Pro"，没有屏幕和 MCP 工具，所以没有音量、亮度这些控件。
+
+步骤（详见 [xiaoai-bridge/speaker/README.md](../xiaoai-bridge/speaker/README.md)）：
+
+1. 查音箱版本，用 `ota_query.py` 找到同版本的官方固件包；
+2. `build_image.sh` 打补丁、打包，并核对只改了补丁的 8 个文件；
+3. `backup_readonly.sh` 进刷机模式只读备份，判断现在用的是 A/B 哪一边；
+4. `flash_slot.sh` 只写另一边，读回逐字节核对后才切启动参数，官方系统留在原来那边当退路；
+5. `build_client.sh` 编译 Client，`install_client.sh` 装到音箱上；
+6. `scripts/run-zongzhu.sh` 启动 bridge。
+
+只在 OH2P、固件 1.62.2、Apple Silicon 的 Mac 上完整做过。**刷机有变砖的风险**，务必先备份。
 
 ## 手动安装（不用网页）
 
@@ -286,6 +308,7 @@ python scripts/build.py lckfb/szpi-esp32s3 --name lichuang-dev-zongzhu          
 | `web/` | 网页刷机页面和 macOS 后端安装脚本 `install-mac.sh`，推到 main 后自动发布到 GitHub Pages |
 | `deploy/` | 把后端部署到公网 Linux 服务器（Caddy、systemd、服务器配置） |
 | `tools/` | `build_firmware.py`（编进 OTA 地址、打包、刷写）、`build_web.py`（组装网页）、`autostart.sh`（开机自启）、`local_music_setup.sh`（下载点歌用的 go-music-dl 和 mpv）、`verify/`（端到端检查）、`asr-bench/`（识别对比） |
+| `xiaoai-bridge/` | 小米音箱和宗主后端之间的桥（基于 coderzc/open-xiaoai-bridge）；`speaker/` 是刷机、Client 的脚本和说明，`scripts/run-zongzhu.sh` 启动它 |
 | `local-music/` | `local_music_setup.sh` 下载的程序和 go-music-dl 的数据（含登录 Cookie）；只在本机，不进 Git |
 | `examples/` | 不含真实凭证的配置模板 |
 | `docs/` | 本文、各板说明，目录见 [docs/README.md](README.md) |

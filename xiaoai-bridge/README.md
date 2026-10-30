@@ -1,3 +1,5 @@
+> **宗主用的修改版。** 本目录基于 [coderzc/open-xiaoai-bridge](https://github.com/coderzc/open-xiaoai-bridge)（MIT），改成能接宗主后端：向 OTA 要连接 token、空闲断开后唤醒重连、重复唤醒忽略、小爱自己放歌时不被暂停、"你好宗主"交给小智协议。接入小米音箱的完整步骤（刷机、Client、启动）见 [speaker/README.md](speaker/README.md)，启动用 `scripts/run-zongzhu.sh`。下面是原项目的说明。
+
 <div align="center">
 
 # Open-XiaoAI Bridge

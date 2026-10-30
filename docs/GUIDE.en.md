@@ -2,7 +2,7 @@
 
 [中文](GUIDE.md) | English · [Back to README](../README.en.md)
 
-The README is the summary. This page has the details: features, local music, manual setup without the web page, flashing, the Bot interface, building, tests and known limitations.
+The README is the summary. This page has the details: features, local music, the Xiaomi speaker, manual setup without the web page, flashing, the Bot interface, building, tests and known limitations.
 
 ## Features
 
@@ -97,6 +97,28 @@ Needs macOS 14 or later on Apple Silicon, or macOS 15 or later on Intel.
 - **Everything else**: answered with pre-synthesized phrases.
 - **Then it rests**: the board goes idle after answering, so the music isn't taken for the next command.
 - **Music ducks while you talk**: waking the board lowers the music to 25% until the command is done (or 15 s).
+
+## Xiaomi Smart Speaker Pro (optional)
+
+With the [open-xiaoai](https://github.com/idootop/open-xiaoai) patched firmware, a Xiaomi Smart Speaker Pro (OH2P) works like a Zongzhu board without a screen: say "你好宗主", it answers "在", and what you say next goes through the same gateway (local music, Bot, calling by name); the answer is spoken by the speaker. XiaoAI keeps working.
+
+```
+speaker (patched firmware + Client) --4399--> xiaoai-bridge on your computer --Xiaozhi protocol--> Zongzhu backend
+```
+
+- **On the speaker**: the patched firmware enables SSH, turns off Xiaomi's automatic updates and runs `/data/init.sh` at boot; the open-xiaoai Client hands the microphone and playback to your computer.
+- **On your computer**: `xiaoai-bridge/` spots the wake word and the end of speech locally, then connects to the backend like a Xiaozhi board (it gets a token from OTA, and reconnects on the next wake after the backend closes an idle connection). The gateway page lists it as "小米音箱 Pro"; it has no screen and no MCP tools, so there are no volume or brightness controls.
+
+Steps (details in [xiaoai-bridge/speaker/README.md](../xiaoai-bridge/speaker/README.md), Chinese):
+
+1. Check the speaker's version and find the matching official package with `ota_query.py`.
+2. `build_image.sh` patches and repacks it, and checks that only the 8 patched files changed.
+3. `backup_readonly.sh` makes a read-only backup in burning mode; use it to see which A/B slot is in use.
+4. `flash_slot.sh` writes only the other slot and switches the boot slot only after a byte-by-byte read-back check, so the official system stays as a fallback.
+5. `build_client.sh` builds the Client, `install_client.sh` installs it on the speaker.
+6. `scripts/run-zongzhu.sh` starts the bridge.
+
+Tested end to end only on the OH2P with firmware 1.62.2 and an Apple Silicon Mac. **Flashing can brick the speaker**; make the backup first.
 
 ## Manual setup (without the web page)
 
@@ -264,6 +286,7 @@ These builds default to the official XiaoZhi OTA server. To build in your own ba
 | `web/` | The web flasher and the macOS backend installer `install-mac.sh`, published to GitHub Pages on every push to main |
 | `deploy/` | Deploying the backend to a public Linux server (Caddy, systemd, server config) |
 | `tools/` | `build_firmware.py` (builds with the OTA URL, packages, flashes), `build_web.py` (assembles the site), `autostart.sh` (start at login), `local_music_setup.sh` (downloads go-music-dl and mpv), `verify/` (end-to-end checks), `asr-bench/` (recognizer comparison) |
+| `xiaoai-bridge/` | The bridge between a Xiaomi speaker and the Zongzhu backend (based on coderzc/open-xiaoai-bridge); `speaker/` holds the flashing and Client scripts and their guide, `scripts/run-zongzhu.sh` starts it |
 | `local-music/` | Programs downloaded by `local_music_setup.sh` and go-music-dl's data (including sign-in cookies); local only, not in Git |
 | `examples/` | Config templates without real credentials |
 | `docs/` | This guide and per-board notes, indexed in [docs/README.md](README.md) (Chinese) |

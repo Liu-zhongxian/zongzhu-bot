@@ -41,6 +41,11 @@
 - **听错了也能放**："晴天"被识别成"请帖"，会按读音找到《晴天》。
 - **不抢 Bot 的活**："暂停那个下载任务""继续写昨天那份报告"照旧交给 Bot。
 
+**小米智能音箱 Pro（可选，实验）**
+
+- 给音箱刷 open-xiaoai 补丁固件后，它也能喊"你好宗主"：后面的话交给宗主（Bot、点歌都一样），回答从音箱里念出来，小爱同学照常能用。网关页面上显示为"小米音箱 Pro"。
+- 只在 OH2P、固件 1.62.2 上完整做过；刷机有风险，步骤和退路见 [xiaoai-bridge/speaker](xiaoai-bridge/speaker/README.md)。
+
 **听得准**
 
 - 本地离线识别（X-ASR），中英混说也能认，"帮我看一下 GitHub 上的 issue"能认对。
@@ -84,6 +89,7 @@ bash tools/local_music_setup.sh    # 下载 go-music-dl 和 mpv 到 local-music/
   - go-music-dl 会监听所有网卡的 18080 端口，后端运行期间，同一局域网的设备都能用它搜歌、下歌。
   - 扫码登录的 Cookie 存在 `local-music/go-music-dl/data/`，这个目录不进 Git。
   - 这些音乐来自各平台的非官方接口，只限个人自用。
+- **小米音箱**：刷机可能变砖，先按说明只读备份，只写 A/B 两套系统中的一边；补丁固件开了 root SSH（密码自己设）、关了小米自动升级；音箱和电脑上的 bridge 之间用 token 认证，bridge 的 4399 端口只给局域网用。
 
 ## 文档
 
@@ -92,12 +98,14 @@ bash tools/local_music_setup.sh    # 下载 go-music-dl 和 mpv 到 local-music/
 | [docs/GUIDE.md](docs/GUIDE.md) | 使用说明：功能、本机点歌、手动安装、刷机、常见问题、Bot 接口、构建、测试、已知限制 |
 | [docs/README.md](docs/README.md) | 全部文档目录，包括各板说明 |
 | [deploy/README.md](deploy/README.md) | 部署到公网服务器 |
+| [xiaoai-bridge/speaker/README.md](xiaoai-bridge/speaker/README.md) | 接入小米智能音箱 Pro：刷机、Client、bridge |
 
 ## 关于这个仓库
 
 本项目自己的改动集中在这几处：
 - **固件**：`xiaozhi-esp32/main/boards/common/zongzhu/`，以及各板目录。
 - **后端**：`xiaozhi-esp32-server/main/xiaozhi-server/core/` 下的 `handle/grokBot*.py`、`gateway/`（网关；本机点歌在 `gateway/skills/music/`）、`utils/asr_text.py`。
+- **小米音箱**：`xiaoai-bridge/`（音箱和宗主后端之间的桥，`speaker/` 是刷机、Client 的脚本和说明）。
 - **其他**：`web/`、`tools/`、`deploy/`、`examples/`、`docs/`。
 
 两个上游目录里其余的代码基本保持原样，方便以后合并上游、跟上小智固件的更新。上游基线提交记录在 `UPSTREAM.json`。
@@ -107,3 +115,4 @@ bash tools/local_music_setup.sh    # 下载 go-music-dl 和 mpv 到 local-music/
 - 本项目代码：[MIT 许可证](LICENSE)。
 - 固件基于 [78/xiaozhi-esp32](https://github.com/78/xiaozhi-esp32)，后端基于 [xinnan-tech/xiaozhi-esp32-server](https://github.com/xinnan-tech/xiaozhi-esp32-server)，两者都是 MIT 许可证。
 - 本机点歌用到 [go-music-dl](https://github.com/guohuiyuan/go-music-dl)（AGPL-3.0）和 [mpv](https://github.com/mpv-player/mpv)，两者都不在这个仓库里：由 `tools/local_music_setup.sh` 从各自的发布页下载，作为独立程序运行，遵循各自的许可证。
+- `xiaoai-bridge/` 基于 [coderzc/open-xiaoai-bridge](https://github.com/coderzc/open-xiaoai-bridge)（MIT，版权声明见 [xiaoai-bridge/LICENSE](xiaoai-bridge/LICENSE)）。音箱的补丁和 Client 来自 [open-xiaoai](https://github.com/idootop/open-xiaoai)（MIT），不在这个仓库里，由 `xiaoai-bridge/speaker/` 的脚本按固定提交下载。
