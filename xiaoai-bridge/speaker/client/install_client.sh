@@ -20,9 +20,11 @@ CLIENT=${4:-$HERE/../work/client/client}
 [ -s "$TOKEN_FILE" ] || { echo "token 文件是空的：$TOKEN_FILE"; exit 1; }
 case "$SERVER" in ws://*) ;; *) echo "bridge 地址要以 ws:// 开头"; exit 1 ;; esac
 
-# 音箱的 dropbear 比较老，新版 OpenSSH 要打开 ssh-rsa；共用一条连接，密码只输一次
+# 音箱的 dropbear 比较老，新版 OpenSSH 要打开 ssh-rsa；共用一条连接，密码只输一次。
+# 第一次连时自动记下音箱的主机密钥（accept-new）；以后密钥变了照样拒绝。重新刷过机密钥会变，
+# 那时先 ssh-keygen -R <音箱 IP> 删掉旧的。
 CTL=$(mktemp -u "${TMPDIR:-/tmp}/xiaoai-ssh.XXXXXX")
-SSH=(ssh -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa -o IPQoS=none
+SSH=(ssh -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa -o IPQoS=none -o StrictHostKeyChecking=accept-new
      -o ControlMaster=auto -o ControlPath="$CTL" -o ControlPersist=60 "root@$SPEAKER")
 trap '"${SSH[@]}" -O exit >/dev/null 2>&1 || true' EXIT
 
