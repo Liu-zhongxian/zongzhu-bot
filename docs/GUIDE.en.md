@@ -109,7 +109,7 @@ speaker (patched firmware + Client) --4399--> xiaoai-bridge on your computer --X
 - **On the speaker**: the patched firmware enables SSH, turns off Xiaomi's automatic updates and runs `/data/init.sh` at boot; the open-xiaoai Client hands the microphone and playback to your computer.
 - **On your computer**: `xiaoai-bridge/` spots the wake word and the end of speech locally, then connects to the backend like a Xiaozhi board (it gets a token from OTA, and reconnects on the next wake after the backend closes an idle connection). The gateway page lists it as "小米音箱 Pro"; it has no screen and no MCP tools, so there are no volume or brightness controls.
 
-Steps (details in [xiaoai-bridge/speaker/README.md](../xiaoai-bridge/speaker/README.md), Chinese):
+Steps (details in [xiaoai-bridge/README.md](../xiaoai-bridge/README.md), Chinese):
 
 1. Check the speaker's version and find the matching official package with `ota_query.py`.
 2. `build_image.sh` patches and repacks it, and checks that only the 8 patched files changed.
@@ -286,7 +286,7 @@ These builds default to the official XiaoZhi OTA server. To build in your own ba
 | `web/` | The web flasher and the macOS backend installer `install-mac.sh`, published to GitHub Pages on every push to main |
 | `deploy/` | Deploying the backend to a public Linux server (Caddy, systemd, server config) |
 | `tools/` | `build_firmware.py` (builds with the OTA URL, packages, flashes), `build_web.py` (assembles the site), `autostart.sh` (start at login), `local_music_setup.sh` (downloads go-music-dl and mpv), `verify/` (end-to-end checks), `asr-bench/` (recognizer comparison) |
-| `xiaoai-bridge/` | The bridge between a Xiaomi speaker and the Zongzhu backend (based on coderzc/open-xiaoai-bridge); `speaker/` holds the flashing and Client scripts and their guide, `scripts/run-zongzhu.sh` starts it |
+| `xiaoai-bridge/` | The bridge between a Xiaomi speaker and the Zongzhu backend (based on coderzc/open-xiaoai-bridge); `speaker/` holds the patches, the Client source and the flashing and install scripts, `scripts/run-zongzhu.sh` starts it; see its README |
 | `local-music/` | Programs downloaded by `local_music_setup.sh` and go-music-dl's data (including sign-in cookies); local only, not in Git |
 | `examples/` | Config templates without real credentials |
 | `docs/` | This guide and per-board notes, indexed in [docs/README.md](README.md) (Chinese) |

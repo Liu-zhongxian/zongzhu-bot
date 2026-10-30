@@ -46,7 +46,7 @@ eyes                    ├ music and volume → runs on this computer
 **Xiaomi Smart Speaker Pro (optional, experimental)**
 
 - After flashing the open-xiaoai patched firmware, the speaker answers "你好宗主" too: what you say next goes to Zongzhu (Bot, local music and so on), the answer is spoken by the speaker, and XiaoAI keeps working. The gateway page lists it as "小米音箱 Pro".
-- Tested end to end only on the OH2P with firmware 1.62.2. Flashing carries risk; steps and the way back are in [xiaoai-bridge/speaker](xiaoai-bridge/speaker/README.md) (Chinese).
+- Tested end to end only on the OH2P with firmware 1.62.2. Flashing carries risk; steps and the way back are in [xiaoai-bridge](xiaoai-bridge/README.md) (Chinese).
 
 **Accurate recognition**
 
@@ -100,14 +100,14 @@ Prefer not to use the web page, want to build the firmware yourself, or the page
 | [docs/GUIDE.en.md](docs/GUIDE.en.md) | Full guide: features, local music, manual setup, flashing, troubleshooting, Bot interface, building, tests, known limitations |
 | [docs/README.md](docs/README.md) | Index of all docs, including board notes (Chinese) |
 | [deploy/README.md](deploy/README.md) | Deploying to a public server (Chinese) |
-| [xiaoai-bridge/speaker/README.md](xiaoai-bridge/speaker/README.md) | Connecting a Xiaomi Smart Speaker Pro: flashing, Client, bridge (Chinese) |
+| [xiaoai-bridge/README.md](xiaoai-bridge/README.md) | Connecting a Xiaomi Smart Speaker Pro: flashing, Client, bridge (Chinese) |
 
 ## About this repository
 
 This project's own changes are in:
 - **Firmware**: `xiaozhi-esp32/main/boards/common/zongzhu/` and the board directories.
 - **Backend**: under `xiaozhi-esp32-server/main/xiaozhi-server/core/`, the files `handle/grokBot*.py`, `gateway/` (the gateway; local music is in `gateway/skills/music/`) and `utils/asr_text.py`.
-- **Xiaomi speaker**: `xiaoai-bridge/` (the bridge between the speaker and the Zongzhu backend; `speaker/` holds the flashing and Client scripts and their guide).
+- **Xiaomi speaker**: `xiaoai-bridge/` (the bridge between the speaker and the Zongzhu backend; `speaker/` holds the patches, the Client source and the flashing and install scripts; the guide is `xiaoai-bridge/README.md`).
 - **Everything else**: `web/`, `tools/`, `deploy/`, `examples/` and `docs/`.
 
 The rest of the two upstream directories is kept mostly as is, so that later upstream merges, which keep up with Xiaozhi firmware updates, stay simple. Upstream base commits are in `UPSTREAM.json`.
@@ -117,5 +117,5 @@ The rest of the two upstream directories is kept mostly as is, so that later ups
 - This project's code: [MIT License](LICENSE).
 - The firmware is based on [78/xiaozhi-esp32](https://github.com/78/xiaozhi-esp32) and the backend on [xinnan-tech/xiaozhi-esp32-server](https://github.com/xinnan-tech/xiaozhi-esp32-server), both MIT.
 - Local music uses [go-music-dl](https://github.com/guohuiyuan/go-music-dl) (AGPL-3.0) and [mpv](https://github.com/mpv-player/mpv). Neither is in this repository: `tools/local_music_setup.sh` downloads them from their release pages, and they run as separate programs under their own licenses.
-- `xiaoai-bridge/` is based on [coderzc/open-xiaoai-bridge](https://github.com/coderzc/open-xiaoai-bridge) (MIT; copyright notices in [xiaoai-bridge/LICENSE](xiaoai-bridge/LICENSE)). The speaker patches and Client come from [open-xiaoai](https://github.com/idootop/open-xiaoai) (MIT). They are not in this repository; the scripts in `xiaoai-bridge/speaker/` download them at a fixed commit.
+- `xiaoai-bridge/` is based on [coderzc/open-xiaoai-bridge](https://github.com/coderzc/open-xiaoai-bridge) (MIT; copyright notices in [xiaoai-bridge/LICENSE](xiaoai-bridge/LICENSE)). The speaker patches and Client source (`xiaoai-bridge/speaker/`) come from [open-xiaoai](https://github.com/idootop/open-xiaoai) (MIT; see [xiaoai-bridge/speaker/LICENSE.open-xiaoai](xiaoai-bridge/speaker/LICENSE.open-xiaoai)). Xiaomi's official firmware and the flashing tool are not in this repository.
 - Real keys, Wi-Fi settings, flash backups, model weights, sign-in cookies, logs and conversations stay on the local machine and are not in this repository.

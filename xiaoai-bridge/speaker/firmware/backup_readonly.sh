@@ -6,13 +6,13 @@
 # 音箱用数据线直插电脑（不要经过扩展坞），先拔掉音箱电源，看到"等待设备"后再插电。
 # 读完拔电再插，音箱正常开机。
 # data 分区（0x9400000，UBIFS，存设置和登录信息）不在这里读：刷机不写 data；
-# 刷完能 SSH 以后用 README 里的 dd / tar 命令备份。
+# 刷完能 SSH 以后用 xiaoai-bridge/README.md 里的 dd / tar 命令备份。
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 UPDATE=${UPDATE:-$HERE/tools/update}
 PYTHON=${PYTHON:-python3}
 OUT=${1:-$HERE/../work/backup/$(date +%Y%m%d-%H%M%S)}
-[ -x "$UPDATE" ] || { echo "找不到刷机工具：${UPDATE}（见 README）"; exit 1; }
+[ -x "$UPDATE" ] || { echo "找不到刷机工具：${UPDATE}（见 xiaoai-bridge/README.md）"; exit 1; }
 mkdir -p "$OUT"
 LOG="$OUT/backup.log"
 

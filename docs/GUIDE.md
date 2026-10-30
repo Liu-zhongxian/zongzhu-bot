@@ -131,7 +131,7 @@
 - **音箱上**：补丁固件开 SSH、关小米自动升级、开机运行 `/data/init.sh`；open-xiaoai 的 Client 把麦克风和播放交给电脑。
 - **电脑上**：`xiaoai-bridge/` 在本机识别唤醒词"你好宗主"、检测说完没有，再像一块小智板子一样连后端（向 OTA 要 token，空闲被断开后，下次唤醒自动重连）。网关页面上显示为"小米音箱 Pro"，没有屏幕和 MCP 工具，所以没有音量、亮度这些控件。
 
-步骤（详见 [xiaoai-bridge/speaker/README.md](../xiaoai-bridge/speaker/README.md)）：
+步骤（详见 [xiaoai-bridge/README.md](../xiaoai-bridge/README.md)）：
 
 1. 查音箱版本，用 `ota_query.py` 找到同版本的官方固件包；
 2. `build_image.sh` 打补丁、打包，并核对只改了补丁的 8 个文件；
@@ -308,7 +308,7 @@ python scripts/build.py lckfb/szpi-esp32s3 --name lichuang-dev-zongzhu          
 | `web/` | 网页刷机页面和 macOS 后端安装脚本 `install-mac.sh`，推到 main 后自动发布到 GitHub Pages |
 | `deploy/` | 把后端部署到公网 Linux 服务器（Caddy、systemd、服务器配置） |
 | `tools/` | `build_firmware.py`（编进 OTA 地址、打包、刷写）、`build_web.py`（组装网页）、`autostart.sh`（开机自启）、`local_music_setup.sh`（下载点歌用的 go-music-dl 和 mpv）、`verify/`（端到端检查）、`asr-bench/`（识别对比） |
-| `xiaoai-bridge/` | 小米音箱和宗主后端之间的桥（基于 coderzc/open-xiaoai-bridge）；`speaker/` 是刷机、Client 的脚本和说明，`scripts/run-zongzhu.sh` 启动它 |
+| `xiaoai-bridge/` | 小米音箱和宗主后端之间的桥（基于 coderzc/open-xiaoai-bridge）；`speaker/` 是补丁、Client 源码和刷机、安装脚本，`scripts/run-zongzhu.sh` 启动它；说明见它的 README |
 | `local-music/` | `local_music_setup.sh` 下载的程序和 go-music-dl 的数据（含登录 Cookie）；只在本机，不进 Git |
 | `examples/` | 不含真实凭证的配置模板 |
 | `docs/` | 本文、各板说明，目录见 [docs/README.md](README.md) |

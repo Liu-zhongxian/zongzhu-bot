@@ -1,0 +1,9 @@
+--- squashfs-root/etc/rc.local	2024-12-06 15:11:58
++++ squashfs-root-patched/etc/rc.local	2025-02-13 22:06:13
+@@ -1,4 +1,6 @@
+ # Put your custom commands here that should be executed once
+ # the system init finished. By default this file does nothing.
+ 
++[ -f "/data/init.sh" ] && sh /data/init.sh >/dev/null 2>&1 &
++
+ exit 0

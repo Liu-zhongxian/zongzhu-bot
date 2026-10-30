@@ -3,7 +3,7 @@
 #
 #   bash build_image.sh <官方 mico_all_*.bin> [输出目录]
 #
-# 补丁是 open-xiaoai 的 4 个（packages/client-patch/patches，MIT），按固定提交下载：
+# 补丁是同目录 patches/ 里的 4 个，来自 open-xiaoai（packages/client-patch/patches，MIT，见 ../LICENSE.open-xiaoai）：
 #   开 SSH（dropbear）、设 root 密码、串口给 shell、PAM 改回普通认证、禁 OTA、开机跑 /data/init.sh。
 # root 密码运行时输入（不回显），镜像里只存 md5crypt 密码串（随机 8 位盐）；也可以用环境变量
 # SPEAKER_ROOT_PASSWORD 传入。
@@ -12,18 +12,17 @@
 #   root-patched.squashfs  补丁版系统，写进 system0 或 system1
 #   boot.img.encrypt       官方内核原样，写进同一边的 boot0 或 boot1
 #   extracted/             官方包解开的各段
-# 需要：python3、git、patch、openssl，以及 Homebrew 的 squashfs（unsquashfs、mksquashfs）。
+# 需要：python3、patch、openssl，以及 Homebrew 的 squashfs（unsquashfs、mksquashfs）。
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-OPEN_XIAOAI_REPO=https://github.com/coderzc/open-xiaoai.git
-OPEN_XIAOAI_REV=14e1034ba75698be7d3f331b9822b7043deaf032
+PATCHES="$HERE/patches"
 SYSTEM_MAX=$((0x2800000))  # system0 / system1 分区大小
 
 [ $# -ge 1 ] || { sed -n '2,4p' "$0"; exit 1; }
 BIN=$1
 OUT=${2:-$HERE/../work/build}
-for cmd in python3 git patch openssl unsquashfs mksquashfs; do
+for cmd in python3 patch openssl unsquashfs mksquashfs; do
   command -v "$cmd" >/dev/null || { echo "缺少 $cmd"; exit 1; }
 done
 [ ! -e "$OUT" ] || { echo "$OUT 已存在，换一个输出目录或先删掉"; exit 1; }
@@ -35,16 +34,6 @@ OUT=$(cd "$OUT" && pwd)
 
 echo "== 解开官方包（校验 CRC32 和 MD5）"
 python3 -I "$HERE/mico_extract.py" "$BIN" "$OUT/extracted"
-
-echo "== 下载 open-xiaoai 的补丁（${OPEN_XIAOAI_REV:0:7}）"
-git init -q "$OUT/open-xiaoai"
-for try in 1 2 3; do
-  git -C "$OUT/open-xiaoai" fetch -q --depth 1 "$OPEN_XIAOAI_REPO" "$OPEN_XIAOAI_REV" && break
-  [ "$try" = 3 ] && { echo "连不上 GitHub，稍后重试"; exit 1; }
-  sleep 3
-done
-git -C "$OUT/open-xiaoai" checkout -q FETCH_HEAD
-PATCHES="$OUT/open-xiaoai/packages/client-patch/patches"
 
 if [ -z "${SPEAKER_ROOT_PASSWORD:-}" ]; then
   read -rsp "音箱 root 密码（SSH 登录用）：" SPEAKER_ROOT_PASSWORD; echo

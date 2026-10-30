@@ -7,7 +7,7 @@
 #
 #   SLOT=0 UPDATE=<update 工具路径> [BOOTDELAY=15] bash flash_slot.sh <build_image.sh 的输出目录>
 #
-# SLOT 选**现在没在用**的那一边（README 里写了怎么判断）。内核和系统必须是同一个官方包里的。
+# SLOT 选**现在没在用**的那一边（xiaoai-bridge/README.md 第 4 步写了怎么判断）。内核和系统必须是同一个官方包里的。
 # 音箱用数据线直插电脑，先拔掉音箱电源，看到"等待设备"后再插电。
 # 已经写好 boot、只想重写 system 时加 SKIP_BOOT=1。
 set -u
@@ -20,7 +20,7 @@ SLOT=${SLOT:-}
 KERNEL="$1/boot.img.encrypt"
 ROOTFS="$1/root-patched.squashfs"
 OUT="$1/flash-$(date +%Y%m%d-%H%M%S)"
-[ -x "$UPDATE" ] || { echo "找不到刷机工具：${UPDATE}（见 README）"; exit 1; }
+[ -x "$UPDATE" ] || { echo "找不到刷机工具：${UPDATE}（见 xiaoai-bridge/README.md）"; exit 1; }
 [ -f "$KERNEL" ] && [ -f "$ROOTFS" ] || { echo "找不到 $KERNEL 或 $ROOTFS"; exit 1; }
 mkdir -p "$OUT"
 LOG="$OUT/flash.log"

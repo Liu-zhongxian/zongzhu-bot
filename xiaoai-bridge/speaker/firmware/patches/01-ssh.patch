@@ -1,0 +1,48 @@
+--- squashfs-root/etc/init.d/dropbear	2024-12-06 15:11:58
++++ squashfs-root-patched/etc/init.d/dropbear	2025-02-13 21:19:31
+@@ -53,8 +53,7 @@
+ 		MaxAuthTries mdns ipaddrs
+ 
+ 	validate_section_dropbear "${1}" || {
+-		echo "validation failed"
+-		return 1
++		echo "validation failed and skip"
+ 	}
+ 
+ 	[ -n "${Interface}" ] && {
+@@ -64,7 +63,6 @@
+ 		}
+ 	}
+ 
+-	[ "${enable}" = "0" ] && return 1
+ 	PIDCOUNT="$(( ${PIDCOUNT} + 1))"
+ 	local pid_file="/var/run/${NAME}.${PIDCOUNT}.pid"
+ 
+@@ -111,25 +109,12 @@
+ load_interfaces()
+ {
+ 	config_get interface "$1" Interface
+-	config_get enable "$1" enable 1
+-
+-	[ "${enable}" = "1" ] && interfaces=" ${interface} ${interfaces}"
++	interfaces=" ${interface} ${interfaces}"
+ }
+ 
+ start_service()
+ {
+-	[ x"bluetooth" == x`micocfg_work_mode` ] && {
+-        logger -t dropbear.init.d -p 3  "in bluetooth mode, will not start"
+-        return
+-    }
+-
+-	ssh_en=`cat /data/ssh_en 2>/dev/null`
+-	ssh_en_bind=`cat /data/.ssh_en 2>/dev/null`
+-	ssh_en_tmp=`cat /tmp/ssh_en 2>/dev/null`
+-	channel=`micocfg_channel 2>/dev/null`
+-	if [ "$ssh_en" != "1" -a "$ssh_en_bind" != "1" -a "$ssh_en_tmp" != "1" -a "$channel" = "release" ]; then
+-		return 0                                                                                  
+-	fi
++	mkdir -p /data/etc/dropbear
+ 	[ -s /data/etc/dropbear/dropbear_rsa_host_key ] || keygen
+ 
+ 	. /lib/functions.sh
