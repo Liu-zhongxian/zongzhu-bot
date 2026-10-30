@@ -1,0 +1,31 @@
+[package]
+name = "open_xiaoai_server"
+version = "1.0.0"
+edition = "2021"
+
+[lib]
+name = "open_xiaoai_server"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.24.0", features = ["extension-module", "abi3-py38"] }
+pyo3-async-runtimes = { version = "0.24", features = [
+    "attributes",
+    "tokio-runtime",
+] }
+open-xiaoai = { git = "https://github.com/coderzc/open-xiaoai.git", rev = "14e1034ba75698be7d3f331b9822b7043deaf032" }
+tokio = { version = "1.32.0", features = ["full"] }
+tokio-tungstenite = "0.26.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# TTS streaming dependencies
+reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "json"] }
+tokio-util = { version = "0.7", features = ["io"] }
+tokio-stream = "0.1"
+symphonia = { version = "0.5", features = ["mp3", "ogg", "vorbis", "pcm", "wav"] }
+base64 = "0.22"
+
+# Opus codec (statically linked)
+audiopus_sys = { version = "0.2", features = ["static"] }
+audiopus = { version = "0.3.0-rc.0", features = ["coder"] }

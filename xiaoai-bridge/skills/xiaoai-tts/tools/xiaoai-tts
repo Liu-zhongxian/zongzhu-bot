@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""
+XiaoAI TTS Tool - 统一的小爱音箱控制工具
+"""
+import argparse
+import subprocess
+import sys
+import os
+
+# 获取脚本目录
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(SCRIPT_DIR)
+SCRIPTS_DIR = os.path.join(BASE_DIR, "scripts")
+
+def run_script(script_name, args_list, capture=True):
+    """运行指定的 Python 脚本"""
+    script_path = os.path.join(SCRIPTS_DIR, script_name)
+    if not os.path.exists(script_path):
+        print(f"错误: 脚本不存在 {script_path}", file=sys.stderr)
+        return None, "", "脚本不存在", 1
+    
+    cmd = ["python3", script_path] + args_list
+    
+    if capture:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        return result, result.stdout, result.stderr, result.returncode
+    else:
+        result = subprocess.run(cmd)
+        return result, "", "", result.returncode
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="XiaoAI TTS 控制工具",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例:
+  xiaoai-tts tts "你好，小爱"           # 语音播报（优先 Doubao，失败回退小爱 TTS）
+  xiaoai-tts tts "你好" -s zh_female_xiaohe_uranus_bigtts  # 指定音色
+  xiaoai-tts tts "你好" --speed 1.2     # 调整语速
+  xiaoai-tts tts "好耶" -m happy        # 开心语气
+  xiaoai-tts text "你好"                # 强制使用小爱自带 TTS
+  xiaoai-tts wakeup                     # 唤醒小爱
+  xiaoai-tts status                     # 获取播放状态
+  xiaoai-tts health                     # 检查服务健康
+  xiaoai-tts file /path/to/audio.mp3    # 播放本地文件
+  xiaoai-tts url "http://example.com/audio.mp3"  # 播放远程音频
+  xiaoai-tts voices -v 2.0              # 列出音色
+        """
+    )
+    
+    subparsers = parser.add_subparsers(dest='command', help='可用命令')
+    
+    # tts 命令 - 优先 Doubao，失败回退 text
+    tts_parser = subparsers.add_parser('tts', help='语音播报（优先 Doubao TTS，失败自动回退小爱 TTS）')
+    tts_parser.add_argument('content', help='要播放的文字内容')
+    tts_parser.add_argument('--speaker', '-s', default='', 
+                            help='音色名称（默认: 服务端默认')
+    tts_parser.add_argument('--speed', type=float, default=1.0, help='语速（0.8-2.0，默认: 1.0）')
+    tts_parser.add_argument('--emotion', '-e', help='情感（仅多情感音色支持）')
+    tts_parser.add_argument('--mood', '-m', help='语气/情感别名（同 --emotion）')
+    tts_parser.add_argument('--context', '-c', help='上下文指令')
+    tts_parser.add_argument('--blocking', '-b', action='store_true', help='阻塞模式')
+    tts_parser.add_argument('--timeout', '-t', type=int, default=60000, help='超时时间（毫秒）')
+    
+    # text 命令 - 小爱自带 TTS（备用）
+    text_parser = subparsers.add_parser('text', help='使用小爱自带 TTS 播放（备用方案）')
+    text_parser.add_argument('content', help='要播放的文字内容')
+    text_parser.add_argument('--blocking', '-b', action='store_true', help='阻塞模式（等待播放完成）')
+    text_parser.add_argument('--timeout', '-t', type=int, default=60000, help='超时时间（毫秒）')
+    
+    # control 命令
+    wakeup_parser = subparsers.add_parser('wakeup', help='唤醒小爱音箱')
+    wakeup_parser.add_argument('--silent', action='store_true', help='静默唤醒（不播放提示音）')
+    
+    subparsers.add_parser('status', help='获取音箱播放状态')
+    subparsers.add_parser('health', help='检查服务健康状态')
+    
+    # file 命令
+    file_parser = subparsers.add_parser('file', help='播放本地音频文件')
+    file_parser.add_argument('path', help='本地音频文件路径')
+    
+    # url 命令
+    url_parser = subparsers.add_parser('url', help='播放远程音频 URL')
+    url_parser.add_argument('url', help='远程音频 URL')
+    
+    # voices 命令
+    voices_parser = subparsers.add_parser('voices', help='列出可用音色')
+    voices_parser.add_argument('--version', '-v', choices=['1.0', '2.0'], help='仅显示指定版本的音色')
+    
+    args = parser.parse_args()
+    
+    if not args.command:
+        parser.print_help()
+        sys.exit(1)
+    
+    # 执行对应命令
+    if args.command == 'tts':
+        # 优先尝试 Doubao TTS
+        cmd_args = [args.content]
+        if args.speaker != '':
+            cmd_args.extend(['--speaker', args.speaker])
+        if args.speed != 1.0:
+            cmd_args.extend(['--speed', str(args.speed)])
+        # --mood 和 --emotion 都映射到 emotion 参数
+        mood_or_emotion = args.mood or args.emotion
+        if mood_or_emotion:
+            cmd_args.extend(['--emotion', mood_or_emotion])
+        if args.context:
+            cmd_args.extend(['--context', args.context])
+        if args.blocking:
+            cmd_args.append('--blocking')
+        if args.timeout != 60000:
+            cmd_args.extend(['--timeout', str(args.timeout)])
+        
+        result, stdout, stderr, code = run_script('tts_doubao.py', cmd_args)
+        
+        if code == 0 and result and result.returncode == 0:
+            print(stdout, end='')
+            sys.exit(0)
+        else:
+            # Doubao 失败，回退到 text
+            print(f"⚠️ Doubao TTS 失败，回退到小爱自带 TTS...", file=sys.stderr)
+            text_args = [args.content]
+            if args.blocking:
+                text_args.append('--blocking')
+            if args.timeout != 60000:
+                text_args.extend(['--timeout', str(args.timeout)])
+            sys.exit(run_script('play_text.py', text_args)[3])
+    
+    elif args.command == 'text':
+        cmd_args = [args.content]
+        if args.blocking:
+            cmd_args.append('--blocking')
+        if args.timeout != 60000:
+            cmd_args.extend(['--timeout', str(args.timeout)])
+        sys.exit(run_script('play_text.py', cmd_args)[3])
+    
+    elif args.command == 'wakeup':
+        cmd_args = ['wakeup']
+        if args.silent:
+            cmd_args.append('--silent')
+        sys.exit(run_script('control.py', cmd_args, capture=False)[3])
+
+    elif args.command == 'status':
+        sys.exit(run_script('control.py', ['status'], capture=False)[3])
+
+    elif args.command == 'health':
+        sys.exit(run_script('control.py', ['health'], capture=False)[3])
+
+    elif args.command == 'file':
+        sys.exit(run_script('play_file.py', [args.path], capture=False)[3])
+
+    elif args.command == 'url':
+        sys.exit(run_script('play_url.py', [args.url], capture=False)[3])
+    
+    elif args.command == 'voices':
+        cmd_args = []
+        if args.version:
+            cmd_args.extend(['--version', args.version])
+        sys.exit(run_script('list_doubao_voices.py', cmd_args, capture=False)[3])
+
+if __name__ == '__main__':
+    main()

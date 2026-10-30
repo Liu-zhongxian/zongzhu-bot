@@ -1,0 +1,50 @@
+# Python
+.venv
+.mypy_cache
+__pycache__
+*.egg-info
+
+# Rust
+target
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+
+# Build Outputs
+build
+dist
+*.so
+*.dylib
+*.dll
+*.dSYM/
+
+# Debug
+*.log
+
+# Misc
+.DS_Store
+*.pem
+.mi.json
+xiaozhi.json
+
+# Models (large files)
+core/models/
+
+# Local env files
+.env
+.env.local
+
+tests/*.wav
+local_test/
+
+output/
+
+**/identity/**
+
+.claude
+
+config-local.py
+
+**/models

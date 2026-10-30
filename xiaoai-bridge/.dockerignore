@@ -1,0 +1,42 @@
+# Git
+.git
+.gitignore
+
+# Python
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.mypy_cache
+
+# Rust
+target
+Cargo.lock
+
+# IDE
+.idea
+.vscode
+
+# Build artifacts
+build
+dist
+*.so
+
+# Models (large files, should be downloaded separately)
+core/models/
+
+# Local env files
+.env
+.env.local
+
+# Documentation
+docs/
+*.md
+
+# GitHub
+.github/
+
+# Misc
+.DS_Store
+*.log
