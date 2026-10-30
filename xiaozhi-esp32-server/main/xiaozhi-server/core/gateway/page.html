@@ -210,7 +210,7 @@ function renderBoards() {
       <dl class="kv"><dt>现在</dt><dd>${stateText(b.state)}</dd>
       <dt>唤醒词</dt><dd>${esc(b.wake || "—")}</dd>
       <dt>交给</dt><dd>${esc(b.agent)}</dd>
-      <dt>地址</dt><dd>${esc(b.ip || "—")}</dd>
+      <dt>地址</dt><dd>${b.bridge ? "经这台 Mac 上的 bridge" : esc(b.ip || "—")}</dd>
       ${b.online ? "" : `<dt>上次</dt><dd>${b.seen ? clock(b.seen) : "—"}</dd>`}</dl>
     </div>`).join("");
 }
@@ -307,6 +307,9 @@ function renderDevices() {
     const i = b.info;
     const head = `<h3><span class="dot ${b.online ? "" : "off"}"></span>${esc(b.name)}</h3>
       <div class="sub">${esc([b.id, b.type].filter(Boolean).join(" · "))}</div>`;
+    if (b.bridge) return `<div class="card device ${b.online ? "" : "off"}">${head}
+      <p class="note">经这台 Mac 上的 open-xiaoai-bridge 接入：没有屏幕，也没有 MCP 工具，读不到 WiFi、固件这些信息，音量、亮度和重启也不能在这里改。
+        ${b.online ? "正连着。" : "待机中（后端会断开空闲连接），喊“你好宗主”就会连上。"}</p></div>`;
     if (!i) return `<div class="card device ${b.online ? "" : "off"}">${head}
       <p class="note">${b.online ? "正在读……板子连上后几秒钟内会读到。" : "还没读到过：唤醒板子后几秒钟内自动读取。"}</p></div>`;
     const w = i.wifi || {}, f = i.firmware || {}, tools = i.tools || [];

@@ -152,6 +152,20 @@ class StatusTest(unittest.IsolatedAsyncioTestCase):
         status.connected(make_conn(device="aa:bb:cc:dd:ee:02"))
         self.assertIn("板子 ee:02", [b["name"] for b in status.snapshot(CONFIG)["boards"]])
 
+    def test_xiaoai_speaker_is_named_and_not_read_over_mcp(self):
+        # 2026-10-30: the Xiaomi speaker comes in through open-xiaoai-bridge on this Mac; it has no MCP,
+        # so reading board info only waited and came back empty
+        status.note_ota("4b:2b:ba:c4:eb:f9", "open-xiaoai-bridge", "1.6.0", "127.0.0.1")
+        status.note_ota("94:a9:90:2d:a3:70", "lichuang-dev", "2.5.2.9", "192.168.1.20")
+        with mock.patch("core.gateway.board_info.start") as start:
+            status.connected(make_conn(device="4b:2b:ba:c4:eb:f9", client_ip="127.0.0.1"))
+            start.assert_not_called()
+            status.connected(make_conn())
+            start.assert_called_once()
+        boards = {b["name"]: b for b in status.snapshot(CONFIG)["boards"]}
+        self.assertTrue(boards["小米音箱 Pro"]["bridge"])
+        self.assertFalse(boards["立创实战派"]["bridge"])
+
     async def test_status_endpoint_is_json_and_holds_no_config_secrets(self):
         status.note_ota("94:a9:90:2d:a3:70", "lichuang-dev", "2.5.2.9", "192.168.1.20")
         status.connected(make_conn())

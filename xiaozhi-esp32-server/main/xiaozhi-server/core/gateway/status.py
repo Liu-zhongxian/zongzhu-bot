@@ -15,7 +15,11 @@ from pathlib import Path
 
 RECENT_MAX = 30
 # Board types the firmware reports in OTA (board.type) -> the names used in our docs
-BOARD_NAMES = (("lichuang", "立创实战派"), ("amoled-1.75", "微雪 1.75C"), ("stopwatch", "M5Stack StopWatch"))
+BOARD_NAMES = (("lichuang", "立创实战派"), ("amoled-1.75", "微雪 1.75C"), ("stopwatch", "M5Stack StopWatch"),
+               ("open-xiaoai-bridge", "小米音箱 Pro"))
+# Not a board: the speaker reaches us through open-xiaoai-bridge on this Mac (experiments/xiaoai-bridge).
+# No screen and no MCP, so there is nothing to read or set; its IP here is the Mac's.
+BRIDGE_TYPES = {"open-xiaoai-bridge"}
 # Types our check scripts use (tools/verify, probes): shown only while connected
 SIMULATED_TYPES = {"local-test", "probe"}
 
@@ -66,9 +70,15 @@ def connected(conn):
     if conn.device_id:
         _boards.setdefault(conn.device_id, {}).update(ip=getattr(conn, "client_ip", "") or "", seen=time.time())
         _save()
+        if is_bridge(conn.device_id):
+            return
         from core.gateway import board_info
 
         board_info.start(conn)
+
+
+def is_bridge(device_id):
+    return _boards.get(device_id, {}).get("type") in BRIDGE_TYPES
 
 
 def is_live(conn):
@@ -197,6 +207,7 @@ def snapshot(config):
             "state": _state(conn, now) if conn else {"kind": "offline"},
             "seen": info.get("seen"),
             "info": info.get("info"),
+            "bridge": info.get("type") in BRIDGE_TYPES,
         })
     boards.sort(key=lambda b: (not b["online"], b["name"]))
     recent = [{k: v for k, v in r.items() if not k.startswith("_")} | {"board": names.get(r["device"], "")}
