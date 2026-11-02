@@ -188,6 +188,9 @@ class XiaoaiServer:
     def _woken(self, link, listener, word, note=lambda text: None, device=None):
         logger.bind(tag=TAG).info(f"音箱唤醒：{word}")
         note(f"认出唤醒词：{word}")
+        if device:
+            # 网关页面"最近的话"里记一条唤醒，和板子一样（板子的唤醒经网关记，音箱的唤醒在这里认）
+            status.note_wake(device.device_id, word, f"回「{WAKE_REPLY}」" + ("，打断" if device.state == "speaking" else ""))
         asyncio.create_task(self._reply(link, listener, note, device))
 
     async def _reply(self, link, listener, note=lambda text: None, device=None):

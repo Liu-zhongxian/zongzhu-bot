@@ -142,11 +142,94 @@ def begin(conn, text):
     return record
 
 
+def note_wake(device_id, word, reply):
+    """A device that spots its wake word itself, outside the gateway (the Xiaomi speaker, core/gateway/xiaoai/):
+    listed like a board's wake."""
+    _recent.appendleft({"time": time.time(), "device": device_id, "text": word, "raw": "",
+                        "layer": "wake", "target": reply, "first_audio": None, "_t": time.monotonic()})
+
+
 def finish(record, layer, target):
     record["layer"], record["target"] = layer, target
     if layer not in ("wake",):
         _totals["sentences"] += 1
         _totals["local"] += layer in ("skill", "filter", "call")
+
+
+# G23: the AI's answer under the sentence it answers, for the "最近的话" page.
+# record["reply"] = {"state": waiting | speaking | interrupted | done, "text": the answer,
+#                    "upto": how much of the text has been said (characters), "since": when it started waiting}
+_REPLY_PUNCTUATION = "，。；：！？、,.;:!? \n"
+
+
+def _find_request(request_id):
+    return next((r for r in _recent if r.get("_request") == request_id), None)
+
+
+def note_request(conn, request_id):
+    """The sentence was handed to an AI that answers later under this request id."""
+    record = getattr(conn, "gateway_record", None)
+    if record is not None:
+        record["_request"] = request_id
+        record["reply"] = {"state": "waiting", "text": "", "upto": 0, "since": time.time()}
+
+
+def reply_text(conn, text):
+    """An answer said right after the hand-over (not one that comes back later)."""
+    record = getattr(conn, "gateway_record", None)
+    if record is not None and text:
+        record["reply"] = {"state": "done", "text": text, "upto": len(text)}
+
+
+def reply_started(conn, request_id, text, question=None, target=""):
+    """An answer that came back is being said (waiting.deliver). A second one for the same request
+    (the AI's follow-up) is added below the first."""
+    record = _find_request(request_id)
+    if record is None:
+        # The sentence is gone from the list (restart, or more than RECENT_MAX since): list it again
+        record = {"time": time.time(), "device": getattr(conn, "device_id", None),
+                  "text": question or "（之前的话）", "raw": "", "layer": "agent", "target": target,
+                  "first_audio": None, "_t": time.monotonic(), "_request": request_id}
+        _recent.appendleft(record)
+    before = (record.get("reply") or {}).get("text", "")
+    if before:
+        text = before + "\n" + text
+    record["reply"] = {"state": "speaking", "text": text, "upto": len(before)}
+    record["_cursor"] = len(before)
+    conn.gateway_reply_record = record
+
+
+def reply_resumed(conn, request_id):
+    """The rest of an interrupted answer is being said."""
+    record = _find_request(request_id)
+    if record is not None and record.get("reply"):
+        record["reply"]["state"] = "speaking"
+        conn.gateway_reply_record = record
+
+
+def reply_sentence(conn, sentence):
+    """One more sentence of the answer was sent to the device."""
+    record = getattr(conn, "gateway_reply_record", None)
+    reply = (record or {}).get("reply")
+    if not reply or reply["state"] != "speaking":
+        return
+    plain = sentence.strip(_REPLY_PUNCTUATION)
+    found = reply["text"].find(plain, record.get("_cursor", 0)) if plain else -1
+    if found >= 0:  # not found: a sentence that is not part of the answer ("你刚才问……")
+        record["_cursor"] = found
+        reply["upto"] = max(reply["upto"], found + len(plain))
+
+
+def reply_stopped(conn, interrupted=False):
+    record = getattr(conn, "gateway_reply_record", None)
+    reply = (record or {}).get("reply")
+    if not reply or reply["state"] != "speaking":
+        return
+    if interrupted:
+        reply["state"] = "interrupted"
+    else:
+        reply["state"], reply["upto"] = "done", len(reply["text"])
+    conn.gateway_reply_record = None
 
 
 def note_audio(conn):

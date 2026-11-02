@@ -166,6 +166,52 @@ class StatusTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(boards["小米音箱 Pro"]["bridge"])
         self.assertFalse(boards["立创实战派"]["bridge"])
 
+    def test_bot_reply_shows_under_its_sentence_as_far_as_it_was_said(self):
+        # G23：交给 Bot 的话下面显示回复；跟着语音时显示到念到的那句
+        conn = make_conn()
+        status.begin(conn, "明天北京的天气")
+        status.note_request(conn, "ESP32-1")
+        self.assertEqual(self.recent()[0]["reply"]["state"], "waiting")
+        status.reply_started(conn, "ESP32-1", "明天晴。后天阴，有霾。", "明天北京的天气", "Grok Bot")
+        status.reply_sentence(conn, "你刚才问「明天北京的天气」")  # 前缀不是回复的一部分
+        status.reply_sentence(conn, "明天晴")
+        reply = self.recent()[0]["reply"]
+        self.assertEqual((reply["state"], reply["text"][:reply["upto"]]), ("speaking", "明天晴"))
+        status.reply_sentence(conn, "后天阴，有霾")
+        status.reply_stopped(conn, interrupted=True)
+        self.assertEqual(self.recent()[0]["reply"]["state"], "interrupted")
+        status.reply_resumed(conn, "ESP32-1")
+        status.reply_sentence(conn, "后天阴，有霾")  # 接着念：被打断的那句重念
+        status.reply_stopped(conn)
+        reply = self.recent()[0]["reply"]
+        self.assertEqual((reply["state"], reply["upto"]), ("done", len(reply["text"])))
+        self.assertEqual(len(self.recent()), 1)
+
+    def test_reply_to_a_sentence_no_longer_listed_is_listed_again(self):
+        status.reply_started(make_conn(), "ESP32-2", "答案。", "之前问的", "Grok Bot")
+        record = self.recent()[0]
+        self.assertEqual((record["text"], record["layer"], record["target"]), ("之前问的", "agent", "Grok Bot"))
+
+    def test_follow_up_is_added_below_the_answer(self):
+        conn = make_conn()
+        status.begin(conn, "问题")
+        status.note_request(conn, "ESP32-3")
+        status.reply_started(conn, "ESP32-3", "第一次回答。")
+        status.reply_stopped(conn)
+        status.reply_started(conn, "ESP32-3", "Bot 补充：更正。")
+        self.assertEqual(self.recent()[0]["reply"]["text"], "第一次回答。\nBot 补充：更正。")
+
+    def test_speaker_wake_is_listed_like_a_board_wake(self):
+        status.note_ota("aa:bb:cc:dd:ee:99", "open-xiaoai", "Client 1.0.0", "192.168.1.30")
+        status.note_wake("aa:bb:cc:dd:ee:99", "你好宗主", "回「在」")
+        record = self.recent()[0]
+        self.assertEqual((record["board"], record["text"], record["layer"], record["target"]),
+                         ("小米音箱 Pro", "你好宗主", "wake", "回「在」"))
+        self.assertEqual(status.snapshot(CONFIG)["totals"]["sentences"], 0)  # 唤醒不算一句话
+
+    def recent(self):
+        return status.snapshot(CONFIG)["recent"]
+
     async def test_status_endpoint_is_json_and_holds_no_config_secrets(self):
         status.note_ota("94:a9:90:2d:a3:70", "lichuang-dev", "2.5.2.9", "192.168.1.20")
         status.connected(make_conn())

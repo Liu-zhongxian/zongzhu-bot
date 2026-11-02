@@ -25,6 +25,7 @@ import asyncio
 import json
 import time
 
+from core.gateway import status
 from core.gateway.agent import _bot_ui, say_reply
 from core.gateway.agent_session import TextDelta
 
@@ -51,12 +52,14 @@ def note_sentence(conn, text):
     current = getattr(conn, "gateway_reply_now", None)
     if current and conn.sentence_id == current["sentence_id"]:
         current["said"].append(text)
+        status.reply_sentence(conn, text)
 
 
 def note_stop(conn):
     current = getattr(conn, "gateway_reply_now", None)
     if current and conn.sentence_id == current["sentence_id"]:
         current["stopped_at"] = time.monotonic()
+        status.reply_stopped(conn)
 
 
 def remaining_text(text, said):
@@ -82,7 +85,9 @@ def on_abort(conn):
         return
     rest = remaining_text(current["text"], current["said"])
     if not rest.strip(_PUNCTUATION):
+        status.reply_stopped(conn)
         return
+    status.reply_stopped(conn, interrupted=True)
     conn.gateway_resume = (rest, current["request_id"])
     conn.gateway_interrupted_at = time.time()
     # Leave time for the new question before saying the rest (a question clears this, hand_over)
@@ -108,6 +113,7 @@ async def deliver(conn, agent):
         resume = getattr(conn, "gateway_resume", None)
         if resume:
             conn.gateway_resume = None
+            status.reply_resumed(conn, resume[1])
             await say_reply(conn, TextDelta(resume[0]), resume[1])
             conn.logger.bind(tag=TAG).info(f"接着说被打断的回复: {resume[1]}")
             return "resumed"
@@ -122,6 +128,7 @@ async def deliver(conn, agent):
         # slept in between) needs context: "硬件做完了：……"
         elif isinstance(reply.created, (int, float)) and reply.created < getattr(conn, "bot_reply_since", 0):
             text = agent.done_prefix(conn) + text
+        status.reply_started(conn, reply.request_id, reply.text, reply.question, agent.label(conn.config))
         await say_reply(conn, TextDelta(text), reply.request_id)
         agent.delivered(conn, reply)
         if prefix and not agent.waiting_since(conn):

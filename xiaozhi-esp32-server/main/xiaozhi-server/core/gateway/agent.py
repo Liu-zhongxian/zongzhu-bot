@@ -163,6 +163,10 @@ async def hand_over(conn, agent, text) -> bool:
     if conn.client_abort:
         return True
     text = error.voice_message if error else said
+    if said and error is None:
+        from core.gateway import status
+
+        status.reply_text(conn, said)  # shown under the sentence on the gateway page (G23)
     if not acked:
         speak_txt(conn, text or agent.accepted)
     elif text:

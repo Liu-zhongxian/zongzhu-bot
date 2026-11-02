@@ -74,6 +74,11 @@ td.nowrap { white-space: nowrap; }
 .layer.filter, .layer.wake { color: var(--l-filter); }
 .layer.call { color: var(--l-name); }
 .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.chips .label { color: var(--muted); font-size: 13px; padding: 4px 0; }
+.reply { margin-top: 6px; padding: 6px 10px; border-left: 3px solid var(--accent); background: var(--accent-soft);
+  border-radius: 4px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.reply .who { color: var(--accent); font-weight: 600; margin-right: 6px; }
+.reply .wait { color: var(--muted); }
 .chips button { all: unset; cursor: pointer; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); font-size: 13px; }
 .chips button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .mobile-nav { display: none; }
@@ -154,8 +159,9 @@ section[hidden] { display: none; }
 
     <section data-page="log" hidden>
       <h1>最近的话</h1>
-      <p class="lead">最近 30 句：识别出来的话、走了哪一层、交给了谁、多久出声。只存在内存里，后端重启后清空。</p>
+      <p class="lead">最近 30 句：识别出来的话、走了哪一层、交给了谁、多久出声，交给 AI 的话下面是它的回复。只存在内存里，后端重启后清空。</p>
       <div class="chips" id="chips"></div>
+      <div class="chips" id="reply-mode"></div>
       <div class="tablewrap"><table>
         <thead><tr><th>时间</th><th>板子</th><th>说的话</th><th>走了哪一层</th><th>交给</th><th>出声</th></tr></thead>
         <tbody id="log"></tbody>
@@ -169,7 +175,8 @@ section[hidden] { display: none; }
 const PAGES = [["overview", "◎", "总览"], ["devices", "▣", "设备"], ["log", "☰", "最近的话"]];
 const SIGNAL = { strong: "强", medium: "中", weak: "弱" };
 const LAYERS = { skill: "① 本机技能", agent: "转交 AI", call: "呼名", filter: "过滤掉", wake: "唤醒", upstream: "上游对话" };
-let data = null, fetchedAt = 0, filter = "all";
+let data = null, fetchedAt = 0, filter = "all", replyMode = "all";
+try { replyMode = localStorage.getItem("gw-reply-mode") === "voice" ? "voice" : "all"; } catch (e) {}
 
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const clock = t => new Date(t * 1000).toLocaleTimeString("zh-CN", { hour12: false });
@@ -356,12 +363,41 @@ document.getElementById("chips").addEventListener("click", e => {
   const b = e.target.closest("[data-f]"); if (!b) return;
   filter = b.dataset.f; renderChips(); renderLog();
 });
+// G23: the AI's answer under the sentence; all at once, or as far as the device has said it
+const REPLY_MODES = [["all", "一次性全部显示"], ["voice", "跟着语音一句句显示"]];
+function renderReplyMode() {
+  document.getElementById("reply-mode").innerHTML = `<span class="label">回复：</span>` + REPLY_MODES.map(([k, v]) =>
+    `<button data-m="${k}" aria-pressed="${k === replyMode}">${v}</button>`).join("");
+}
+document.getElementById("reply-mode").addEventListener("click", e => {
+  const b = e.target.closest("[data-m]"); if (!b) return;
+  replyMode = b.dataset.m;
+  try { localStorage.setItem("gw-reply-mode", replyMode); } catch (e) {}
+  renderReplyMode(); renderLog();
+});
+function replyHtml(r) {
+  const p = r.reply; if (!p) return "";
+  const who = `<span class="who">${esc(r.target || "AI")}</span>`;
+  if (p.state === "waiting") {
+    const late = Date.now() / 1000 - p.since > 600;
+    return `<div class="reply">${who}<span class="wait">${late ? "没等到回复" : "等回复…"}</span></div>`;
+  }
+  let text = p.text;
+  if (replyMode === "voice" && p.state !== "done") {
+    // Up to the end of the last sentence said, with the punctuation after it
+    const end = p.upto + (/^[，。；：！？、,.;:!?]/.test(text.slice(p.upto)) ? 1 : 0);
+    text = text.slice(0, end);
+  }
+  const tail = p.state === "speaking" ? (replyMode === "voice" ? " …" : "（正在念）")
+    : p.state === "interrupted" ? "（被打断，问完新问题接着念）" : "";
+  return `<div class="reply">${who}${esc(text)}<span class="wait">${tail}</span></div>`;
+}
 function renderLog() {
   const rows = data.recent.filter(r => filter === "all" || r.layer === filter);
   document.getElementById("log").innerHTML = rows.length ? rows.map(r => `
     <tr>
       <td class="nowrap">${clock(r.time)}</td><td class="nowrap">${esc(r.board || "—")}</td>
-      <td>${esc(r.text)}${r.raw ? `<div class="fix">识别原文：${esc(r.raw)}</div>` : ""}</td>
+      <td>${esc(r.text)}${r.raw ? `<div class="fix">识别原文：${esc(r.raw)}</div>` : ""}${replyHtml(r)}</td>
       <td class="layer ${esc(r.layer)}">${esc(LAYERS[r.layer] || r.layer)}</td><td>${esc(r.target)}</td>
       <td class="nowrap">${r.first_audio == null ? "—" : r.first_audio + " 秒" + (r.layer === "agent" ? "（回执）" : "")}</td>
     </tr>`).join("") : `<tr><td colspan="6" class="empty">还没有${filter === "all" ? "" : "这一类的"}话。</td></tr>`;
@@ -384,12 +420,16 @@ async function refresh() {
   }
 }
 
-renderNav(); renderChips();
+renderNav(); renderChips(); renderReplyMode();
 let start = "overview";
 try { start = localStorage.getItem("gw-page") || start; } catch (e) {}
 show(PAGES.some(p => p[0] === start) ? start : "overview");
-refresh();
-setInterval(refresh, 3000);
+// Every 3 s; every second while an answer is being said, so "跟着语音" keeps up
+(async function poll() {
+  await refresh();
+  const speaking = data && data.recent.some(r => r.reply && r.reply.state === "speaking");
+  setTimeout(poll, speaking ? 1000 : 3000);
+})();
 setInterval(() => { if (data) renderBoards(); }, 1000);
 </script>
 </body>

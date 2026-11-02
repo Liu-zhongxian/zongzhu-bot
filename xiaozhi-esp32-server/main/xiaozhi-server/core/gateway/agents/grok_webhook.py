@@ -44,6 +44,10 @@ class GrokWebhookSession(AgentSession):
         if isinstance(submission, str):
             yield Error(ErrorKind.UNKNOWN, "not submitted", voice=submission)
             return
+        if submission.pending:
+            from core.gateway import status
+
+            status.note_request(conn, submission.payload["request_id"])  # the answer shows up under it (G23)
         posting = asyncio.create_task(bot.post_submission(submission))
         # pending: the Bot was asked to send its answer back, so the board waits for it
         yield Activity(WAITING_FOR_REPLY if submission.pending else HANDING_OVER)
