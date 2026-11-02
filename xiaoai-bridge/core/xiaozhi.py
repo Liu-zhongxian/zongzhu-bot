@@ -234,6 +234,14 @@ class XiaoZhi:
             self._session_loop.call_soon_threadsafe(
                 self._tts_stop_future.set_result, True
             )
+        elif self.device_state == DeviceState.SPEAKING:
+            # 没有人在等这个 stop：宗主网关晚到的 Bot 回答，是在会话等用户说话时、或会话已经结束后才念的。
+            # tts start 把状态切成了 SPEAKING（唤醒词识别和 VAD 都停了），不在这里切回来就一直停着，
+            # 喊"你好宗主"没反应。会话还在等用户说话就接着听。
+            self.set_device_state(DeviceState.IDLE)
+            vad = get_vad()
+            if vad and self._vad_future and not self._vad_future.done():
+                vad.resume("speech")
 
     def _handle_stt_message(self, data):
         """Handle STT message."""

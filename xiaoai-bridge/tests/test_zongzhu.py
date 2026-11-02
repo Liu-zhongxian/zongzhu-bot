@@ -90,6 +90,48 @@ class ReconnectOnWakeupTest(unittest.IsolatedAsyncioTestCase):
         self.xiaozhi.send_abort_speaking.assert_not_awaited()
 
 
+class LateReplyTest(unittest.TestCase):
+    """网关晚到的 Bot 回答念完以后，唤醒词识别要恢复（2026-11-02 实测卡在 SPEAKING）"""
+
+    def setUp(self):
+        self.xiaozhi = object.__new__(XiaoZhi)
+        self.xiaozhi._app = mock.Mock(device_state=DeviceState.IDLE)
+        self.xiaozhi._audio_codec = None
+        self.xiaozhi._tts_stop_future = None
+        self.xiaozhi._vad_future = None
+        self.xiaozhi._session_loop = None
+        self.vad = mock.Mock()
+        patches = [mock.patch("core.services.audio.vad.VAD"),
+                   mock.patch("core.xiaozhi.get_vad", return_value=self.vad)]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_reply_after_the_session_ended_goes_back_to_idle(self):
+        self.xiaozhi._handle_tts_start()
+        self.assertEqual(self.xiaozhi.device_state, DeviceState.SPEAKING)
+        self.xiaozhi._handle_tts_stop()
+        self.assertEqual(self.xiaozhi.device_state, DeviceState.IDLE)
+        self.vad.resume.assert_not_called()
+
+    def test_reply_while_the_session_waits_for_speech_keeps_listening(self):
+        self.xiaozhi._vad_future = mock.Mock(done=mock.Mock(return_value=False))
+        self.xiaozhi._handle_tts_start()
+        self.xiaozhi._handle_tts_stop()
+        self.assertEqual(self.xiaozhi.device_state, DeviceState.IDLE)
+        self.vad.resume.assert_called_once_with("speech")
+
+    def test_stop_awaited_by_the_session_is_handed_over(self):
+        loop = mock.Mock()
+        future = mock.Mock(done=mock.Mock(return_value=False))
+        self.xiaozhi._session_loop, self.xiaozhi._tts_stop_future = loop, future
+        self.xiaozhi._handle_tts_start()
+        self.xiaozhi._handle_tts_stop()
+        loop.call_soon_threadsafe.assert_called_once_with(future.set_result, True)
+        # 会话自己会在拿到 stop 后切状态，这里不动
+        self.assertEqual(self.xiaozhi.device_state, DeviceState.SPEAKING)
+
+
 class WakeupTest(unittest.TestCase):
     def test_duplicate_wakeup_is_ignored_while_a_session_runs(self):
         manager = WakeupSessionManager()
