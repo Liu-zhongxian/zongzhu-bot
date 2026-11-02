@@ -19,6 +19,10 @@ PLAY_CONFIG = {"pcm": "noop", "channels": 1, "bits_per_sample": 16, "sample_rate
 CALL_TIMEOUT = 10
 
 
+def silence(ms, rate=PLAY_CONFIG["sample_rate"]):
+    return b"\0\0" * (rate * ms // 1000)
+
+
 class ClientError(Exception):
     """Client 回了错误（code 不是 0 也不是空）"""
 
@@ -85,10 +89,20 @@ class SpeakerLink:
         await self.call("start_recording", RECORD_CONFIG)
 
     async def play(self, pcm: bytes):
-        """放一段 24 kHz 单声道 16 位 PCM。第一次放之前先让音箱起 aplay。"""
+        """放一段 24 kHz 单声道 16 位 PCM。第一次放之前先让音箱起 aplay。
+
+        开头不用垫静音：2026-11-02 录音实测，aplay 刚起来、或空了几秒以后发的声音，第一声都在
+        发出后约 0.09 秒完整放出来（xiaoai/debug.py 的测试音 A、B、E、G）。
+        一次发的声音要短于约 1 秒：音箱 Client 往 aplay 写时只等 100 毫秒，写不进去的直接丢，
+        一次发 2.6 秒只放出前 1.5 秒左右（测试音 D）；长的要分段、按播放速度发（测试音 F）。
+        """
         if not self._playing:
             await self.call("start_play", PLAY_CONFIG)
             self._playing = True
+        await self.send_play(pcm)
+
+    async def send_play(self, pcm: bytes):
+        """原样发一段要放的声音（不起 aplay、不垫静音）"""
         stream = {"id": str(uuid.uuid4()), "tag": "play", "bytes": list(pcm)}
         await self.ws.send(json.dumps(stream, separators=(",", ":")).encode())
 

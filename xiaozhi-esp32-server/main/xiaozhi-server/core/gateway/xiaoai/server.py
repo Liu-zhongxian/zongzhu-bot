@@ -1,4 +1,4 @@
-"""在宗主后端开 4399 端口接小米音箱（G19i）。第 1 步：连上后放提示音、报麦克风音量。"""
+"""在宗主后端开 4399 端口接小米音箱（G19i）。第 1 步：连上后放提示音、报麦克风音量；第 2 步：认唤醒词，回"在"。"""
 import asyncio
 import math
 import struct
@@ -9,13 +9,17 @@ from pathlib import Path
 import websockets
 
 from config.logger import setup_logging
-from core.gateway.xiaoai.protocol import PLAY_CONFIG, ClientError, SpeakerLink
+from core.gateway.xiaoai import debug, prompts, wake
+from core.gateway.xiaoai.protocol import PLAY_CONFIG, ClientError, SpeakerLink, silence
 
 TAG = __name__
 logger = setup_logging()
 
 DEFAULT_PORT = 4399
 LEVEL_REPORT_SECONDS = 15  # 连上后这么久里每秒报一次麦克风音量（第 1 步验收用）
+WAKE_REPLY = "在"
+# 放"在"后再多这么久不认唤醒词（音箱放出来比发出去晚约 0.1 秒，加上房间回声）
+REPLY_ECHO_SECONDS = 0.2
 
 
 def settings(config):
@@ -44,10 +48,6 @@ def beep(freq=880, ms=150, rate=PLAY_CONFIG["sample_rate"], volume=0.3):
     return struct.pack(f"<{count}h", *samples)
 
 
-def silence(ms, rate=PLAY_CONFIG["sample_rate"]):
-    return b"\0\0" * (rate * ms // 1000)
-
-
 class LevelMeter:
     """把麦克风 PCM 攒满一秒报一次音量（均方根，0–32767），只报连上后的头几秒"""
 
@@ -72,6 +72,17 @@ class XiaoaiServer:
     def __init__(self, config):
         self.config = config
         self.links: set[SpeakerLink] = set()
+        self.spotter = None
+
+    def _load_spotter(self, xiaoai):
+        words = xiaoai.get("wake_words") or list(wake.DEFAULT_WAKE_WORDS)
+        try:
+            self.spotter = wake.Spotter(xiaoai.get("kws_model_dir") or wake.DEFAULT_MODEL_DIR, words,
+                                        score=float(xiaoai.get("kws_score", 2.0)),
+                                        threshold=float(xiaoai.get("kws_threshold", wake.DEFAULT_THRESHOLD)))
+            logger.bind(tag=TAG).info(f"音箱唤醒词：{'、'.join(words)}")
+        except Exception as e:
+            logger.bind(tag=TAG).error(f"音箱唤醒词识别没有启动：{type(e).__name__} {e}")
 
     def _check_auth(self, connection, request):
         token = read_token(settings(self.config))
@@ -88,6 +99,7 @@ class XiaoaiServer:
         if not read_token(xiaoai):
             logger.bind(tag=TAG).error("gateway.xiaoai.token_file 没配或读不到，不接音箱")
             return
+        await asyncio.to_thread(self._load_spotter, xiaoai)
         try:
             async with websockets.serve(self._handle, "0.0.0.0", port, process_request=self._check_auth,
                                         ping_interval=None, max_size=None):
@@ -99,20 +111,74 @@ class XiaoaiServer:
 
     async def _handle(self, ws):
         address = ws.remote_address[0]
+        loop = asyncio.get_running_loop()
+        xiaoai = settings(self.config)
+        recorder = debug.Recorder(xiaoai["debug_dir"]) if xiaoai.get("debug_dir") else None
+        if recorder:
+            logger.bind(tag=TAG).info(f"音箱调试录音：{recorder.wav_path}")
+        note = recorder.event if recorder else (lambda text: None)
         meter = LevelMeter(lambda level: logger.bind(tag=TAG).info(f"音箱麦克风音量：{level}"))
-        link = SpeakerLink(ws, on_record=meter.feed,
-                           on_event=lambda event, data: logger.bind(tag=TAG).debug(f"音箱事件 {event}: {data}"))
+        link = SpeakerLink(ws, on_event=lambda event, data: logger.bind(tag=TAG).debug(f"音箱事件 {event}: {data}"))
+        listener = None
+        if self.spotter:
+            listener = wake.WakeListener(
+                self.spotter, lambda word: loop.call_soon_threadsafe(self._woken, link, listener, word, note),
+                on_ignored=lambda word: loop.call_soon_threadsafe(note, f"认出唤醒词但在放声音，忽略：{word}"))
+
+        def on_record(pcm):
+            if recorder:
+                recorder.mic(pcm)
+            meter.feed(pcm)
+            if listener:
+                listener.feed(pcm)
+
+        link.on_record = on_record
         self.links.add(link)
         runner = asyncio.create_task(link.run())
+        warm = asyncio.create_task(prompts.phrase(self.config, WAKE_REPLY))  # 先合成好"在"
+        warm.add_done_callback(lambda t: t.cancelled() or t.exception())  # 失败了唤醒时再合成一次
         try:
             version = await link.call("get_version")
             logger.bind(tag=TAG).info(f"小米音箱已连接：{address}，Client 版本 {version}")
             await link.start_recording()
-            await link.play(beep(880) + silence(100) + beep(1320) + silence(200))
+            note("start_recording 已回应")
+            if recorder and xiaoai.get("debug_probe"):
+                await debug.probe(link, recorder, asyncio.sleep)
+                link._playing = True
+            else:
+                # 一声：以前两声只隔 0.1 秒，录音里两声都放出来了，但被回声连成一片，听起来像一声
+                await link.play(beep(1320, 200))
+                note("发出连上提示音")
             await runner
         except (ConnectionError, ClientError, asyncio.TimeoutError, websockets.ConnectionClosed) as e:
             logger.bind(tag=TAG).warning(f"小米音箱连接出错：{address} {type(e).__name__} {e}")
         finally:
             runner.cancel()
+            warm.cancel()
+            if listener:
+                listener.close()
+            if recorder:
+                recorder.close()
             self.links.discard(link)
             logger.bind(tag=TAG).info(f"小米音箱断开：{address}")
+
+    def _woken(self, link, listener, word, note=lambda text: None):
+        logger.bind(tag=TAG).info(f"音箱唤醒：{word}")
+        note(f"认出唤醒词：{word}")
+        asyncio.create_task(self._reply(link, listener, note))
+
+    async def _reply(self, link, listener, note=lambda text: None):
+        """回一声"在"；合成不出来就用提示音代替"""
+        try:
+            pcm = await prompts.phrase(self.config, WAKE_REPLY)
+        except Exception as e:
+            logger.bind(tag=TAG).warning(f"合成「{WAKE_REPLY}」失败，用提示音代替：{type(e).__name__} {e}")
+            pcm = beep(1320)
+        # 放的时候认出来的不算
+        seconds = len(pcm) / (2 * PLAY_CONFIG["sample_rate"]) + REPLY_ECHO_SECONDS
+        listener.mute(seconds)
+        try:
+            await link.play(pcm)
+            note(f"发出「{WAKE_REPLY}」：{len(pcm) / 2 / PLAY_CONFIG['sample_rate']:.3f} 秒，忽略唤醒 {seconds:.3f} 秒")
+        except (ConnectionError, ClientError, asyncio.TimeoutError, websockets.ConnectionClosed) as e:
+            logger.bind(tag=TAG).warning(f"放「{WAKE_REPLY}」失败：{type(e).__name__} {e}")

@@ -7,7 +7,10 @@
         enabled: true
         port: 4399                                   # 音箱 /data/open-xiaoai/server.txt 里写的端口
         token_file: ../../../private/open-xiaoai-token.txt   # 和音箱上 /data/open-xiaoai/token.txt 一样
+        wake_words: [你好宗主, 宗主你好]              # 可选
+        kws_model_dir: models/sherpa-onnx-kws-open-xiaoai   # 可选，唤醒词模型
+        kws_threshold: 0.05                           # 可选，越低越容易唤醒
 
-第 1 步只通声音：音箱连上后放两声提示音，之后 15 秒在日志里报麦克风音量。
-唤醒、对话在后面几步（docs/records/GATEWAY-TASKS.md G19i）。
+第 1 步通声音（连上后放一声提示音、头 15 秒在日志里报麦克风音量）；第 2 步认唤醒词、回"在"。
+对话在后面几步（docs/records/GATEWAY-TASKS.md G19i）。排查声音问题用 debug.py（录麦克风、放测试音）。
 """

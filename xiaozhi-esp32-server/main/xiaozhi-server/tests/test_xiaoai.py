@@ -1,4 +1,4 @@
-"""G19i 第 1 步：宗主后端开端口接小米音箱。假 Client 照 open-xiaoai Client 的消息格式回应
+"""G19i 第 1、2 步：宗主后端开端口接小米音箱，认唤醒词回"在"。假 Client 照 open-xiaoai Client 的消息格式回应
 （xiaoai-bridge/speaker/client/client-rust/src/services/connect/）。"""
 import asyncio
 import json
@@ -11,8 +11,8 @@ from unittest import mock
 
 import websockets
 
-from core.gateway.xiaoai import server
-from core.gateway.xiaoai.protocol import PLAY_CONFIG, RECORD_CONFIG, ClientError, SpeakerLink
+from core.gateway.xiaoai import prompts, server, wake
+from core.gateway.xiaoai.protocol import PLAY_CONFIG, RECORD_CONFIG, ClientError, SpeakerLink, silence
 
 
 def free_port():
@@ -60,6 +60,12 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         self.config = {"gateway": {"xiaoai": {"enabled": True, "port": self.port, "token_file": str(token)}}}
         self.levels = []
         self.server = server.XiaoaiServer(self.config)
+        self.spotter = FakeSpotter()
+        patches = [mock.patch.object(server.wake, "Spotter", lambda *a, **k: self.spotter),
+                   mock.patch.object(prompts, "phrase", mock.AsyncMock(return_value=b"\x01\x00" * 2400))]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
         self.task = asyncio.create_task(self.server.start())
         await asyncio.sleep(0.2)
 
@@ -91,8 +97,25 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(commands, ["get_version", "start_recording", "start_play"])
         self.assertEqual(client.commands[1][1], RECORD_CONFIG)
         self.assertEqual(client.commands[2][1], PLAY_CONFIG)
-        # 两声提示音加空白，24 kHz 16 位
-        self.assertEqual(len(client.played), len(server.beep(880) + server.silence(100) + server.beep(1320) + server.silence(200)))
+        # 一声提示音，开头不垫静音
+        self.assertEqual(bytes(client.played), server.beep(1320, 200))
+
+    async def test_wake_word_gets_a_reply(self):
+        async with self.connect() as ws:
+            client = FakeClient(ws)
+            runner = asyncio.create_task(client.run())
+            for _ in range(50):
+                if client.played:
+                    break
+                await asyncio.sleep(0.05)
+            before = len(client.played)
+            await client.record(b"WAKE" * 100)
+            for _ in range(50):
+                if len(client.played) > before:
+                    break
+                await asyncio.sleep(0.05)
+            runner.cancel()
+        self.assertEqual(bytes(client.played[before:]), b"\x01\x00" * 2400)  # "在"，原样
 
     async def test_microphone_level_is_reported(self):
         reports = []
@@ -117,6 +140,88 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         with mock.patch.object(server.logger, "bind") as bind:
             await asyncio.wait_for(other.start(), 2)
         self.assertIn("被占用", bind.return_value.error.call_args.args[0])
+
+
+class FakeSpotter:
+    """收到含 WAKE 的声音就"认出"唤醒词"""
+
+    def create_stream(self):
+        return None
+
+    def feed(self, stream, pcm):
+        return "你好宗主" if b"WAKE" in pcm else None
+
+
+class WakeListenerTest(unittest.TestCase):
+    def test_wake_while_muted_is_ignored_but_audio_still_goes_in(self):
+        now = [100.0]
+        heard, fed = [], []
+        spotter = FakeSpotter()
+        original = spotter.feed
+        spotter.feed = lambda stream, pcm: (fed.append(pcm), original(stream, pcm))[1]
+        listener = wake.WakeListener(spotter, heard.append, clock=lambda: now[0])
+        listener.mute(1.0)
+        listener.feed(b"WAKE")  # 放"在"的时候认出来的：不算
+        listener.feed(b"....")
+        listener.close()
+        listener.thread.join(2)
+        self.assertEqual(heard, [])
+        self.assertEqual(fed, [b"WAKE", b"...."])  # 声音照样送进去，紧跟着喊的唤醒词不会缺开头
+
+        listener = wake.WakeListener(FakeSpotter(), heard.append, clock=lambda: now[0])
+        listener.feed(b"WAKE")
+        listener.close()
+        listener.thread.join(2)
+        self.assertEqual(heard, ["你好宗主"])
+
+    @unittest.skipUnless(Path(wake.DEFAULT_MODEL_DIR, "tokens.txt").exists(), "本机没有唤醒词模型")
+    def test_keyword_lines_with_the_real_model(self):
+        model = Path(wake.DEFAULT_MODEL_DIR)
+        lines = wake.keyword_lines(["你好宗主"], str(model / "tokens.txt"), str(model / "bpe.model"))
+        self.assertEqual(lines, ["你 好 宗 主 @你好宗主"])
+
+
+class ReplyTest(unittest.IsolatedAsyncioTestCase):
+    async def test_tts_failure_falls_back_to_a_beep(self):
+        link, listener = mock.Mock(play=mock.AsyncMock()), mock.Mock()
+        with mock.patch.object(prompts, "phrase", mock.AsyncMock(side_effect=RuntimeError("offline"))), \
+                mock.patch.object(server.logger, "bind"):
+            await server.XiaoaiServer({})._reply(link, listener)
+        link.play.assert_awaited_once_with(server.beep(1320))
+        listener.mute.assert_called_once()
+
+
+class PlayTest(unittest.IsolatedAsyncioTestCase):
+    async def test_player_starts_once_and_audio_goes_out_as_is(self):
+        sent = []
+
+        class Ws:
+            async def send(self, message):
+                sent.append(message)
+
+        link = SpeakerLink(Ws())
+        link.call = mock.AsyncMock()
+        await link.play(b"\x01\x00" * 10)
+        await link.play(b"\x02\x00" * 10)
+        first, second = (bytes(json.loads(m)["bytes"]) for m in sent)
+        self.assertEqual(first, b"\x01\x00" * 10)
+        self.assertEqual(second, b"\x02\x00" * 10)
+        link.call.assert_awaited_once_with("start_play", PLAY_CONFIG)
+
+
+class TrimTest(unittest.TestCase):
+    def test_silence_before_and_after_is_cut(self):
+        # 和 EdgeTTS 的"在"一样：前 0.127 秒静音、0.29 秒有声、后 1.45 秒静音（2026-11-02 实测）
+        rate = 24000
+        voice = struct.pack("<6960h", *([8000, -8000] * 3480))
+        pcm = silence(127) + voice + silence(1455)
+        trimmed = prompts.trim(pcm, rate)
+        margin = rate * 30 // 1000 * 2
+        self.assertEqual(len(trimmed), len(voice) + 2 * margin)
+        self.assertIn(voice, trimmed)
+
+    def test_all_silence_is_left_alone(self):
+        self.assertEqual(prompts.trim(silence(100), 24000), silence(100))
 
 
 class ConfigTest(unittest.IsolatedAsyncioTestCase):
