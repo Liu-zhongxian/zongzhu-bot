@@ -336,6 +336,24 @@ class PlayerTest(unittest.IsolatedAsyncioTestCase):
             self.assertLessEqual(already - (t - start), device.SEND_AHEAD + 1e-6)
 
 
+    async def test_notes_when_each_sentence_starts_and_when_the_speaker_runs_dry(self):
+        from core.gateway.xiaoai import device
+        clock = FakeClock()
+        notes = []
+        player = device.Player(mock.Mock(play=mock.AsyncMock()), clock=clock, note=notes.append)
+        player.mark("第一句")
+        player.add(b"\0\0" * 12000)  # 0.5 秒
+        await asyncio.sleep(0.01)
+        clock.now += 0.8               # 放完了 0.3 秒，下一句才到
+        player.mark("第二句")
+        player.add(b"\0\0" * 12000)
+        await asyncio.sleep(0.01)
+        player.close()
+        self.assertEqual(notes[0], "开始放：第一句（约 0.00 秒后出声）")
+        self.assertEqual(notes[1], "音箱空了 0.30 秒（上一段放完，下一段还没到）")
+        self.assertTrue(notes[2].startswith("开始放：第二句"))
+
+
 class DeviceTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         import opuslib_next

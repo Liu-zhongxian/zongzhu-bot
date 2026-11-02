@@ -82,25 +82,45 @@ class VirtualSocket:
             self._on_close()
 
 
-class Player:
-    """把后端发来的 PCM 分段、按播放速度发给音箱"""
+# 排查卡顿（G19j，2026-11-02 "月亮的小故事中间有点卡顿"，录音里只看得出句子之间停 0.6–1.4 秒）：
+# 两句声音之间没接上超过这么久，在调试记录里写一笔"音箱空了"；更久的是两段话之间，不记
+GAP_NOTE = (0.05, 5.0)
 
-    def __init__(self, link, rate=PLAY_CONFIG["sample_rate"], clock=time.monotonic, sleep=asyncio.sleep):
+
+class Player:
+    """把后端发来的 PCM 分段、按播放速度发给音箱。
+
+    note（调试记录）里写：每句的第一段声音什么时候发给音箱（mark），音箱什么时候空着等声音（缓冲断了）。
+    """
+
+    def __init__(self, link, rate=PLAY_CONFIG["sample_rate"], clock=time.monotonic, sleep=asyncio.sleep,
+                 note=lambda text: None):
         self.link = link
         self.bytes_per_second = rate * 2
         self.clock = clock
         self.sleep = sleep
+        self.note = note
         self.buffer = bytearray()
         self.play_end = 0.0  # 已经发出去的声音大约放到什么时候
+        self.received = 0    # 一共收到多少字节
+        self.sent = 0        # 一共发出去多少字节（清掉的也算，和 received 对齐）
+        self.marks = []      # (收到第几个字节时开始的, 句子)
         self.wakeup = asyncio.Event()
         self.task = asyncio.create_task(self._run())
 
     def add(self, pcm):
         self.buffer += pcm
+        self.received += len(pcm)
         self.wakeup.set()
 
+    def mark(self, text):
+        """接下来收到的声音是这一句的"""
+        self.marks.append((self.received, text))
+
     def clear(self):
+        self.sent += len(self.buffer)
         self.buffer.clear()
+        self.marks.clear()
 
     def busy(self):
         """还有没发的，或者发出去的还没放完"""
@@ -120,6 +140,12 @@ class Player:
                 continue
             chunk = bytes(self.buffer[:piece])
             del self.buffer[:piece]
+            gap = now - self.play_end
+            if self.play_end and GAP_NOTE[0] < gap < GAP_NOTE[1]:
+                self.note(f"音箱空了 {gap:.2f} 秒（上一段放完，下一段还没到）")
+            while self.marks and self.marks[0][0] <= self.sent:
+                self.note(f"开始放：{self.marks.pop(0)[1]}（约 {max(0.0, self.play_end - now):.2f} 秒后出声）")
+            self.sent += len(chunk)
             self.play_end = max(now, self.play_end) + len(chunk) / self.bytes_per_second
             try:
                 await self.link.play(chunk)
@@ -146,7 +172,7 @@ class SpeakerDevice:
         self.handler = None
         self.socket = None
         self.hello = None
-        self.player = Player(link, clock=clock)
+        self.player = Player(link, clock=clock, note=note)
         self.encoder = opuslib_next.Encoder(MIC_RATE, 1, opuslib_next.APPLICATION_VOIP)
         self.decoder = None
         self.mic = bytearray()
@@ -295,6 +321,7 @@ class SpeakerDevice:
             self.mic.clear()
         elif kind == "tts" and state == "sentence_start":
             self.note(f"后端说：{data.get('text')}")
+            self.player.mark(str(data.get("text") or "")[:20])
         elif kind == "tts" and state == "stop":
             self.tts_done = True
 
