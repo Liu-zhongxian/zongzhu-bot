@@ -1,0 +1,5 @@
+# 可选：用 pytest 跑后端全部测试（连同上游给 pytest 写的那几个文件）时再装；只用 unittest 跑不需要。
+# .venv/bin/python -m pip install -r requirements-macos-test.txt
+pytest==9.1.1
+pluggy==1.7.0
+iniconfig==2.3.1

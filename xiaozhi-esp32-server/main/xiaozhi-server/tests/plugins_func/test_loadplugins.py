@@ -4,23 +4,16 @@ We import a real subpackage (`plugins_func.functions`) and verify the
 import side-effect runs. This protects against accidentally deleting
 `auto_import_modules` from `app.py` startup code.
 
-NOTE: This test is currently skipped because importing
-`plugins_func.functions` triggers heavy module imports (cache_manager,
-etc.) that may not initialise in the test environment. To enable this
-test, ensure `data/.config.yaml` exists in the test environment or refactor
-plugin discovery to be lazy.
+导入 `plugins_func.functions` 会连带导入 cache_manager 等，以前没有 `data/.config.yaml` 就报错，所以跳过；
+现在 tests/__init__.py 先放好了默认配置，不再跳过。
 """
-import pytest
+import unittest
 
-pytest.skip(
-    "plugins_func.functions import has side effects that need data/.config.yaml; skipped",
-    allow_module_level=True,
-)
-
-from plugins_func.functions import get_time  # noqa: F401  (unreachable when skipped)
+from plugins_func.functions import get_time  # noqa: F401
 
 
-def test_functions_package_importable():
-    """If this test runs, plugins_func.functions.__init__.py has been imported."""
-    import plugins_func.functions as fns
-    assert hasattr(fns, "get_time")
+class LoadPluginsTest(unittest.TestCase):
+    def test_functions_package_importable(self):
+        """If this test runs, plugins_func.functions.__init__.py has been imported."""
+        import plugins_func.functions as fns
+        self.assertTrue(hasattr(fns, "get_time"))

@@ -320,7 +320,7 @@ python scripts/build.py lckfb/szpi-esp32s3 --name lichuang-dev-zongzhu          
 | `local-music/` | `local_music_setup.sh` 下载的程序和 go-music-dl 的数据（含登录 Cookie）；只在本机，不进 Git |
 | `examples/` | 不含真实凭证的配置模板 |
 | `docs/` | 本文、各板说明，目录见 [docs/README.md](README.md) |
-| `requirements-macos*.txt` | 后端依赖：默认（X-ASR）、可选的 FunASR、当前测试过的完整版本 |
+| `requirements-macos*.txt` | 后端依赖：默认（X-ASR）、可选的 FunASR、可选的 pytest、当前测试过的完整版本 |
 
 <details>
 <summary>关键文件</summary>
@@ -348,13 +348,14 @@ python scripts/build.py lckfb/szpi-esp32s3 --name lichuang-dev-zongzhu          
 
 ```sh
 cd xiaozhi-esp32-server/main/xiaozhi-server
-../../../.venv/bin/python -m unittest tests                 # 全部；只跑一个文件：-m unittest tests.test_gateway
+../../../.venv/bin/python -m unittest tests                 # 不用另装东西；只跑一个文件：-m unittest tests.test_gateway
+../../../.venv/bin/python -m pytest tests                   # 连同 pytest 写法的测试一起跑，先装 requirements-macos-test.txt
 cd ../../../web && node --test test/*.test.mjs    # 网页刷机的库代码
 ```
 
 `tools/verify/` 里是连真实设备链路的端到端检查（在仓库根目录运行，例如 `python tools/verify/verify_bot_reply.py`）。`verify_bot_bridge.py`、`verify_bot_reply.py`、`verify_bot_speech.py` 会真的调用你配置的 Bot（每个脚本发一条无副作用的测试任务），只在你有权限的测试环境里用，运行前先启动后端；这几个脚本和 `verify_local_music.py` 都用 macOS 合成语音模拟板子说话（共用 `sim_board.py`），需要 macOS 和 ffmpeg；`verify_bot_wait_display.py` 用本机测试文件，正常情况下不会调用 Webhook；`verify_local_music.py` 用 macOS 合成语音模拟设备说点歌指令，会在电脑上放几秒歌，不调用 Bot。
 
-用上面的 `unittest` 命令跑，不要用 pytest：pytest 会加载上游的 `tests/conftest.py`，它把 `httpx.AsyncClient` 整个换成了一律拒绝连接的替身，Bot 测试自己传入的模拟网络也会被拦住，测试就会失败。反过来，`unittest` 会自动跳过上游给 pytest 写的那几个测试文件（`tests/__init__.py`），也不需要 `data/.config.yaml`，clone 下来就能跑。语音识别对比用 `tools/asr-bench/`。
+两条命令都不需要 `data/.config.yaml`，clone 下来就能跑，也不会真的发网络请求：测试只用仓库里的 `config.yaml`；没有自带模拟网络的 httpx 请求一律当作连不上（`tests/conftest.py`）。`unittest` 跑不了 pytest 写法的几个文件（`test_llm`、`test_tts` 等），会自动跳过（`tests/__init__.py`），`pytest` 两种都跑。`test_llm` 里有 3 项要真的 API Key，默认跳过；想真的请求大模型，`export RUN_LIVE_API_TESTS=1` 并在 `data/.config.yaml` 填好密钥再跑 pytest。语音识别对比用 `tools/asr-bench/`。
 
 ## 已知限制
 

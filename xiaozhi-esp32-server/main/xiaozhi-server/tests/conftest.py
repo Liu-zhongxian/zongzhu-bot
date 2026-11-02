@@ -7,8 +7,9 @@ External-API mock toggle (default: mocked)
 -------------------------------------------
 The dep-upgrade orchestrator and CI run this test suite *without* any
 real API credentials. By default the tests construct the actual provider
-objects from ``data/.config.yaml`` but route every network call through
-a recording shim, so no traffic leaves the host.
+objects from the repo's ``config.yaml`` only (``data/.config.yaml`` is not
+read, see "Configuration loading" below) and route every network call
+through a recording shim, so no traffic leaves the host.
 
 Set ``RUN_LIVE_API_TESTS=1`` to opt in to real network calls. In that
 mode the 5-module readiness check runs in strict form (any missing key
@@ -17,7 +18,8 @@ real providers.
 
 Configuration loading
 ---------------------
-Always uses the file-merge path (``config.yaml`` + ``data/.config.yaml``).
+Always uses the file-merge path: ``config.yaml`` plus ``PYTEST_CONFIG_FILE``
+if set, else ``data/.config.yaml`` in live mode only.
 ``manager-api`` is intentionally NOT contacted — pytest must work in a
 single-module deployment.
 """
@@ -64,11 +66,16 @@ except Exception:
 # ---------------------------------------------------------------------------
 # 优先级：
 #   1. 环境变量 ``PYTEST_CONFIG_FILE`` 指向的文件（推荐 — 隔离测试配置）
-#   2. data/.config.yaml（生产 / 单模块部署配置）
+#   2. 真请求模式（RUN_LIVE_API_TESTS=1）下用 data/.config.yaml（要里面的真密钥）
+#   3. 默认 mock 模式只用仓库里的 config.yaml，不读本机的 data/.config.yaml：
+#      clone 下来的仓库没有它，本机跑的结果也不该受个人配置影响（和 tests/__init__.py 一致）
 _DEFAULT_CUSTOM = _PROJECT_ROOT / "data" / ".config.yaml"
-_CUSTOM_CONFIG = Path(os.environ["PYTEST_CONFIG_FILE"]) if os.environ.get(
-    "PYTEST_CONFIG_FILE"
-) else _DEFAULT_CUSTOM
+if os.environ.get("PYTEST_CONFIG_FILE"):
+    _CUSTOM_CONFIG = Path(os.environ["PYTEST_CONFIG_FILE"])
+elif os.environ.get("RUN_LIVE_API_TESTS") == "1":
+    _CUSTOM_CONFIG = _DEFAULT_CUSTOM
+else:
+    _CUSTOM_CONFIG = _PROJECT_ROOT / "data" / ".config.yaml.__not_used_in_mock_mode__"
 
 
 def _load_via_file_merge() -> dict:
@@ -221,7 +228,6 @@ _MOCKED_MODULES: tuple[str, ...] = (
     "elevenlabs",
     "mem0",
     "mem0ai",
-    "freezegun",
 )
 
 # 这些包即使装了也强制 shim — 它们要么本地模型链 import 时炸
@@ -315,40 +321,29 @@ def _install_mock_layer() -> None:
         sys.modules[name] = shim
         sys.modules[f"{name}.exceptions"] = shim.exceptions
 
-    # 短化 asyncio.sleep 避免重试循环拖时间。
-    import asyncio
+    # 不再全局替换 asyncio.sleep：网关的等待、Bot 的轮询这些测试要靠真的 sleep 让出控制权，
+    # 换成立即返回会变成空转（2026-11-02）。
 
-    async def _fast_sleep(_seconds):
-        return None
-
-    asyncio.sleep = _fast_sleep  # type: ignore[assignment]
-
-    # 网络层 mock：如果真实 httpx 已加载，把它的 AsyncClient.send 替换成
-    # 立即抛 ConnectError 的桩，触发 ``_should_retry`` 走到 ``raise``，
-    # 但避免真发请求。Live 模式完全不安装这层。
+    # 网络层 mock：没有自带 transport 的 httpx 客户端一律连不上（抛 ConnectError），
+    # 触发 ``_should_retry`` 走到 ``raise``，但不真发请求。测试自己传了 transport
+    # （httpx.MockTransport 等）时照用测试的，客户端也还是真的 httpx 客户端（is_closed 等都在）。
+    # Live 模式完全不安装这层。
     if not LIVE_API_TESTS:
         try:
             import httpx as _httpx  # noqa: F401
 
-            class _FakeAsyncClient:
+            def _refuse(request):
+                raise _httpx.ConnectError("MOCK: connect refused", request=request)
+
+            class _FakeAsyncClient(_httpx.AsyncClient):
                 def __init__(self, *args, **kwargs):
-                    pass
+                    kwargs.setdefault("transport", _httpx.MockTransport(_refuse))
+                    super().__init__(*args, **kwargs)
 
-                async def send(self, *args, **kwargs):
-                    raise _httpx.ConnectError("MOCK: connect refused")
-
-                async def aclose(self):
-                    return None
-
-            class _FakeClient:
+            class _FakeClient(_httpx.Client):
                 def __init__(self, *args, **kwargs):
-                    pass
-
-                def send(self, *args, **kwargs):
-                    raise _httpx.ConnectError("MOCK: connect refused")
-
-                def close(self):
-                    return None
+                    kwargs.setdefault("transport", _httpx.MockTransport(_refuse))
+                    super().__init__(*args, **kwargs)
 
             _httpx.AsyncClient = _FakeAsyncClient  # type: ignore[misc]
             _httpx.Client = _FakeClient  # type: ignore[misc]
