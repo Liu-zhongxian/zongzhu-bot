@@ -16,6 +16,7 @@ A connection can narrow the skills with `conn.gateway_skills` (a list of names):
 sets [] so its sentences only go to the AI, and music (played on this Mac) never starts for it.
 Skills are in core/gateway/skills/ (see skill.py), AIs in core/gateway/agents/ (see agent.py).
 """
+import re
 import time
 import uuid
 
@@ -130,9 +131,34 @@ def _warn(conn, message):
         logger.bind(tag=TAG).warning(message)
 
 
+# G19c (2026-11-02 实测，"对"被交给了 Bot): a sentence that is only one of these is not sent anywhere.
+# A confirmation still goes to the AI when its last answer, within CONFIRM_SECONDS, asked a question.
+FILLERS = {"嗯", "嗯嗯", "啊", "哦", "噢", "呃", "额", "唉", "哎", "诶"}
+CONFIRMATIONS = {"对", "对对", "对的", "是", "是的", "好", "好的", "行", "可以"}
+CONFIRM_SECONDS = 120
+
+
+def _asked_a_question(conn):
+    said = getattr(conn, "gateway_last_said", None)
+    if not said or time.time() - said[0] > CONFIRM_SECONDS:
+        return False
+    end = said[1].rstrip("。！!…~～ \n")
+    return "？" in end[-40:] or "?" in end[-40:] or end.endswith(("吗", "呢"))
+
+
+def is_filler(conn, text):
+    plain = re.sub(r"[\W_]", "", text or "")
+    return plain in FILLERS or (plain in CONFIRMATIONS and not _asked_a_question(conn))
+
+
 async def dispatch(conn, text) -> bool:
     """True when a skill or the AI took the sentence; False leaves it to the upstream chat flow."""
     record = status.begin(conn, text)
+    if is_filler(conn, text):
+        # Nothing is said either: the device keeps listening for the real sentence
+        conn.logger.bind(tag=TAG).info(f"只有语气词，不提交: {text}")
+        status.finish(record, "filter", "语气词，不提交")
+        return True
     kind = status.classify(conn, text)
     conn.gateway_not_sent = None
     call = None if kind else _call_name(conn, text)

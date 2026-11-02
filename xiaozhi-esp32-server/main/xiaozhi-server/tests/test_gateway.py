@@ -55,6 +55,29 @@ class GatewayDispatchTest(unittest.IsolatedAsyncioTestCase):
         music.assert_not_awaited()
         bot.assert_awaited_once()
 
+    async def test_a_bare_filler_word_is_not_sent(self):
+        # G19c 实测：唤醒后只说了"对"，被交给了 Bot
+        music, bot = self.patch_handlers(bot=True)
+        for text in ("嗯。", "对", "好的！"):
+            self.assertTrue(await gateway.dispatch(make_conn(), text))
+        music.assert_not_awaited()
+        bot.assert_not_awaited()
+        self.assertTrue(await gateway.dispatch(make_conn(), "对，就是南乐县"))  # 有内容的照常交
+        bot.assert_awaited_once()
+
+    async def test_a_confirmation_goes_to_the_ai_after_it_asked(self):
+        music, bot = self.patch_handlers(bot=True)
+        conn = make_conn()
+        conn.gateway_last_said = (time.time(), "你说的是河南濮阳的南乐县吗？")
+        self.assertTrue(await gateway.dispatch(conn, "对"))
+        bot.assert_awaited_once()
+        conn.gateway_last_said = (time.time() - gateway.CONFIRM_SECONDS - 1, "你说的是南乐县吗？")
+        await gateway.dispatch(conn, "对")
+        bot.assert_awaited_once()  # 问得太久以前了
+        conn.gateway_last_said = (time.time(), "如果是别的地方，告诉我再查。")
+        await gateway.dispatch(conn, "嗯")
+        bot.assert_awaited_once()  # 语气词什么时候都不交
+
     async def test_connection_without_skills_goes_straight_to_the_bot(self):
         # 小米音箱那一路设 gateway_skills = []：音乐不管它说的话，板子照旧
         music, bot = self.patch_handlers(music=True, bot=True)

@@ -186,6 +186,7 @@ async def _say_after_ack(conn, text, show):
         }, ensure_ascii=False))
         conn.bot_ui_waiting = False
     conn.sentence_id = uuid.uuid4().hex
+    conn.gateway_last_said = (time.time(), text)
     await send_tts_message(conn, "start")
     conn.client_is_speaking = True
     speak_txt(conn, text)
@@ -196,6 +197,7 @@ async def say_reply(conn, reply: TextDelta, request_id):
     from core.handle.intentHandler import speak_txt
 
     text = reply.text
+    conn.gateway_last_said = (time.time(), text)  # a question in it lets a bare "对" through (gateway.is_filler)
     sentence_id = uuid.uuid4().hex
     conn.sentence_id = sentence_id
     conn.bot_reply_sentence_id = sentence_id
