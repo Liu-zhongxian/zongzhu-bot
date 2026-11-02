@@ -187,7 +187,15 @@ done
 
 `start.sh` 在前台运行，关掉终端服务就停了，不要同时开多个。后端占用 8000（WebSocket）和 8003（HTTP/OTA）两个端口。
 
-浏览器打开 `http://localhost:8003/gateway` 是网关页面：哪几块板子在线、在做什么，最近 30 句话各走了哪一层、交给了谁、多久出声。只能看、不能改，不显示任何密钥；局域网里的其他设备也能打开。数据只在内存里，后端重启后清空。
+浏览器打开 `http://localhost:8003/gateway` 是网关页面，局域网里的其他设备也能打开，页面上不显示任何密钥。三页：
+
+- **总览**：哪几块板子在线、在做什么（在听、在说、等 Bot 几秒）。
+- **最近的话**：最近 30 句各走了哪一层、交给了谁、多久出声。只在内存里，后端重启后清空。
+- **设备**：板子醒着时读到的 WiFi 和信号、IP、固件版本、内存、音量、亮度、主题，以及板子的 MCP 工具列表；板子待机后显示上次读到的值。可以改板子音量、屏幕亮度、主题（立创板的眼睛界面上暂时看不出主题变化），重启板子，让板子进配网热点（固件有这个工具时才显示）；最上面是这台 Mac 上点歌的上一首、暂停 / 继续、下一首、停止和电脑音量。改板子的按钮只在板子醒着时能用。
+
+默认打开页面就能改。不想让局域网里的人随便改，在 `.config.yaml` 里写 `gateway.password`，页面会先要口令（见 `examples/backend.config.yaml`）。
+
+**改唤醒词**（不用重刷固件）：板子连着后端时，在仓库根目录运行 `.venv/bin/python tools/wake_word.py 你好小雨`。脚本会等你喊唤醒词叫醒板子，然后让板子重启、下载换了唤醒词的资源包（约 4–5 MB，屏幕显示进度，过程中不要断电），之后用新唤醒词。资源包要和板子的固件同一版，脚本从 `firmware/` 里按型号和版本找；只支持中文唤醒词。
 
 **呼名**：先喊"你好宗主"唤醒，再说"嗨 <Bot 的名字>，……"（"嘿"也行），后面的话直接交给这个 Bot，不经过点歌；只喊名字回一句"我在。"，什么也不提交。Bot 的名字是它在 Grok 里的名字，写在 `.config.yaml` 的 `grok_bot.bot_name`（例如 `硬件`），不写时称呼是"Grok Bot""Grok"。以后接了第二个 AI，喊谁的名字，这块板子之后就交给谁，记在 `data/agent_sessions.json`，重连、重启后照旧。称呼也可以在 `gateway.call_names` 里整个替换。没唤醒时直接喊名字，板子听不到：板子只认它的唤醒词。
 
@@ -340,15 +348,13 @@ python scripts/build.py lckfb/szpi-esp32s3 --name lichuang-dev-zongzhu          
 
 ```sh
 cd xiaozhi-esp32-server/main/xiaozhi-server
-../../../.venv/bin/python -m unittest tests.test_grok_bot tests.test_grok_bot_phrases tests.test_grok_bot_reply \
-  tests.test_asr_text tests.test_tts_prefetch tests.test_device_allowlist tests.test_text_message_log tests.test_local_music \
-  tests.test_audio_prebuffer tests.test_gateway tests.test_gateway_status
+../../../.venv/bin/python -m unittest tests                 # 全部；只跑一个文件：-m unittest tests.test_gateway
 cd ../../../web && node --test test/*.test.mjs    # 网页刷机的库代码
 ```
 
 `tools/verify/` 里是连真实设备链路的端到端检查（在仓库根目录运行，例如 `python tools/verify/verify_bot_reply.py`）。`verify_bot_bridge.py`、`verify_bot_reply.py`、`verify_bot_speech.py` 会真的调用你配置的 Bot（每个脚本发一条无副作用的测试任务），只在你有权限的测试环境里用，运行前先启动后端；这几个脚本和 `verify_local_music.py` 都用 macOS 合成语音模拟板子说话（共用 `sim_board.py`），需要 macOS 和 ffmpeg；`verify_bot_wait_display.py` 用本机测试文件，正常情况下不会调用 Webhook；`verify_local_music.py` 用 macOS 合成语音模拟设备说点歌指令，会在电脑上放几秒歌，不调用 Bot。
 
-用上面的 `unittest` 命令跑，不要用 pytest：pytest 会加载上游的 `tests/conftest.py`，它把 `httpx.AsyncClient` 整个换成了一律拒绝连接的替身，Bot 测试自己传入的模拟网络也会被拦住，测试就会失败。语音识别对比用 `tools/asr-bench/`。
+用上面的 `unittest` 命令跑，不要用 pytest：pytest 会加载上游的 `tests/conftest.py`，它把 `httpx.AsyncClient` 整个换成了一律拒绝连接的替身，Bot 测试自己传入的模拟网络也会被拦住，测试就会失败。反过来，`unittest` 会自动跳过上游给 pytest 写的那几个测试文件（`tests/__init__.py`），也不需要 `data/.config.yaml`，clone 下来就能跑。语音识别对比用 `tools/asr-bench/`。
 
 ## 已知限制
 

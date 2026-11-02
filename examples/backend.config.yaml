@@ -48,6 +48,7 @@ grok_bot:
 #   progress_prompts: false # 等 AI 回复时语音报进度（30 秒、再 60 秒、之后每 120 秒），默认关
 #   call_names:             # 呼名"嗨 <称呼>"；不写时 Grok Bot 用 grok_bot.bot_name，没有名字时用 Grok Bot、Grok
 #     grok_bot: [硬件]
+#   password: 换成你自己的口令  # 网关页面（/gateway）改设置前要先输口令；不写时打开页面就能改
 prompt: 你是宗主，用简洁自然的中文回答用户，适合语音播报。
 wakeup_words: [你好宗主, 你好小智, 嘿你好呀]
 enable_greeting: true

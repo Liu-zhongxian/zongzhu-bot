@@ -165,7 +165,15 @@ Speech recognition defaults to X-ASR and needs no torch; hotwords and post-recog
 
 `start.sh` runs in the foreground; closing the terminal stops the service. Don't run more than one. The backend uses port 8000 (WebSocket) and 8003 (HTTP/OTA).
 
-Open `http://localhost:8003/gateway` in a browser for the gateway page: which boards are online and what they're doing, and for the last 30 sentences which layer handled each one, who got it and how long until sound. It's read-only, shows no keys, and other devices on the LAN can open it too. Data lives in memory and is cleared when the backend restarts.
+Open `http://localhost:8003/gateway` in a browser for the gateway page. Other devices on the LAN can open it too, and it shows no keys. Three pages:
+
+- **Overview**: which boards are online and what they're doing (listening, speaking, waiting N seconds for the Bot).
+- **Recent sentences**: for the last 30 sentences, which layer handled each one, who got it and how long until sound. Kept in memory only, cleared when the backend restarts.
+- **Devices**: what was read from each board while it was awake: WiFi and signal, IP, firmware version, memory, volume, brightness, theme, and the board's MCP tool list; after the board goes to standby the last values are shown. You can change the board's volume, screen brightness and theme (the theme makes no visible difference on the 立创 board's eye UI yet), reboot it, and put it into its WiFi setup hotspot (shown only if the firmware has that tool). At the top: previous, pause / resume, next, stop and computer volume for music playing on this Mac. Board controls work only while the board is awake.
+
+Anyone who opens the page can change things by default. To require a password, set `gateway.password` in `.config.yaml` (see `examples/backend.config.yaml`).
+
+**Changing the wake word** (no reflash): with the board connected to the backend, run `.venv/bin/python tools/wake_word.py 你好小雨` from the repo root. The script waits for you to wake the board, then makes it reboot and download an assets package with the new wake word (about 4–5 MB; the screen shows progress; don't cut power), after which the new wake word works. The assets package must match the board's firmware version; the script finds it in `firmware/` by model and version. Chinese wake words only.
 
 **Calling by name**: wake the board with "你好宗主" first, then say "嗨 <Bot name>, …" ("hi <name>"; "嘿" works too). Anything after the name goes straight to that Bot, skipping local music; the name alone gets "我在。" ("I'm here.") and nothing is submitted. The Bot name is the name it has in Grok, set as `grok_bot.bot_name` in `.config.yaml` (for example `硬件`); without it the call names are "Grok Bot" and "Grok". Once a second AI is added, the board keeps using whichever AI was called last, stored in `data/agent_sessions.json` across reconnects and restarts. `gateway.call_names` replaces the names altogether. Calling a name without waking the board does nothing: the board only listens for its wake word.
 
@@ -318,15 +326,13 @@ In each board's directory:
 
 ```sh
 cd xiaozhi-esp32-server/main/xiaozhi-server
-../../../.venv/bin/python -m unittest tests.test_grok_bot tests.test_grok_bot_phrases tests.test_grok_bot_reply \
-  tests.test_asr_text tests.test_tts_prefetch tests.test_device_allowlist tests.test_text_message_log tests.test_local_music \
-  tests.test_audio_prebuffer tests.test_gateway tests.test_gateway_status
+../../../.venv/bin/python -m unittest tests                 # all; one file: -m unittest tests.test_gateway
 cd ../../../web && node --test test/*.test.mjs    # web flasher library code
 ```
 
 `tools/verify/` holds end-to-end checks against the real pipeline (run from the repo root, e.g. `python tools/verify/verify_bot_reply.py`). `verify_bot_bridge.py`, `verify_bot_reply.py` and `verify_bot_speech.py` call the Bot you configured for real (one harmless test task each); only use them in a test environment you're authorized for, and start the backend first. They and `verify_local_music.py` speak through a simulated board using macOS speech synthesis (shared `sim_board.py`), so they need macOS and ffmpeg. `verify_bot_wait_display.py` uses local test files and normally doesn't call the webhook. `verify_local_music.py` speaks music commands with macOS speech synthesis as a simulated device; it plays a few seconds of music and doesn't call the Bot.
 
-Run the tests with the `unittest` command above, not pytest. pytest loads upstream's `tests/conftest.py`, which replaces `httpx.AsyncClient` with a stub that refuses every connection, including the mock transports the Bot tests pass in. `tools/asr-bench/` compares speech recognizers.
+Run the tests with the `unittest` command above, not pytest. pytest loads upstream's `tests/conftest.py`, which replaces `httpx.AsyncClient` with a stub that refuses every connection, including the mock transports the Bot tests pass in. The other way round, `unittest` skips upstream's pytest-only test files automatically (`tests/__init__.py`) and doesn't need `data/.config.yaml`, so it runs right after cloning. `tools/asr-bench/` compares speech recognizers.
 
 ## Known limitations
 
