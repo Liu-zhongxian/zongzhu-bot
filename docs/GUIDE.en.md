@@ -100,25 +100,49 @@ Needs macOS 14 or later on Apple Silicon, or macOS 15 or later on Intel.
 
 ## Xiaomi Smart Speaker Pro (optional)
 
-With the [open-xiaoai](https://github.com/idootop/open-xiaoai) patched firmware, a Xiaomi Smart Speaker Pro (OH2P) works like a Zongzhu board without a screen: say "你好宗主", it answers "在", and what you say next goes through the same gateway (local music, Bot, calling by name); the answer is spoken by the speaker. XiaoAI keeps working.
+With the [open-xiaoai](https://github.com/idootop/open-xiaoai) patched firmware and its Client, a Xiaomi Smart Speaker Pro (OH2P) connects straight to the Zongzhu backend and works like a board without a screen: say "你好宗主", it answers "在", what you say next goes to the Bot (calling another AI by name works too), and the answer is spoken by the speaker. Say "你好宗主" while it speaks to interrupt; after your new question it finishes what it was saying, then reads the new answer (starting with "你刚才问……", "you just asked"). XiaoAI keeps working. Local music is not wired to the speaker: songs play on the computer, so "暂停" or "放首歌" said to the speaker go to the Bot.
 
 ```
-speaker (patched firmware + Client) --4399--> xiaoai-bridge on your computer --Xiaozhi protocol--> Zongzhu backend
+speaker (patched firmware + Client) --WebSocket 4399--> Zongzhu backend (core/gateway/xiaoai/)
 ```
 
-- **On the speaker**: the patched firmware enables SSH, turns off Xiaomi's automatic updates and runs `/data/init.sh` at boot; the open-xiaoai Client hands the microphone and playback to your computer.
-- **On your computer**: `xiaoai-bridge/` spots the wake word and the end of speech locally, then connects to the backend like a Xiaozhi board (it gets a token from OTA, and reconnects on the next wake after the backend closes an idle connection). The gateway page lists it as "小米音箱 Pro"; it has no screen and no MCP tools, so there are no volume or brightness controls.
+- **On the speaker**: the patched firmware enables SSH, turns off Xiaomi's automatic updates and runs `/data/init.sh` at boot; the open-xiaoai Client hands the microphone and playback to the backend.
+- **In the backend**: the wake word is spotted in the backend (sherpa-onnx); after that the speaker uses the same recognition, gateway and TTS as a board. The speaker records 4 channels: 3 microphones plus what the speaker itself is playing. The backend uses only the microphones, so you can wake it while it speaks, and it starts listening only after the speaker has really finished and the echo has died down, so it doesn't take its own voice for yours. The gateway page lists it as "小米音箱 Pro"; it has no screen and no MCP tools, so there are no volume or brightness controls.
 
-Steps (details in [xiaoai-bridge/README.md](../xiaoai-bridge/README.md), Chinese):
+Steps (flashing and Client details in sections 1–6 and 8 of [xiaoai-bridge/README.md](../xiaoai-bridge/README.md), Chinese):
 
 1. Check the speaker's version and find the matching official package with `ota_query.py`.
 2. `build_image.sh` patches and repacks it, and checks that only the 8 patched files changed.
 3. `backup_readonly.sh` makes a read-only backup in burning mode; use it to see which A/B slot is in use.
 4. `flash_slot.sh` writes only the other slot and switches the boot slot only after a byte-by-byte read-back check, so the official system stays as a fallback.
-5. `build_client.sh` builds the Client, `install_client.sh` installs it on the speaker.
-6. `scripts/run-zongzhu.sh` starts the bridge.
+5. `build_client.sh` builds the Client; generate the token.
+6. Download the wake word model into the backend (run in `xiaozhi-esp32-server/main/xiaozhi-server/`; the archive is about 490 MB, only 5 files, about 120 MB, are kept):
 
-Tested end to end only on the OH2P with firmware 1.62.2 and an Apple Silicon Mac. **Flashing can brick the speaker**; make the backup first.
+   ```sh
+   curl -L -o /tmp/xiaoai-models.zip https://github.com/coderzc/open-xiaoai-bridge/releases/download/vad-kws-asr-models/models.zip
+   unzip -j -o /tmp/xiaoai-models.zip models/encoder.onnx models/decoder.onnx models/joiner.onnx \
+     models/tokens.txt models/bpe.model -d models/sherpa-onnx-kws-open-xiaoai
+   rm /tmp/xiaoai-models.zip
+   ```
+
+7. Turn the speaker on in the backend config `data/.config.yaml`, then restart the backend:
+
+   ```yaml
+   gateway:
+     xiaoai:
+       enabled: true
+       port: 4399                       # the port you give the Client
+       token_file: /full/path/token.txt # the token from step 5, the same as on the speaker
+       # wake_words: [你好宗主, 宗主你好]
+       # kws_threshold: 0.05            # lower wakes more easily
+   ```
+
+   The log shows `小米音箱接入：ws://0.0.0.0:4399` when it is listening.
+8. `install_client.sh <speaker IP> ws://<computer's LAN IP>:4399 <token file>` installs the Client on the speaker; about 20 s later the backend log shows `小米音箱已连接` and the speaker beeps.
+
+The computer's IP is written into the speaker, so give the computer a fixed IP in your router. Tested end to end only on the OH2P with firmware 1.62.2 and an Apple Silicon Mac. **Flashing can brick the speaker**; make the backup first.
+
+The bridge that used to run on its own on the computer (in `xiaoai-bridge/`) is no longer started: the speaker now connects straight to the backend. The directory stays for reference; the patches, the Client source and the flashing and install scripts are still in its `speaker/`.
 
 ## Manual setup (without the web page)
 
@@ -294,7 +318,7 @@ These builds default to the official XiaoZhi OTA server. To build in your own ba
 | `web/` | The web flasher and the macOS backend installer `install-mac.sh`, published to GitHub Pages on every push to main |
 | `deploy/` | Deploying the backend to a public Linux server (Caddy, systemd, server config) |
 | `tools/` | `build_firmware.py` (builds with the OTA URL, packages, flashes), `build_web.py` (assembles the site), `autostart.sh` (start at login), `local_music_setup.sh` (downloads go-music-dl and mpv), `verify/` (end-to-end checks), `asr-bench/` (recognizer comparison) |
-| `xiaoai-bridge/` | The bridge between a Xiaomi speaker and the Zongzhu backend (based on coderzc/open-xiaoai-bridge); `speaker/` holds the patches, the Client source and the flashing and install scripts, `scripts/run-zongzhu.sh` starts it; see its README |
+| `xiaoai-bridge/` | Xiaomi speaker: `speaker/` holds the patches, the Client source and the flashing and install scripts; see its README. The bridge in this directory (based on coderzc/open-xiaoai-bridge) has moved into the backend's `core/gateway/xiaoai/`; it is no longer started and stays for reference |
 | `local-music/` | Programs downloaded by `local_music_setup.sh` and go-music-dl's data (including sign-in cookies); local only, not in Git |
 | `examples/` | Config templates without real credentials |
 | `docs/` | This guide and per-board notes, indexed in [docs/README.md](README.md) (Chinese) |

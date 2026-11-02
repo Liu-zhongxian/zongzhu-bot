@@ -45,8 +45,8 @@ eyes                    ├ music and volume → runs on this computer
 
 **Xiaomi Smart Speaker Pro (optional, experimental)**
 
-- After flashing the open-xiaoai patched firmware, the speaker answers "你好宗主" too: what you say next goes to Zongzhu (Bot, local music and so on), the answer is spoken by the speaker, and XiaoAI keeps working. The gateway page lists it as "小米音箱 Pro".
-- Tested end to end only on the OH2P with firmware 1.62.2. Flashing carries risk; steps and the way back are in [xiaoai-bridge](xiaoai-bridge/README.md) (Chinese).
+- After flashing the open-xiaoai patched firmware, the speaker connects straight to the Zongzhu backend and answers "你好宗主" too: what you say next goes to the Bot and the answer is spoken by the speaker; say "你好宗主" while it speaks to interrupt, and after your new question it finishes what it was saying. XiaoAI keeps working. The gateway page lists it as "小米音箱 Pro".
+- Tested end to end only on the OH2P with firmware 1.62.2. Flashing carries risk; the steps are in the [GUIDE](docs/GUIDE.en.md#xiaomi-smart-speaker-pro-optional), flashing details and the way back in [xiaoai-bridge](xiaoai-bridge/README.md) (Chinese).
 
 **Accurate recognition**
 
@@ -91,7 +91,7 @@ Prefer not to use the web page, want to build the firmware yourself, or the page
   - go-music-dl listens on port 18080 on every network interface, so while the backend runs, any device on your LAN can use it to search and download.
   - Sign-in cookies stay in `local-music/go-music-dl/data/`, which is not in Git.
   - The music comes from the platforms' unofficial interfaces; keep it to personal use.
-- **Xiaomi speaker**: flashing can brick it. Make the read-only backup first and write only one of the two A/B system slots. The patched firmware enables root SSH (you set the password) and turns off Xiaomi's automatic updates. The speaker and the bridge on your computer authenticate with a token; keep the bridge's port 4399 on your LAN.
+- **Xiaomi speaker**: flashing can brick it. Make the read-only backup first and write only one of the two A/B system slots. The patched firmware enables root SSH (you set the password) and turns off Xiaomi's automatic updates. The speaker and the backend authenticate with a token; keep the backend's port 4399 on your LAN.
 
 ## Documentation
 
@@ -100,14 +100,14 @@ Prefer not to use the web page, want to build the firmware yourself, or the page
 | [docs/GUIDE.en.md](docs/GUIDE.en.md) | Full guide: features, local music, manual setup, flashing, troubleshooting, Bot interface, building, tests, known limitations |
 | [docs/README.md](docs/README.md) | Index of all docs, including board notes (Chinese) |
 | [deploy/README.md](deploy/README.md) | Deploying to a public server (Chinese) |
-| [xiaoai-bridge/README.md](xiaoai-bridge/README.md) | Connecting a Xiaomi Smart Speaker Pro: flashing, Client, bridge (Chinese) |
+| [xiaoai-bridge/README.md](xiaoai-bridge/README.md) | Xiaomi Smart Speaker Pro: flashing and the Client; the old bridge has moved into the backend (Chinese) |
 
 ## About this repository
 
 This project's own changes are in:
 - **Firmware**: `xiaozhi-esp32/main/boards/common/zongzhu/` and the board directories.
 - **Backend**: under `xiaozhi-esp32-server/main/xiaozhi-server/core/`, the files `handle/grokBot*.py`, `gateway/` (the gateway; local music is in `gateway/skills/music/`) and `utils/asr_text.py`.
-- **Xiaomi speaker**: `xiaoai-bridge/` (the bridge between the speaker and the Zongzhu backend; `speaker/` holds the patches, the Client source and the flashing and install scripts; the guide is `xiaoai-bridge/README.md`).
+- **Xiaomi speaker**: the backend's `core/gateway/xiaoai/` (the speaker connects straight to the backend); `xiaoai-bridge/speaker/` holds the patches, the Client source and the flashing and install scripts, see `xiaoai-bridge/README.md` (the old bridge in that directory stays for reference).
 - **Everything else**: `web/`, `tools/`, `deploy/`, `examples/` and `docs/`.
 
 The rest of the two upstream directories is kept mostly as is, so that later upstream merges, which keep up with Xiaozhi firmware updates, stay simple. Upstream base commits are in `UPSTREAM.json`.

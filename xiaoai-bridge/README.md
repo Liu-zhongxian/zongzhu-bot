@@ -1,5 +1,7 @@
 # xiaoai-bridge：让小米音箱接入宗主
 
+> **2026-11 起音箱直接接进宗主后端**（`xiaozhi-esp32-server/main/xiaozhi-server/core/gateway/xiaoai/`），不用再在电脑上运行本目录的 bridge。刷机和 Client 还是照本文第 1–6、8 节做；第 7 节"启动 bridge"换成：下载唤醒词模型、在后端配置里打开 `gateway.xiaoai`，见 [GUIDE 的"接入小米智能音箱 Pro"](../docs/GUIDE.md#接入小米智能音箱-pro可选)。第 8 节装 Client 时，地址写运行后端的那台电脑（端口仍是 4399，token 和后端配置里的 `token_file` 一样）。下面关于 bridge 本体的内容（第 7 节、环境变量、HTTP 接口、测试）留作参考。
+
 把小米智能音箱 Pro（OH2P）变成宗主的一块"没有屏幕的板子"：喊"你好宗主"，音箱回"在"，后面的话交给宗主后端，走的是同一个网关（点歌、Bot、呼名），回答从音箱里念出来。小爱同学照常能用。
 
 ```

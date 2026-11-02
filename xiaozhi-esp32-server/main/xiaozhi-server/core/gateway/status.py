@@ -17,8 +17,9 @@ RECENT_MAX = 30
 # Board types the firmware reports in OTA (board.type) -> the names used in our docs
 BOARD_NAMES = (("lichuang", "立创实战派"), ("amoled-1.75", "微雪 1.75C"), ("stopwatch", "M5Stack StopWatch"),
                ("open-xiaoai", "小米音箱 Pro"))
-# Not a board: the Xiaomi speaker, either through open-xiaoai-bridge on this Mac or straight into the
-# backend (core/gateway/xiaoai/, type "open-xiaoai"). No screen and no MCP, so there is nothing to read or set.
+# Not a board: the Xiaomi speaker, straight into the backend (core/gateway/xiaoai/, type "open-xiaoai");
+# "open-xiaoai-bridge" is the type it had through the old bridge (still in data/gateway_boards.json).
+# No screen and no MCP, so there is nothing to read or set ("bridge" in the snapshot).
 BRIDGE_TYPES = {"open-xiaoai-bridge", "open-xiaoai"}
 # Types our check scripts use (tools/verify, probes): shown only while connected
 SIMULATED_TYPES = {"local-test", "probe"}
