@@ -20,7 +20,7 @@
 | `speaker/client/client-rust/` | 音箱上跑的 Client 源码（Rust） |
 | `speaker/client/` | 编译、安装 Client 的脚本，音箱的开机脚本 `init.sh` |
 | `scripts/run-zongzhu.sh` | 接宗主后端时启动 bridge |
-| `config.py` | bridge 的配置：宗主后端地址、唤醒词 |
+| `config.py` | bridge 的配置；宗主后端地址、设备 ID、唤醒词从环境变量读（见下面"环境变量"） |
 | `core/`、`native/` | bridge 本体（Python + Rust 原生模块） |
 
 ## 和原项目相比改了什么
@@ -144,7 +144,7 @@ Client 源码在 `speaker/client/client-rust/`，来自 [coderzc/open-xiaoai](ht
 
 ## 7. 在电脑上启动 bridge
 
-bridge 默认连本机的宗主后端，地址是 `config.py` 里的 `OTA_URL` 和 `WEBSOCKET_URL`，后端在别的电脑上时改这两项。唤醒词在同一个文件的 `wakeup.keywords`，默认"你好宗主""宗主你好"。
+bridge 默认连本机的宗主后端（`127.0.0.1` 的 8003 和 8000 端口），后端在别的电脑上时设 `ZONGZHU_OTA_URL` 和 `ZONGZHU_WEBSOCKET_URL`。唤醒词默认"你好宗主""宗主你好"，用 `ZONGZHU_WAKE_WORDS` 改。这些都不用改 `config.py`，见下面"环境变量"。
 
 ```sh
 OPEN_XIAOAI_TOKEN_FILE=speaker/work/token.txt ./scripts/run-zongzhu.sh
@@ -201,7 +201,11 @@ bash speaker/client/install_client.sh <音箱 IP> ws://<电脑的局域网 IP>:4
 | `API_SERVER_ENABLE` | 本机 HTTP 接口 | 关 |
 | `API_SERVER_HOST` / `API_SERVER_PORT` | HTTP 接口地址 | `127.0.0.1` / `9092` |
 | `AUDIO_INPUT_ENABLE` | 接收音箱麦克风（关掉后唤醒词和小智都不能用） | 开 |
-| `CONFIG_PATH` | 配置文件路径 | `./config.py` |
+| `ZONGZHU_OTA_URL` | 宗主后端的 OTA 地址 | `http://127.0.0.1:8003/xiaozhi/ota/` |
+| `ZONGZHU_WEBSOCKET_URL` | 宗主后端的 WebSocket 地址 | `ws://127.0.0.1:8000/xiaozhi/v1/` |
+| `ZONGZHU_DEVICE_ID` | 后端认这台音箱用的 ID（MAC 地址格式）。换电脑或重装后想沿用后端记下的设置，就设成原来的值 | 这台电脑的网卡地址 |
+| `ZONGZHU_WAKE_WORDS` | 唤醒词，多个用英文逗号隔开 | `你好宗主,宗主你好` |
+| `CONFIG_PATH` | 配置文件路径（想整个换一份配置时用） | `./config.py` |
 | `LOGLEVEL` | 日志级别 | `INFO` |
 
 ## HTTP 接口

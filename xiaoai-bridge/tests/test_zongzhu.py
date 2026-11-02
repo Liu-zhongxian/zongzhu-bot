@@ -128,5 +128,45 @@ class WakeWordTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("你好宗主", config.APP_CONFIG["wakeup"]["keywords"])
 
 
+class EnvConfigTest(unittest.IsolatedAsyncioTestCase):
+    """个人设置从环境变量读，config.py 里不写死"""
+
+    def _load(self, env):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("config_under_test", config.__file__)
+        module = importlib.util.module_from_spec(spec)
+        with mock.patch.dict("os.environ", env):
+            spec.loader.exec_module(module)
+        return module
+
+    def test_defaults(self):
+        cfg = self._load({}).APP_CONFIG
+        self.assertEqual(cfg["wakeup"]["keywords"], ["你好宗主", "宗主你好"])
+        self.assertEqual(cfg["xiaozhi"]["OTA_URL"], "http://127.0.0.1:8003/xiaozhi/ota/")
+        self.assertEqual(cfg["xiaozhi"]["WEBSOCKET_URL"], "ws://127.0.0.1:8000/xiaozhi/v1/")
+        self.assertEqual(cfg["xiaozhi"]["DEVICE_ID"], "")
+
+    async def test_env_overrides(self):
+        module = self._load({
+            "ZONGZHU_WAKE_WORDS": "你好小雨, 小雨你好",
+            "ZONGZHU_OTA_URL": "http://192.168.1.10:8003/xiaozhi/ota/",
+            "ZONGZHU_WEBSOCKET_URL": "ws://192.168.1.10:8000/xiaozhi/v1/",
+            "ZONGZHU_DEVICE_ID": "aa:bb:cc:dd:ee:ff",
+        })
+        cfg = module.APP_CONFIG
+        self.assertEqual(cfg["wakeup"]["keywords"], ["你好小雨", "小雨你好"])
+        self.assertEqual(cfg["xiaozhi"]["OTA_URL"], "http://192.168.1.10:8003/xiaozhi/ota/")
+        self.assertEqual(cfg["xiaozhi"]["WEBSOCKET_URL"], "ws://192.168.1.10:8000/xiaozhi/v1/")
+        self.assertEqual(cfg["xiaozhi"]["DEVICE_ID"], "aa:bb:cc:dd:ee:ff")
+        speaker = mock.Mock(play=mock.AsyncMock())
+        self.assertEqual(await module.before_wakeup(speaker, "你好小雨", "kws", None), "xiaozhi")
+
+    def test_generated_device_id_not_written_back(self):
+        # 没设设备 ID 时 bridge 会用网卡地址，并试着写回 config.py；现在那一行不是字面值，写回不改文件
+        with open(config.__file__, encoding="utf-8") as f:
+            source = f.read()
+        self.assertNotRegex(source, r'"DEVICE_ID"\s*:\s*"')
+
+
 if __name__ == "__main__":
     unittest.main()

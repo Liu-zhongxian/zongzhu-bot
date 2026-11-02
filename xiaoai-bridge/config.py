@@ -1,4 +1,5 @@
 import asyncio
+import os
 import socket
 import subprocess
 import sys
@@ -7,6 +8,14 @@ import uuid
 
 import requests
 
+
+# 接宗主时的个人设置从环境变量读，没设就用下面的默认值（scripts/run-zongzhu.sh 的开头有说明）
+def _env(name, default):
+    return os.environ.get(name, "").strip() or default
+
+
+# 唤醒词，多个用英文逗号隔开（英文字母要全小写）
+WAKE_WORDS = [w.strip() for w in _env("ZONGZHU_WAKE_WORDS", "你好宗主,宗主你好").split(",") if w.strip()]
 
 # 每次唤醒生成独立 Session，对话互不干扰
 # 适合以下场景：
@@ -79,7 +88,7 @@ async def before_wakeup(speaker, text, source, app):
             await speaker.play(text="小爪来了")
             return "qwenpaw"
 
-        if "宗主" in text:
+        if "宗主" in text or any(w in text for w in WAKE_WORDS):
             await speaker.play(text="在")
             return "xiaozhi"
 
@@ -174,10 +183,7 @@ async def after_wakeup(speaker, source=None, session_key=None):
 APP_CONFIG = {
     "wakeup": {
         # 自定义唤醒词列表（英文字母要全小写）
-        "keywords": [
-            "你好宗主",
-            "宗主你好",
-        ],
+        "keywords": WAKE_WORDS,
         # 静音多久后自动退出唤醒（秒）
         "timeout": 20,
         # 语音识别结果回调
@@ -233,10 +239,12 @@ APP_CONFIG = {
         },
     },
     "xiaozhi": {
-        "OTA_URL": "http://127.0.0.1:8003/xiaozhi/ota/",
-        "WEBSOCKET_URL": "ws://127.0.0.1:8000/xiaozhi/v1/",
+        # 宗主后端地址，后端在别的电脑上时设这两个环境变量
+        "OTA_URL": _env("ZONGZHU_OTA_URL", "http://127.0.0.1:8003/xiaozhi/ota/"),
+        "WEBSOCKET_URL": _env("ZONGZHU_WEBSOCKET_URL", "ws://127.0.0.1:8000/xiaozhi/v1/"),
         "WEBSOCKET_ACCESS_TOKEN": "", #（可选）一般用不到这个值
-        "DEVICE_ID": "4b:2b:ba:c4:eb:f9", #（可选）默认自动生成
+        # 后端靠它认出这台音箱，要和以前一样才能沿用后端记下的设置；没设时用这台电脑的网卡地址
+        "DEVICE_ID": _env("ZONGZHU_DEVICE_ID", ""),
         "VERIFICATION_CODE": "", # 首次登陆时，验证码会在这里更新
     },
     "xiaoai": {
