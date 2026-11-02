@@ -55,6 +55,17 @@ class GatewayDispatchTest(unittest.IsolatedAsyncioTestCase):
         music.assert_not_awaited()
         bot.assert_awaited_once()
 
+    async def test_connection_without_skills_goes_straight_to_the_bot(self):
+        # 小米音箱那一路设 gateway_skills = []：音乐不管它说的话，板子照旧
+        music, bot = self.patch_handlers(music=True, bot=True)
+        speaker = make_conn()
+        speaker.gateway_skills = []
+        self.assertTrue(await gateway.dispatch(speaker, "暂停"))
+        music.assert_not_awaited()
+        bot.assert_awaited_once()
+        self.assertTrue(await gateway.dispatch(make_conn(), "暂停"))
+        music.assert_awaited_once()
+
     async def test_empty_agent_leaves_the_rest_to_upstream_chat(self):
         music, bot = self.patch_handlers(bot=True)
         self.assertFalse(await gateway.dispatch(make_conn({"gateway": {"agent": ""}}), "帮我查天气"))
@@ -362,6 +373,20 @@ class SkillCollectionTest(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0)
         warm_phrases.assert_not_awaited()
         start_music.assert_not_called()
+
+    async def test_connection_without_skills_warms_only_the_ai_phrases(self):
+        with mock.patch("core.handle.grokBotPhrases.warm", mock.AsyncMock()) as warm_phrases, \
+                mock.patch("core.gateway.skills.music.command.warm") as start_music, \
+                mock.patch("core.gateway.skills.music.command.duck") as duck:
+            speaker = make_conn(self.MUSIC_ON)
+            speaker.gateway_skills = []
+            gateway.warm(speaker)
+            gateway.on_listen(speaker)
+            await asyncio.sleep(0)
+        start_music.assert_not_called()
+        duck.assert_not_called()
+        texts = warm_phrases.await_args.args[1] if warm_phrases.await_args else []
+        self.assertNotIn("已暂停。", texts)
 
     def test_listen_lowers_the_music(self):
         with mock.patch("core.gateway.skills.music.command.duck") as duck:

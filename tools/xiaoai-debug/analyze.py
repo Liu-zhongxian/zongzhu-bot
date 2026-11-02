@@ -22,6 +22,8 @@ w = wave.open(args.wav)
 rate = w.getframerate()
 data = w.readframes(w.getnframes())
 samples = struct.unpack(f"<{len(data)//2}h", data)
+if w.getnchannels() == 4:  # 4 声道录音：只看 3 个麦克风的平均（和后端认唤醒词用的一样）
+    samples = [int(sum(samples[i:i + 3]) / 3) for i in range(0, len(samples), 4)]
 print(f"录音 {len(samples)/rate:.2f} 秒")
 
 step = rate // 100

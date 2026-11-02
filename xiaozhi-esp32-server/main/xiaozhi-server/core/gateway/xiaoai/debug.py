@@ -1,4 +1,4 @@
-"""排查用：把音箱麦克风收到的声音存成 WAV，旁边的 events.tsv 记下后端每个动作的时间（G19i，2026-11-02）。
+"""排查用：把音箱麦克风收到的声音存成 WAV（4 声道原样），旁边的 events.tsv 记下后端每个动作的时间（G19i，2026-11-02）。
 
 音箱放出来的声音会被它自己的麦克风录到，所以 WAV 里能看出放出来的是什么、什么时候出来的。
 只在配置了 gateway.xiaoai.debug_dir 时开；文件里有你说的话，只放本机。
@@ -7,6 +7,7 @@
       xiaoai:
         debug_dir: /path/to/logs/xiaoai-debug   # 每次连上一组文件
         debug_probe: true                       # 连上后放一组测试音（见 probe）
+        debug_inspect: true                     # 连上后在音箱上跑几条只读命令，结果存成 inspect-*.txt（见 inspect）
 """
 import time
 import wave
@@ -19,14 +20,16 @@ MIC_RATE = 16000
 
 
 class Recorder:
-    def __init__(self, directory):
+    def __init__(self, directory, channels=4):
+        """channels：音箱发来的原始声道数（4：3 个麦克风 + 音箱自己放的声音），WAV 原样存"""
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         self.wav_path = directory / f"mic-{stamp}.wav"
         self.events_path = directory / f"mic-{stamp}.events.tsv"
         self.wav = wave.open(str(self.wav_path), "wb")
-        self.wav.setnchannels(1)
+        self.channels = channels
+        self.wav.setnchannels(channels)
         self.wav.setsampwidth(2)
         self.wav.setframerate(MIC_RATE)
         self.events = open(self.events_path, "w", encoding="utf-8")
@@ -36,7 +39,7 @@ class Recorder:
 
     def mic(self, pcm):
         self.wav.writeframes(pcm)
-        self.samples += len(pcm) // 2
+        self.samples += len(pcm) // (2 * self.channels)
 
     def event(self, text):
         """墙钟秒：从开始录到现在过了多久；录音位置秒：这时已经收到多少秒麦克风声音（两者之差是网络和缓冲的延迟）"""
@@ -118,3 +121,35 @@ async def probe(link, recorder, sleep):
     await raw_play(beep(880) + silence(100) + beep(1320) + silence(200), "G 连上提示音两声（880、1320 赫兹）")
     await sleep(3)
     recorder.event("测试音结束")
+
+
+# 只读：看音箱有哪些录音、放音通道，现在谁在用、参数和增益（G19i 第 4 步查播放时打断）
+INSPECT_COMMANDS = [
+    "cat /etc/asound.conf",
+    "ls /etc/alsa* /usr/share/alsa 2>&1",
+    "cat /proc/asound/cards /proc/asound/pcm",
+    "arecord -l 2>&1",
+    "arecord -L 2>&1",
+    "aplay -L 2>&1",
+    "for f in /proc/asound/card*/pcm*/sub*/hw_params; do echo \"== $f\"; cat $f; done",
+    "amixer scontrols 2>&1",
+    "amixer contents 2>&1",
+    "ps w 2>&1",
+    "ls -la /tmp /usr/share/mipns 2>&1",
+    "cat /proc/asound/card0/pcm3c/sub0/status /proc/asound/card0/pcm2p/sub0/status 2>&1",
+]
+
+
+
+async def inspect(link, directory):
+    """在音箱上跑 INSPECT_COMMANDS（只读），输出写到 directory/inspect-时间.txt，返回文件路径"""
+    path = Path(directory) / f"inspect-{datetime.now().strftime('%Y%m%d-%H%M%S')}.txt"
+    with open(path, "w", encoding="utf-8") as out:
+        for command in INSPECT_COMMANDS:
+            out.write(f"$ {command}\n")
+            try:
+                result = await link.call("run_shell", command, timeout=20) or {}
+                out.write(f"{result.get('stdout', '')}{result.get('stderr', '')}[退出码 {result.get('exit_code')}]\n\n")
+            except Exception as e:
+                out.write(f"[没跑成：{type(e).__name__} {e}]\n\n")
+    return path

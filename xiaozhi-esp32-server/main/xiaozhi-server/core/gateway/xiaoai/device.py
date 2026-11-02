@@ -10,7 +10,7 @@ ConnectionHandler 只用到 websocket 的几样东西（请求头和路径、对
   10 秒没认出一句话就回 idle。认出一句话（stt）以后是 thinking，20 秒后端还没开始说也回 idle。
 - speaking：后端发 tts start 以后。opus 解码成 24 kHz PCM，分段、按播放速度发给音箱（一次发多了音箱会丢，
   见 protocol.py）。tts stop 并且声音放完以后回 idle：和宗主板子一样，回答完直接待机。
-没在 listening 时后端发来的声音（比如 Bot 晚到的回答）照样放。
+没在 listening 时后端发来的声音（比如 Bot 晚到的回答）照样放。说的时候喊唤醒词就打断（server.py 回"在"前调 interrupt）。
 """
 import asyncio
 import json
@@ -33,6 +33,11 @@ FRAME_MS = 60
 FRAME_BYTES = MIC_RATE * FRAME_MS // 1000 * 2
 LISTEN_TIMEOUT = 10        # 唤醒后这么久没认出一句话就回 idle
 THINK_TIMEOUT = 20         # 认出一句话以后这么久后端还没开始说就回 idle（Bot 晚到的回答之后照样放）
+# 开始听：等音箱真的放完（录音的 ch3 静下来）再过这么久才把麦克风发给后端。2026-11-02 录音：
+# "在"发出后约 0.4 秒才从音箱出来，放完后房间回声还拖 0.3–0.5 秒；按"在"的长度估时间开始听，
+# 后端把"在"、回声、被打断还没放完的回答当成了你说的话（认出"在""嗯""回复后会显示"）。
+ECHO_TAIL = 0.5
+PLAYBACK_WAIT = 1.5        # 唤醒回了"在"以后，录音里这么久还没出现音箱出声，就不等了（比如"在"没放出来）
 SEND_AHEAD = 1.0           # 发给音箱的声音最多比实际播放领先这么多秒
 SEND_PIECE = 0.5           # 每次最多发这么多秒
 HELLO = {"type": "hello", "version": 1, "transport": "websocket", "features": {},
@@ -101,9 +106,6 @@ class Player:
         """还有没发的，或者发出去的还没放完"""
         return bool(self.buffer) or self.clock() < self.play_end
 
-    def remaining(self):
-        return len(self.buffer) / self.bytes_per_second + max(0.0, self.play_end - self.clock())
-
     async def _run(self):
         piece = int(self.bytes_per_second * SEND_PIECE) // 2 * 2
         while True:
@@ -148,6 +150,11 @@ class SpeakerDevice:
         self.encoder = opuslib_next.Encoder(MIC_RATE, 1, opuslib_next.APPLICATION_VOIP)
         self.decoder = None
         self.mic = bytearray()
+        self.heard = 0.0            # 收到的录音一共多少秒（开始听的判断都按录音的时间算，和网络延迟无关）
+        self.last_playback = -1e9   # 录音里最后一次音箱出声在哪
+        self.listen_mark = 0.0      # 开始听时录音到哪
+        self.waiting_playback = False
+        self.mic_open = False
         self.tts_done = False
         self.client_id = str(uuid.uuid4())
         self.watch = asyncio.create_task(self._watch())
@@ -168,6 +175,9 @@ class SpeakerDevice:
                                     self.address, self._from_server, self._closed)
         self.handler = ConnectionHandler(server.config, server._vad, server._asr, server._llm,
                                          server._memory, server._intent, server)
+        # 音箱是单独的一路：不用网关技能（本地音乐在这台 Mac 上放，和音箱无关），话只交给 AI。
+        # 要在 hello 之前设：后端收到 hello 就按它预合成短句、预启动技能
+        self.handler.gateway_skills = []
         asyncio.create_task(self.handler.handle_connection(self.socket))
         self.socket.put(json.dumps(HELLO))
         try:
@@ -195,27 +205,58 @@ class SpeakerDevice:
 
     # 唤醒、听
 
-    def interrupt(self):
-        """唤醒时后端还在说（比如晚到的回答）：打断，和板子在说话时被唤醒一样。没发出去的声音不放了。"""
-        if self.state == "speaking" and self.connected():
+    async def interrupt(self):
+        """唤醒时后端还在说（比如晚到的回答）：打断，和板子在说话时被唤醒一样。
+
+        没发出去的不发了；已经发到音箱的也让它停掉（stop_play 结束 aplay，下次放再起）：
+        2026-11-02 录音，只清这边的话被打断的回答在音箱上还接着放了约 2 秒。
+        """
+        speaking = self.state == "speaking"
+        playing = self.player.busy()
+        if speaking and self.connected():
             self.socket.put(json.dumps({"type": "abort", "session_id": self.handler.session_id}))
             self.note("打断后端说话")
         self.player.clear()
+        if speaking or playing:
+            self.player.play_end = 0.0
+            try:
+                await self.link.stop_play()
+                self.note("音箱停止播放")
+            except Exception as e:
+                logger.bind(tag=TAG).warning(f"让音箱停止播放失败：{type(e).__name__} {e}")
 
-    async def start_listening(self, delay):
-        """唤醒以后：连后端、发 listen start；delay 秒以后（"在"放完）开始发麦克风"""
+    async def start_listening(self, expect_playback=True):
+        """唤醒以后：连后端、发 listen start。expect_playback：刚让音箱回了"在"，
+        要等录音里出现它、放完、回声过去（ECHO_TAIL）才开始发麦克风"""
         if not await self.connect():
             return
         self.socket.put(json.dumps({"type": "listen", "state": "start", "mode": "auto",
                                     "session_id": self.handler.session_id}))
         self.mic.clear()
         self.state = "listening"
-        self.listen_since = self.clock() + delay
+        self.listen_since = self.clock()
+        self.listen_mark = self.heard
+        self.waiting_playback = expect_playback
+        self.mic_open = False
         self.note("开始听")
 
-    def on_mic(self, pcm):
-        if self.state != "listening" or self.clock() < self.listen_since or not self.connected():
+    def on_mic(self, pcm, playing=False):
+        """pcm：麦克风（单声道）；playing：这段录音里音箱在出声（protocol.playback_active）"""
+        self.heard += len(pcm) / (2 * MIC_RATE)
+        if playing:
+            self.last_playback = self.heard
+            self.waiting_playback = False
+        if self.state != "listening" or not self.connected():
             return
+        if self.waiting_playback:
+            if self.heard - self.listen_mark < PLAYBACK_WAIT:
+                return
+            self.waiting_playback = False
+        if self.heard - self.last_playback < ECHO_TAIL:
+            return
+        if not self.mic_open:
+            self.mic_open = True
+            self.note("开始把麦克风发给后端")
         self.mic += pcm
         while len(self.mic) >= FRAME_BYTES:
             frame, self.mic = bytes(self.mic[:FRAME_BYTES]), self.mic[FRAME_BYTES:]
@@ -266,7 +307,3 @@ class SpeakerDevice:
             elif self.state == "thinking" and now - self.think_since > THINK_TIMEOUT:
                 self.state = "idle"
                 self.note(f"认出一句话后 {THINK_TIMEOUT} 秒还没开始说，待机")
-
-    def speaking_for(self):
-        """音箱还要放多久（认唤醒词时用：放的时候认出来的不算）"""
-        return self.player.remaining()

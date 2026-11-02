@@ -12,6 +12,8 @@ Calling an AI by name at the start ("嗨 硬件，帮我……") hands the rest 
 it this board's AI from then on (kept in data/agent_sessions.json); the name alone gets "我在。".
 
 Without the section the order is the one before the gateway: local music, then the Bot.
+A connection can narrow the skills with `conn.gateway_skills` (a list of names): the Xiaomi speaker
+sets [] so its sentences only go to the AI, and music (played on this Mac) never starts for it.
 Skills are in core/gateway/skills/ (see skill.py), AIs in core/gateway/agents/ (see agent.py).
 """
 import time
@@ -56,6 +58,17 @@ def active_skills(config):
     return [skill for skill in skills if skill is not None and skill.enabled(config)]
 
 
+def _skill_names(conn):
+    names = getattr(conn, "gateway_skills", None)
+    return _settings(conn.config)[0] if names is None else list(names)
+
+
+def connection_skills(conn):
+    """The skills this connection uses (see the module doc), in order."""
+    skills = (SKILLS.get(name) for name in _skill_names(conn))
+    return [skill for skill in skills if skill is not None and skill.enabled(conn.config)]
+
+
 def agent_call_names(config) -> dict:
     """{AI module name: [call names]} for the AIs that are switched on."""
     custom = (config.get("gateway") or {}).get("call_names")
@@ -94,7 +107,7 @@ def warm(conn):
     from core.handle import grokBotPhrases
 
     agent = active_agent(conn)
-    modules = ([agent] if agent else []) + active_skills(conn.config)
+    modules = ([agent] if agent else []) + connection_skills(conn)
     texts = [text for module in modules for text in module.phrases(conn.config)]
     if texts:
         asyncio.create_task(grokBotPhrases.warm(conn, list(dict.fromkeys(texts))))
@@ -107,7 +120,7 @@ def warm(conn):
 def on_listen(conn):
     waiting.resume_input(conn)
     agent = active_agent(conn)
-    for module in ([agent] if agent else []) + active_skills(conn.config):
+    for module in ([agent] if agent else []) + connection_skills(conn):
         module.on_listen(conn)
 
 
@@ -180,7 +193,7 @@ async def _answer_call(conn, heard, name, rest):
 
 
 async def _route(conn, text):
-    skill_names = _settings(conn.config)[0]
+    skill_names = _skill_names(conn)
     current = agent_name(conn)
     for name in skill_names:
         skill = SKILLS.get(name)

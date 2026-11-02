@@ -13,7 +13,8 @@ from config.logger import setup_logging
 from core.gateway import status
 from core.gateway.xiaoai import debug, prompts, wake
 from core.gateway.xiaoai.device import BOARD_TYPE, SpeakerDevice
-from core.gateway.xiaoai.protocol import PLAY_CONFIG, ClientError, SpeakerLink, silence
+from core.gateway.xiaoai.protocol import (PLAY_CONFIG, RECORD_CHANNELS, ClientError, SpeakerLink, mic_mono,
+                                          playback_active, silence)
 
 TAG = __name__
 logger = setup_logging()
@@ -21,9 +22,10 @@ logger = setup_logging()
 DEFAULT_PORT = 4399
 LEVEL_REPORT_SECONDS = 15  # 连上后这么久里每秒报一次麦克风音量（第 1 步验收用）
 WAKE_REPLY = "在"
-# 放"在"后再多这么久不认唤醒词（音箱放出来比发出去晚约 0.1 秒，加上房间回声）
+# 放"在"后再多这么久不认唤醒词（音箱放出来比发出去晚约 0.1 秒，加上房间回声；也免得一声喊认两次）。
+# 其他时候放声音照样认：只用麦克风声道以后，放回答时喊唤醒词认得出来，音箱自己放的回答一次也没认成唤醒词
+# （2026-11-02 实测），认出来就打断。
 REPLY_ECHO_SECONDS = 0.2
-LISTEN_AFTER_REPLY = 0.15  # "在"放完再过这么久开始把麦克风发给后端（别把"在"的回声当成你说的话）
 
 
 def settings(config):
@@ -120,7 +122,7 @@ class XiaoaiServer:
         address = ws.remote_address[0]
         loop = asyncio.get_running_loop()
         xiaoai = settings(self.config)
-        recorder = debug.Recorder(xiaoai["debug_dir"]) if xiaoai.get("debug_dir") else None
+        recorder = debug.Recorder(xiaoai["debug_dir"], RECORD_CHANNELS) if xiaoai.get("debug_dir") else None
         if recorder:
             logger.bind(tag=TAG).info(f"音箱调试录音：{recorder.wav_path}")
         note = recorder.event if recorder else (lambda text: None)
@@ -133,15 +135,13 @@ class XiaoaiServer:
                 self.spotter, lambda word: loop.call_soon_threadsafe(self._woken, link, listener, word, note, device),
                 on_ignored=lambda word: loop.call_soon_threadsafe(note, f"认出唤醒词但在放声音，忽略：{word}"))
 
-        def on_record(pcm):
+        def on_record(raw):
             if recorder:
-                recorder.mic(pcm)
+                recorder.mic(raw)
+            pcm = mic_mono(raw)
             meter.feed(pcm)
             if device:
-                device.on_mic(pcm)
-                if device.player.busy():
-                    # 音箱在放声音时认出来的不算（自己的声音被麦克风录到）
-                    listener and listener.mute(device.speaking_for() + REPLY_ECHO_SECONDS)
+                device.on_mic(pcm, playback_active(raw))
             if listener:
                 listener.feed(pcm)
 
@@ -160,6 +160,9 @@ class XiaoaiServer:
                 device = SpeakerDevice(link, self.ws_server, device_id, address, words[0], note)
             await link.start_recording()
             note("start_recording 已回应")
+            if xiaoai.get("debug_dir") and xiaoai.get("debug_inspect"):
+                path = await debug.inspect(link, xiaoai["debug_dir"])
+                logger.bind(tag=TAG).info(f"音箱只读检查结果：{path}")
             if recorder and xiaoai.get("debug_probe"):
                 await debug.probe(link, recorder, asyncio.sleep)
                 link._playing = True
@@ -199,10 +202,10 @@ class XiaoaiServer:
         seconds = length + REPLY_ECHO_SECONDS
         listener.mute(seconds)
         if device:
-            device.interrupt()
+            await device.interrupt()
             device.player.add(pcm)
             note(f"发出「{WAKE_REPLY}」：{length:.3f} 秒，忽略唤醒 {seconds:.3f} 秒")
-            await device.start_listening(length + LISTEN_AFTER_REPLY)
+            await device.start_listening()
             return
         try:
             await link.play(pcm)

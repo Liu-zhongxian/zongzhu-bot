@@ -16,6 +16,8 @@ for path in sys.argv[2:]:
     w = wave.open(path)
     rate = w.getframerate()
     x = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").astype(np.float32) / 32768
+    if w.getnchannels() == 4:  # 4 声道录音：3 个麦克风的平均（和后端认唤醒词用的一样）
+        x = x.reshape(-1, 4)[:, :3].mean(axis=1)
     step = rate // 100
     lv = np.sqrt(np.mean(x[: len(x) // step * step].reshape(-1, step) ** 2, axis=1)) * 32768
     floor = np.sort(lv)[len(lv) // 5]

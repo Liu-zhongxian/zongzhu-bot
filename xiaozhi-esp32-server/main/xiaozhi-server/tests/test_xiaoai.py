@@ -13,7 +13,8 @@ from unittest import mock
 import websockets
 
 from core.gateway.xiaoai import prompts, server, wake
-from core.gateway.xiaoai.protocol import PLAY_CONFIG, RECORD_CONFIG, ClientError, SpeakerLink, silence
+from core.gateway.xiaoai.protocol import (PLAY_CONFIG, RECORD_CONFIG, ClientError, SpeakerLink, mic_mono,
+                                          playback_active, silence)
 
 
 def free_port():
@@ -49,6 +50,8 @@ class FakeClient:
             await self.ws.send(json.dumps({"Response": response}))
 
     async def record(self, pcm):
+        """pcm 是单声道；照音箱的样子发成 4 声道：3 个麦克风都是它，第 4 个（音箱自己放的声音）是很响的干扰"""
+        pcm = four_channels(pcm)
         await self.ws.send(json.dumps({"id": "x", "tag": "record", "bytes": list(pcm)}).encode())
 
 
@@ -141,6 +144,22 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         with mock.patch.object(server.logger, "bind") as bind:
             await asyncio.wait_for(other.start(), 2)
         self.assertIn("被占用", bind.return_value.error.call_args.args[0])
+
+
+def four_channels(mono, playback=30000):
+    samples = struct.unpack(f"<{len(mono) // 2}h", mono)
+    return struct.pack(f"<{len(samples) * 4}h", *[v for s in samples for v in (s, s, s, playback)])
+
+
+class MicMonoTest(unittest.TestCase):
+    def test_playback_is_seen_on_the_fourth_channel(self):
+        self.assertTrue(playback_active(four_channels(b"\0\0" * 10, playback=3000)))
+        self.assertFalse(playback_active(four_channels(b"\x00\x40" * 10, playback=0)))  # 只有人声
+
+    def test_averages_the_three_microphones_and_drops_playback(self):
+        raw = struct.pack("<8h", 300, 600, 900, 32000, -3, -3, -3, -32000)
+        self.assertEqual(mic_mono(raw), struct.pack("<2h", 600, -3))
+        self.assertEqual(mic_mono(four_channels(b"WAKE" * 4)), b"WAKE" * 4)
 
 
 class FakeSpotter:
@@ -320,7 +339,7 @@ class DeviceTest(unittest.IsolatedAsyncioTestCase):
         from core.gateway.xiaoai import device
         self.device_mod = device
         self.clock = FakeClock()
-        self.link = mock.Mock(play=mock.AsyncMock())
+        self.link = mock.Mock(play=mock.AsyncMock(), stop_play=mock.AsyncMock())
         self.dev = device.SpeakerDevice(self.link, ws_server=None, device_id="xiaoai-test", address="1.2.3.4",
                                         wake_word="你好宗主", clock=self.clock)
         self.sent = []
@@ -342,18 +361,33 @@ class DeviceTest(unittest.IsolatedAsyncioTestCase):
     def texts(self):
         return [json.loads(m) for m in self.sent if isinstance(m, str)]
 
-    async def test_listen_starts_after_the_reply_and_mic_goes_out_as_opus(self):
-        await self.dev.start_listening(0.5)
+    def frames(self):
+        return [m for m in self.sent if isinstance(m, bytes)]
+
+    def mic(self, seconds, playing=False):
+        for _ in range(round(seconds / 0.06)):
+            self.dev.on_mic(b"\1\0" * 960, playing)
+
+    async def test_listen_starts_after_the_reply_and_its_echo_and_mic_goes_out_as_opus(self):
+        await self.dev.start_listening()
         self.assertEqual(self.texts()[-1]["state"], "start")
         self.assertEqual(self.texts()[-1]["mode"], "auto")
-        self.dev.on_mic(b"\1\0" * 960)  # "在"还在放：不发
-        self.assertFalse([m for m in self.sent if isinstance(m, bytes)])
-        self.clock.now += 0.6
-        self.dev.on_mic(b"\1\0" * 960)
-        self.assertEqual(len([m for m in self.sent if isinstance(m, bytes)]), 1)  # 60 毫秒一帧
+        self.mic(0.42)                 # "在"还没从音箱出来：不发
+        self.mic(0.36, playing=True)   # 音箱在放"在"：不发
+        self.mic(0.48)                 # 回声（放完不到 0.5 秒）：不发
+        self.assertFalse(self.frames())
+        self.mic(0.12)
+        self.assertEqual(len(self.frames()), 2)  # 60 毫秒一帧
+
+    async def test_listen_does_not_wait_forever_for_the_reply(self):
+        await self.dev.start_listening()
+        self.mic(1.44)
+        self.assertFalse(self.frames())
+        self.mic(0.12)
+        self.assertTrue(self.frames())
 
     async def test_reply_is_played_and_then_idle(self):
-        await self.dev.start_listening(0)
+        await self.dev.start_listening(expect_playback=False)
         await self.dev._from_server(json.dumps({"type": "stt", "text": "现在几点"}))
         self.assertEqual(self.dev.state, "thinking")
         await self.dev._from_server(json.dumps({"type": "tts", "state": "start"}))
@@ -383,12 +417,19 @@ class DeviceTest(unittest.IsolatedAsyncioTestCase):
         await self.dev.connect()
         await self.dev._from_server(json.dumps({"type": "tts", "state": "start"}))
         self.dev.player.add(b"\0\0" * 24000)
-        self.dev.interrupt()
+        await self.dev.interrupt()
         self.assertEqual(self.texts()[-1], {"type": "abort", "session_id": "s1"})
         self.assertFalse(self.dev.player.buffer)
+        self.link.stop_play.assert_awaited_once()  # 已经发到音箱的也停掉
+
+    async def test_wake_while_quiet_does_not_stop_the_speaker(self):
+        await self.dev.connect()
+        await self.dev.interrupt()
+        self.link.stop_play.assert_not_awaited()
+        self.assertFalse([t for t in self.texts() if t.get("type") == "abort"])
 
     async def test_nothing_heard_goes_back_to_idle(self):
-        await self.dev.start_listening(0)
+        await self.dev.start_listening()
         self.clock.now += self.device_mod.LISTEN_TIMEOUT + 1
         for _ in range(30):
             await asyncio.sleep(0.02)
