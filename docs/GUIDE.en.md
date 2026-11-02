@@ -100,7 +100,7 @@ Needs macOS 14 or later on Apple Silicon, or macOS 15 or later on Intel.
 
 ## Xiaomi Smart Speaker Pro (optional)
 
-With the [open-xiaoai](https://github.com/idootop/open-xiaoai) patched firmware and its Client, a Xiaomi Smart Speaker Pro (OH2P) connects straight to the Zongzhu backend and works like a board without a screen: say "你好宗主", it answers "在", what you say next goes to the Bot (calling another AI by name works too), and the answer is spoken by the speaker. Say "你好宗主" while it speaks to interrupt; after your new question it finishes what it was saying, then reads the new answer (starting with "你刚才问……", "you just asked"). XiaoAI keeps working. Local music is not wired to the speaker: songs play on the computer, so "暂停" or "放首歌" said to the speaker go to the Bot.
+With the [open-xiaoai](https://github.com/idootop/open-xiaoai) patched firmware and its Client, a Xiaomi Smart Speaker Pro (OH2P) connects straight to the Zongzhu backend and works like a board without a screen: say "宗主", it answers "在", what you say next goes to the Bot, and the answer is spoken by the speaker; saying an AI's call name (such as the Bot's name) also wakes it and hands the sentence to that AI. Say "宗主" while it speaks to interrupt (call names are not heard then, so the speaker does not wake itself when it says an AI's name); after your new question it finishes what it was saying, then reads the new answer (starting with "你刚才问……", "you just asked"). XiaoAI keeps working. Local music is not wired to the speaker: songs play on the computer, so "暂停" or "放首歌" said to the speaker go to the Bot.
 
 ```
 speaker (patched firmware + Client) --WebSocket 4399--> Zongzhu backend (core/gateway/xiaoai/)
@@ -133,7 +133,7 @@ Steps (flashing and Client details in [zongzhu-speaker/README.md](../zongzhu-spe
        enabled: true
        port: 4399                       # the port you give the Client
        token_file: /full/path/token.txt # the token from step 5, the same as on the speaker
-       # wake_words: [你好宗主, 宗主你好]
+       # wake_words: [宗主]             # default "宗主"; AI call names wake it too
        # kws_threshold: 0.05            # lower wakes more easily
    ```
 
@@ -197,7 +197,7 @@ Anyone who opens the page can change things by default. To require a password, s
 
 **Changing the wake word** (no reflash): with the board connected to the backend, run `.venv/bin/python tools/wake_word.py 你好小雨` from the repo root. The script waits for you to wake the board, then makes it reboot and download an assets package with the new wake word (about 4–5 MB; the screen shows progress; don't cut power), after which the new wake word works. The assets package must match the board's firmware version; the script finds it in `firmware/` by model and version. Chinese wake words only.
 
-**Calling by name**: wake the board with "你好宗主" first, then say "嗨 <Bot name>, …" ("hi <name>"; "嘿" works too). Anything after the name goes straight to that Bot, skipping local music; the name alone gets "我在。" ("I'm here.") and nothing is submitted. The Bot name is the name it has in Grok, set as `grok_bot.bot_name` in `.config.yaml` (for example `硬件`); without it the call names are "Grok Bot" and "Grok". Once a second AI is added, the board keeps using whichever AI was called last, stored in `data/agent_sessions.json` across reconnects and restarts. `gateway.call_names` replaces the names altogether. Calling a name without waking the board does nothing: the board only listens for its wake word.
+**Calling by name**: wake the board with "你好宗主" first, then say "嗨 <Bot name>, …" ("hi <name>"; "嘿" works too). Anything after the name goes straight to that Bot, skipping local music; the name alone gets "我在。" ("I'm here.") and nothing is submitted. The Bot name is the name it has in Grok, set as `grok_bot.bot_name` in `.config.yaml` (for example `硬件`); without it the call names are "Grok Bot" and "Grok". Once a second AI is added, the board keeps using whichever AI was called last, stored in `data/agent_sessions.json` across reconnects and restarts. `gateway.call_names` replaces the names altogether. Calling a name without waking the board does nothing: the board only listens for its wake word. The Xiaomi speaker does hear it: call names are its wake words too. After "我在。" for a bare name, the speaker keeps listening for your question.
 
 To start the backend in the background at login (restarted if it exits; the Mac does not idle-sleep while it runs):
 

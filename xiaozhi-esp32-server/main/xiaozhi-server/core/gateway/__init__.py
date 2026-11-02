@@ -192,7 +192,8 @@ def _call_name(conn, text):
     return match_call_name(rest if had_wake else command, agent_call_names(conn.config))
 
 
-async def _answer_call(conn, heard, name, rest):
+def use_agent(conn, name):
+    """This board's AI from now on (called by name); kept across reconnects (agent_store)."""
     agent = AGENTS[name]
     if getattr(conn, "gateway_agent", None) != name:
         conn.gateway_agent = name
@@ -201,6 +202,17 @@ async def _answer_call(conn, heard, name, rest):
         conn.logger.bind(tag=TAG).info(f"呼名：这块板子改用 {agent.label(conn.config)}")
         if agent.answers_later:
             waiting.start(conn, agent)
+    return agent
+
+
+def call_words(config) -> dict:
+    """{call name: AI module name}: the Xiaomi speaker also wakes on these (core/gateway/xiaoai/)."""
+    return {word: name for name, words in agent_call_names(config).items()
+            for word in ([words] if isinstance(words, str) else words or ()) if str(word).strip()}
+
+
+async def _answer_call(conn, heard, name, rest):
+    agent = use_agent(conn, name)
     if rest:
         if await hand_over(conn, agent, rest):
             return "agent", agent.label(conn.config), True
@@ -212,6 +224,9 @@ async def _answer_call(conn, heard, name, rest):
 
     conn.client_abort = False
     conn.sentence_id = uuid.uuid4().hex
+    # The question comes next: a device that goes quiet after speaking listens again (the Xiaomi
+    # speaker, 2026-11-02: after "嗨硬件" → "我在。" the question was never heard)
+    conn.gateway_listen_again = True
     await send_stt_message(conn, heard)
     if not await phrases.speak(conn, phrases.HERE):
         speak_txt(conn, phrases.HERE)

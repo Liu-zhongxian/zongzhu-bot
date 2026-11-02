@@ -11,7 +11,8 @@ from pathlib import Path
 import numpy as np
 
 DEFAULT_MODEL_DIR = "models/sherpa-onnx-kws-open-xiaoai"
-DEFAULT_WAKE_WORDS = ("你好宗主", "宗主你好")
+# 2026-11-02 你定：音箱默认只喊"宗主"（原来"你好宗主""宗主你好"）；AI 的呼名也算唤醒词（server.py）
+DEFAULT_WAKE_WORDS = ("宗主",)
 # 2026-11-02 两段音箱录音（47 次喊、共 19 分钟，tools/xiaoai-debug/kws_eval.py）离线比较：
 # 0.2（bridge 原来的值）认出 33 次，0.1 认出 34 次，0.05 认出 43 次，都没有误唤醒；实测 11 喊 11 应，
 # 放视频、说话 2 分钟没有误唤醒。加分（keywords_score）调高反而认出得少，保持 2.0。
@@ -19,13 +20,24 @@ DEFAULT_THRESHOLD = 0.05
 SAMPLE_RATE = 16000
 
 
-def keyword_lines(words, tokens, bpe_model):
-    """唤醒词 → KeywordSpotter 的关键词行（"你 好 宗 主 @你好宗主"），英文用 bpe 切"""
+def keyword_lines(words, tokens, bpe_model, skipped=None):
+    """唤醒词 → KeywordSpotter 的关键词行（"你 好 宗 主 @你好宗主"、"▁BO T @bot"），英文用 bpe 切。
+    模型的英文片段是大写的（bpe 把 "BOT" 切成 ▁BO、T，小写的 "bot" 切不出来），所以按大写切；
+    @ 后面（认出来时返回的）用小写。模型切不出来的词跳过，放进 skipped，别的照用。"""
     import sherpa_onnx
 
-    lowered = [w.strip().lower() for w in words if w and w.strip()]
-    pieces = sherpa_onnx.text2token(lowered, tokens=tokens, tokens_type="cjkchar+bpe", bpe_model=bpe_model)
-    return [" ".join(p) + " @" + w for p, w in zip(pieces, lowered)]
+    lines = []
+    for w in dict.fromkeys(w.strip().lower() for w in words if w and w.strip()):
+        try:
+            pieces = sherpa_onnx.text2token([w.upper()], tokens=tokens, tokens_type="cjkchar+bpe",
+                                            bpe_model=bpe_model)[0]
+        except Exception:
+            pieces = None
+        if pieces:
+            lines.append(" ".join(pieces) + " @" + w)
+        elif skipped is not None:
+            skipped.append(w)
+    return lines
 
 
 class Spotter:
@@ -40,8 +52,9 @@ class Spotter:
         if missing:
             raise FileNotFoundError(f"唤醒词模型缺文件：{model} {missing}")
         keywords = model / "keywords.zongzhu.txt"
-        keywords.write_text("\n".join(keyword_lines(words, str(model / "tokens.txt"), str(model / "bpe.model"))) + "\n",
-                            encoding="utf-8")
+        self.skipped = []
+        keywords.write_text("\n".join(keyword_lines(words, str(model / "tokens.txt"), str(model / "bpe.model"),
+                                                    self.skipped)) + "\n", encoding="utf-8")
         self.spotter = sherpa_onnx.KeywordSpotter(
             tokens=str(model / "tokens.txt"), encoder=str(model / "encoder.onnx"),
             decoder=str(model / "decoder.onnx"), joiner=str(model / "joiner.onnx"),

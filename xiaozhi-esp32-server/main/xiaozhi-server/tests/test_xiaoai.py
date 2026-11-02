@@ -167,6 +167,7 @@ class MicMonoTest(unittest.TestCase):
 
 class FakeSpotter:
     """收到含 WAKE 的声音就"认出"唤醒词"""
+    skipped = []
 
     def create_stream(self):
         return None
@@ -212,6 +213,26 @@ class ReplyTest(unittest.IsolatedAsyncioTestCase):
             await server.XiaoaiServer({})._reply(link, listener)
         link.play.assert_awaited_once_with(server.beep(1320))
         listener.mute.assert_called_once()
+
+
+class CallWordTest(unittest.IsolatedAsyncioTestCase):
+    async def test_ai_name_heard_while_the_speaker_talks_is_ignored(self):
+        # 音箱自己会说"好的，正在交给 Bot。"：放声音时听到 bot 不算，听到唤醒词照样打断
+        srv = server.XiaoaiServer({})
+        srv.call_words = {"bot": "grok_bot"}
+        device = mock.Mock(state="speaking")
+        device.player.playing_recently.return_value = True
+        notes = []
+        with mock.patch.object(srv, "_reply") as reply, mock.patch.object(server.logger, "bind"), \
+                mock.patch.object(server.status, "note_wake"):
+            srv._woken(None, None, "bot", notes.append, device)
+            reply.assert_not_called()
+            self.assertEqual(notes, ["放声音时认出呼名，忽略：bot"])
+            srv._woken(None, None, "宗主", notes.append, device)
+            reply.assert_called_once()
+            device.player.playing_recently.return_value = False
+            srv._woken(None, None, "bot", notes.append, device)
+            self.assertEqual(device.call_agent, "grok_bot")
 
 
 class PlayTest(unittest.IsolatedAsyncioTestCase):
@@ -456,6 +477,27 @@ class DeviceTest(unittest.IsolatedAsyncioTestCase):
         await self.dev.interrupt()
         self.link.stop_play.assert_not_awaited()
         self.assertFalse([t for t in self.texts() if t.get("type") == "abort"])
+
+    async def test_calling_an_ai_by_name_switches_to_it(self):
+        with mock.patch("core.gateway.use_agent") as use_agent:
+            self.dev.call_agent = "grok_bot"
+            await self.dev.start_listening()
+        use_agent.assert_called_once_with(self.dev.handler, "grok_bot")
+        self.assertIsNone(self.dev.call_agent)
+
+    async def test_listens_again_after_answering_only_the_name(self):
+        # 2026-11-02：喊名字回"我在。"以后音箱待机了，接着问的问题没人听
+        await self.dev.start_listening(expect_playback=False)
+        handler = self.dev.handler
+        handler.gateway_listen_again = True
+        await self.dev._from_server(json.dumps({"type": "tts", "state": "start"}))
+        await self.dev._from_server(json.dumps({"type": "tts", "state": "stop"}))
+        for _ in range(30):
+            await asyncio.sleep(0.02)
+            if self.dev.state == "listening":
+                break
+        self.assertEqual(self.dev.state, "listening")
+        self.assertFalse(handler.gateway_listen_again)
 
     async def test_nothing_heard_goes_back_to_idle(self):
         await self.dev.start_listening()

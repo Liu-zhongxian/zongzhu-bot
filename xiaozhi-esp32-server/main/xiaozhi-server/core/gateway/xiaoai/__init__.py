@@ -7,7 +7,7 @@
         enabled: true
         port: 4399                                   # 音箱 /data/open-xiaoai/server.txt 里写的端口
         token_file: ../../../private/open-xiaoai-token.txt   # 和音箱上 /data/open-xiaoai/token.txt 一样
-        wake_words: [你好宗主, 宗主你好]              # 可选
+        wake_words: [宗主]                           # 可选，默认"宗主"；AI 的呼名也自动算唤醒词
         kws_model_dir: models/sherpa-onnx-kws-open-xiaoai   # 可选，唤醒词模型
         kws_threshold: 0.05                           # 可选，越低越容易唤醒
         device_id: "aa:bb:cc:dd:ee:ff"               # 可选，网关页面上的设备号，不配用 xiaoai-<音箱 IP>

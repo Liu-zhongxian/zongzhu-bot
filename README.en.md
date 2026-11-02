@@ -45,7 +45,7 @@ eyes                    ├ music and volume → runs on this computer
 
 **Xiaomi Smart Speaker Pro (optional, experimental)**
 
-- After flashing the open-xiaoai patched firmware, the speaker connects straight to the Zongzhu backend and answers "你好宗主" too: what you say next goes to the Bot and the answer is spoken by the speaker; say "你好宗主" while it speaks to interrupt, and after your new question it finishes what it was saying. XiaoAI keeps working. The gateway page lists it as "小米音箱 Pro".
+- After flashing the open-xiaoai patched firmware, the speaker connects straight to the Zongzhu backend: say "宗主" (or an AI's call name) and what you say next goes to the Bot, the answer is spoken by the speaker; say "宗主" while it speaks to interrupt, and after your new question it finishes what it was saying. XiaoAI keeps working. The gateway page lists it as "小米音箱 Pro".
 - Tested end to end only on the OH2P with firmware 1.62.2. Flashing carries risk; the steps are in the [GUIDE](docs/GUIDE.en.md#xiaomi-smart-speaker-pro-optional), flashing details and the way back in [zongzhu-speaker](zongzhu-speaker/README.md) (Chinese).
 
 **Accurate recognition**

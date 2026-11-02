@@ -554,6 +554,10 @@ class CallNameDispatchTest(unittest.IsolatedAsyncioTestCase):
         self.cached.assert_awaited_once_with(conn, "我在。")
         self.assertEqual(self.handed, [])
         self.music.assert_not_awaited()
+        self.assertTrue(conn.gateway_listen_again)  # 音箱说完"我在。"接着听问题
+
+    def test_call_names_are_wake_words_for_the_speaker(self):
+        self.assertEqual(gateway.call_words(self.config)["硬件"], "grok_bot")
 
     async def test_name_with_a_task_goes_straight_to_that_ai(self):
         conn = self.conn()

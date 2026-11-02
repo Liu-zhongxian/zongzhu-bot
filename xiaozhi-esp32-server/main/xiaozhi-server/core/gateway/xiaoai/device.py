@@ -122,6 +122,10 @@ class Player:
         self.buffer.clear()
         self.marks.clear()
 
+    def playing_recently(self, seconds):
+        """还在放，或者放完不到 seconds 秒"""
+        return bool(self.buffer) or self.clock() < self.play_end + seconds
+
     def busy(self):
         """还有没发的，或者发出去的还没放完"""
         return bool(self.buffer) or self.clock() < self.play_end
@@ -181,6 +185,7 @@ class SpeakerDevice:
         self.listen_mark = 0.0      # 开始听时录音到哪
         self.waiting_playback = False
         self.mic_open = False
+        self.call_agent = None      # 喊了某个 AI 的呼名唤醒：连上后换成它
         self.tts_done = False
         self.client_id = str(uuid.uuid4())
         self.watch = asyncio.create_task(self._watch())
@@ -256,6 +261,11 @@ class SpeakerDevice:
         要等录音里出现它、放完、回声过去（ECHO_TAIL）才开始发麦克风"""
         if not await self.connect():
             return
+        if self.call_agent:
+            from core import gateway
+
+            gateway.use_agent(self.handler, self.call_agent)
+            self.call_agent = None
         self.socket.put(json.dumps({"type": "listen", "state": "start", "mode": "auto",
                                     "session_id": self.handler.session_id}))
         self.mic.clear()
@@ -332,7 +342,13 @@ class SpeakerDevice:
             now = self.clock()
             if self.state == "speaking" and self.tts_done and not self.player.busy():
                 self.state = "idle"
-                self.note("说完，待机")
+                if self.handler is not None and getattr(self.handler, "gateway_listen_again", False):
+                    # 只叫了名字（"我在。"）：接着听问题，不待机
+                    self.handler.gateway_listen_again = False
+                    self.note("只叫了名字，接着听")
+                    asyncio.create_task(self.start_listening(expect_playback=False))
+                else:
+                    self.note("说完，待机")
             elif self.state == "listening" and now - self.listen_since > LISTEN_TIMEOUT:
                 self.state = "idle"
                 self.mic.clear()

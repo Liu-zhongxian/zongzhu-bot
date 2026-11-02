@@ -26,6 +26,8 @@ WAKE_REPLY = "在"
 # 其他时候放声音照样认：只用麦克风声道以后，放回答时喊唤醒词认得出来，音箱自己放的回答一次也没认成唤醒词
 # （2026-11-02 实测），认出来就打断。
 REPLY_ECHO_SECONDS = 0.2
+# 音箱出声时和放完这么久以内（出声比发出晚约 0.4 秒，加回声）认出的呼名不算
+CALL_ECHO_SECONDS = 0.8
 
 
 def settings(config):
@@ -80,15 +82,24 @@ class XiaoaiServer:
         self.ws_server = ws_server  # 有它才接对话（用它已经加载好的 VAD、ASR 这些）；没有就只认唤醒词
         self.links: set[SpeakerLink] = set()
         self.spotter = None
+        self.call_words = {}  # 呼名（小写）-> AI 模块名：喊它也唤醒，并换成那个 AI
         self.ready = asyncio.Event()  # 端口开好了（测试用）
 
     def _load_spotter(self, xiaoai):
-        words = xiaoai.get("wake_words") or list(wake.DEFAULT_WAKE_WORDS)
+        words = list(xiaoai.get("wake_words") or wake.DEFAULT_WAKE_WORDS)
+        # 呼名也是唤醒词：直接喊"硬件"就唤醒并交给那个 AI，不用先喊"你好宗主"再说"嗨 硬件"（2026-11-02 你定）
+        if self.ws_server and xiaoai.get("call_names_wake", True):
+            from core import gateway
+
+            self.call_words = {w.strip().lower(): name for w, name in gateway.call_words(self.config).items()}
+            words += [w for w in self.call_words if w not in words]
         try:
             self.spotter = wake.Spotter(xiaoai.get("kws_model_dir") or wake.DEFAULT_MODEL_DIR, words,
                                         score=float(xiaoai.get("kws_score", 2.0)),
                                         threshold=float(xiaoai.get("kws_threshold", wake.DEFAULT_THRESHOLD)))
-            logger.bind(tag=TAG).info(f"音箱唤醒词：{'、'.join(words)}")
+            logger.bind(tag=TAG).info(f"音箱唤醒词：{'、'.join(w for w in words if w not in self.spotter.skipped)}")
+            if self.spotter.skipped:
+                logger.bind(tag=TAG).warning(f"这些词唤醒词模型认不了，跳过：{'、'.join(self.spotter.skipped)}")
         except Exception as e:
             logger.bind(tag=TAG).error(f"音箱唤醒词识别没有启动：{type(e).__name__} {e}")
 
@@ -186,11 +197,22 @@ class XiaoaiServer:
             logger.bind(tag=TAG).info(f"小米音箱断开：{address}")
 
     def _woken(self, link, listener, word, note=lambda text: None, device=None):
+        agent = self.call_words.get(word)
+        if agent and device and device.player.playing_recently(CALL_ECHO_SECONDS):
+            # 音箱自己会说 AI 的名字（"好的，正在交给 Bot。"），麦克风录得到：放声音时只认唤醒词，不认呼名
+            note(f"放声音时认出呼名，忽略：{word}")
+            return
         logger.bind(tag=TAG).info(f"音箱唤醒：{word}")
         note(f"认出唤醒词：{word}")
         if device:
+            reply = f"回「{WAKE_REPLY}」" + ("，打断" if device.state == "speaking" else "")
+            if agent:
+                from core import gateway
+
+                device.call_agent = agent
+                reply += f"，交给 {gateway.AGENTS[agent].label(self.config)}"
             # 网关页面"最近的话"里记一条唤醒，和板子一样（板子的唤醒经网关记，音箱的唤醒在这里认）
-            status.note_wake(device.device_id, word, f"回「{WAKE_REPLY}」" + ("，打断" if device.state == "speaking" else ""))
+            status.note_wake(device.device_id, word, reply)
         asyncio.create_task(self._reply(link, listener, note, device))
 
     async def _reply(self, link, listener, note=lambda text: None, device=None):
