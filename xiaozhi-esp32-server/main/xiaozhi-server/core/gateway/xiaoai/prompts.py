@@ -32,16 +32,19 @@ def trim(pcm, rate, threshold=500, margin_ms=30):
     return samples[start:end].tobytes()
 
 
-async def phrase(config, text):
-    """合成 text 的 PCM（24 kHz 单声道 16 位），合成过的直接返回；失败抛异常"""
-    if text in _cache:
-        return _cache[text]
+async def speech(config, text):
+    """合成 text 的 PCM（24 kHz 单声道 16 位，去掉前后静音），不存；失败抛异常"""
     from core.utils.modules_initialize import initialize_tts
 
     tts = initialize_tts(config)
     audio = await tts.text_to_speak(text, None)
     if not audio:
         raise RuntimeError(f"TTS 没有返回音频：{text}")
-    pcm = await asyncio.to_thread(_to_pcm, audio, tts.audio_file_type, PLAY_CONFIG["sample_rate"])
-    _cache[text] = pcm
-    return pcm
+    return await asyncio.to_thread(_to_pcm, audio, tts.audio_file_type, PLAY_CONFIG["sample_rate"])
+
+
+async def phrase(config, text):
+    """固定短句的 PCM，合成过的直接返回；失败抛异常"""
+    if text not in _cache:
+        _cache[text] = await speech(config, text)
+    return _cache[text]

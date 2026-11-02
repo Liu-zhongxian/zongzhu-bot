@@ -11,6 +11,7 @@ from pathlib import Path
 from aiohttp import web
 
 from core.gateway import control, status, wake_assets
+from core.gateway.xiaoai import control as speaker_control
 
 PAGE = Path(__file__).with_name("page.html")
 NO_STORE = {"Cache-Control": "no-store"}
@@ -71,6 +72,9 @@ class GatewayPageHandler:
         try:
             if action in control.MUSIC_ACTIONS:
                 return web.json_response(await control.music_action(action, body.get("value")))
+            if action in speaker_control.ACTIONS:
+                return web.json_response(await speaker_control.act(self.config, body.get("device"), action,
+                                                                    body.get("value")))
             if action not in control.BOARD_ACTIONS:
                 return web.json_response({"error": f"不认识的操作 {action}"}, status=400)
             conn, reason = _board_conn(body.get("device"))

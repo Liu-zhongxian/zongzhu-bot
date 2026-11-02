@@ -228,6 +228,60 @@ class SpeakerInfoTest(unittest.TestCase):
         self.assertEqual(info.parse("model=\nplay=not json\n"), {})  # 读不到的不放
 
 
+class SpeakerControlTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        from core.gateway.xiaoai import control
+        self.control = control
+        self.commands = []
+
+        async def call(command, payload=None, timeout=None):
+            self.commands.append(payload)
+            return {"stdout": "", "stderr": "", "exit_code": 0}
+
+        self.link = mock.Mock(call=call)
+        self.speaker = mock.Mock(interrupt=mock.AsyncMock())
+        control.speakers.clear()
+        control.speakers["aa:bb:cc:dd:ee:77"] = (self.link, self.speaker)
+        self.addCleanup(control.speakers.clear)
+
+    async def act(self, action, value=None, device="ee:77"):
+        with mock.patch.object(self.control.info, "read", mock.AsyncMock(return_value={})), \
+                mock.patch.object(self.control.status, "note_info"):
+            result = await self.control.act({}, device, action, value)
+            for _ in range(3):
+                await asyncio.sleep(0)  # 后台重读信息也在替身里跑完，不写真文件
+            return result
+
+    async def test_volume_and_play_run_fixed_commands(self):
+        self.assertEqual((await self.act("speaker_volume", "40"))["message"], "音箱音量调到 40。")
+        await self.act("speaker_pause")
+        self.assertEqual(self.commands, ["ubus call mediaplayer player_set_volume '{\"volume\":40}'",
+                                         "ubus call mediaplayer player_play_operation "
+                                         "'{\"action\":\"pause\",\"media\":\"common\"}'"])
+
+    async def test_stop_xiaoai_stops_what_it_is_saying(self):
+        await self.act("speaker_stop_xiaoai")
+        self.assertTrue(self.commands[0].startswith("killall tts_play.sh miplayer"))
+
+    async def test_bad_values_never_reach_the_speaker(self):
+        for value in ("101", "-1", "40; reboot", None):
+            with self.assertRaises(self.control.ControlError):
+                await self.act("speaker_volume", value)
+        with self.assertRaises(self.control.ControlError):
+            await self.act("speaker_say", "x" * (self.control.SAY_MAX + 1))
+        with self.assertRaises(self.control.ControlError):
+            await self.act("speaker_play", device="no-such")
+        self.assertEqual(self.commands, [])
+
+    async def test_say_is_synthesized_here_and_played_as_sound(self):
+        # 要念的文字不进音箱的命令行
+        with mock.patch.object(self.control.prompts, "speech", mock.AsyncMock(return_value=b"\1\0" * 10)):
+            await self.act("speaker_say", "你好'; reboot")
+        self.speaker.interrupt.assert_awaited_once()
+        self.speaker.player.add.assert_called_once_with(b"\1\0" * 10)
+        self.assertEqual(self.commands, [])
+
+
 class CallWordTest(unittest.IsolatedAsyncioTestCase):
     async def test_ai_name_heard_while_the_speaker_talks_is_ignored(self):
         # 音箱自己会说"好的，正在交给 Bot。"：放声音时听到 bot 不算，听到唤醒词照样打断

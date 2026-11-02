@@ -11,7 +11,7 @@ import websockets
 
 from config.logger import setup_logging
 from core.gateway import status
-from core.gateway.xiaoai import debug, info as speaker_info, prompts, wake
+from core.gateway.xiaoai import control as speaker_control, debug, info as speaker_info, prompts, wake
 from core.gateway.xiaoai.device import BOARD_TYPE, SpeakerDevice
 from core.gateway.xiaoai.protocol import (PLAY_CONFIG, RECORD_CHANNELS, ClientError, SpeakerLink, mic_mono,
                                           playback_active, silence)
@@ -20,7 +20,7 @@ TAG = __name__
 logger = setup_logging()
 
 DEFAULT_PORT = 4399
-INFO_SECONDS = 60  # 设备页上的音箱信息（音量、播放状态这些）多久读一次
+INFO_SECONDS = 15  # 设备页上的音箱信息多久读一次（播放按钮跟着播放状态变，一条只读命令，很轻）
 LEVEL_REPORT_SECONDS = 15  # 连上后这么久里每秒报一次麦克风音量（第 1 步验收用）
 WAKE_REPLY = "在"
 # 放"在"后再多这么久不认唤醒词（音箱放出来比发出去晚约 0.1 秒，加上房间回声；也免得一声喊认两次）。
@@ -141,7 +141,14 @@ class XiaoaiServer:
             logger.bind(tag=TAG).info(f"音箱调试录音：{recorder.wav_path}")
         note = recorder.event if recorder else (lambda text: None)
         meter = LevelMeter(lambda level: logger.bind(tag=TAG).info(f"音箱麦克风音量：{level}"))
-        link = SpeakerLink(ws, on_event=lambda event, data: logger.bind(tag=TAG).debug(f"音箱事件 {event}: {data}"))
+        def on_event(event, data):
+            logger.bind(tag=TAG).debug(f"音箱事件 {event}: {data}")
+            # Client 每 10 毫秒看一次 mphelper mute_stat，播放状态一变就发 playing（Playing / Paused / Idle）：
+            # 设备页的播放按钮跟着它变，不等定时读（2026-11-02：定时读要等半分钟到一分钟才变）
+            if event == "playing" and device:
+                status.note_speaker_play(device.device_id, str(data).lower())
+
+        link = SpeakerLink(ws, on_event=on_event)
         listener = None
         device = None
         poller = None
@@ -174,6 +181,7 @@ class XiaoaiServer:
                 words = xiaoai.get("wake_words") or list(wake.DEFAULT_WAKE_WORDS)
                 device = SpeakerDevice(link, self.ws_server, device_id, address, words[0], note)
                 status.speaker_linked(device_id, True, "、".join(self.wake_words or words))
+                speaker_control.speakers[device_id] = (link, device)  # 网关页面上的控制（control.py）
                 poller = asyncio.create_task(self._poll_info(link, device_id))
             await link.start_recording()
             note("start_recording 已回应")
@@ -199,6 +207,8 @@ class XiaoaiServer:
                 poller.cancel()
             if device:
                 status.speaker_linked(device.device_id, False)
+                if speaker_control.speakers.get(device.device_id, (None,))[0] is link:
+                    speaker_control.speakers.pop(device.device_id, None)
                 await device.close()
             if listener:
                 listener.close()

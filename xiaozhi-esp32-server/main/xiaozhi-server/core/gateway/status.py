@@ -100,6 +100,14 @@ def speaker_linked(device_id, linked, wake=None):
         _linked.discard(device_id)
 
 
+_speaker_play = {}  # device id -> playing / paused / idle, from the speaker's own "playing" events
+
+
+def note_speaker_play(device_id, play):
+    if play in ("playing", "paused", "idle"):
+        _speaker_play[device_id] = play
+
+
 def note_info(device_id, info):
     """G18a: what the board reported over MCP (core/gateway/board_info.py)."""
     if device_id:
@@ -253,6 +261,14 @@ def note_audio(conn):
         record["first_audio"] = round(time.monotonic() - record["_t"], 2)
 
 
+def _with_play(info, device_id):
+    """The speaker's playback state from its events wins over the one read every 15 s."""
+    play = _speaker_play.get(device_id)
+    if not info or not play or "speaker" not in info:
+        return info
+    return {**info, "speaker": {**info["speaker"], "play": play}}
+
+
 def _state(conn, now):
     if getattr(conn, "bot_ui_waiting", False):
         since = max(getattr(conn, "bot_ui_seen_at", 0) or 0, getattr(conn, "gateway_wait_since", 0) or 0)
@@ -307,7 +323,7 @@ def snapshot(config):
             "agent": _agent_label(_agent(conn, device_id, agent), config),
             "state": _state(conn, now) if conn else {"kind": "standby" if linked else "offline"},
             "seen": info.get("seen"),
-            "info": info.get("info"),
+            "info": _with_play(info.get("info"), device_id) if bridge else info.get("info"),
             "bridge": bridge,
         })
     boards.sort(key=lambda b: (not b["online"], b["name"]))

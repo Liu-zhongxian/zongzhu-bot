@@ -110,6 +110,8 @@ section[hidden] { display: none; }
 .btn.danger:hover { border-color: var(--bad); color: var(--bad); }
 .btn[disabled] { opacity: .45; pointer-events: none; }
 .login { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.say { display: flex; gap: 8px; margin-top: 12px; }
+.say input { flex: 1; min-width: 0; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
 .login input { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
 #toast { position: fixed; right: 20px; bottom: 20px; max-width: min(420px, calc(100vw - 32px)); padding: 10px 14px; border-radius: 10px;
   background: var(--panel); border: 1px solid var(--line); box-shadow: 0 4px 16px rgba(0,0,0,.15); font-size: 13px; }
@@ -242,11 +244,16 @@ async function post(url, body) {
   if (!response.ok) throw new Error(result.error || response.status);
   return result;
 }
-async function act(action, device, value, ask) {
+// The speaker's play / pause button flips at once; it flips back if the speaker says no
+const FLIP = { speaker_play: "playing", speaker_pause: "paused" };
+async function act(action, device, value, ask, slider) {
   if (ask && !confirm(ask)) return;
-  busyUntil = Date.now() + 1500;
-  try { toast((await post("/gateway/api/control", { action, device, value })).message); refresh(); }
-  catch (e) { toast(e.message, true); }
+  // Only a slider waits before the page is redrawn, so it does not jump back while being dragged
+  if (slider) busyUntil = Date.now() + 1500;
+  const s = FLIP[action] && (data.boards.find(b => b.id === device)?.info || {}).speaker, before = s && s.play;
+  if (s) { s.play = FLIP[action]; renderDevices(); }
+  try { toast((await post("/gateway/api/control", { action, device, value })).message); busyUntil = 0; refresh(); }
+  catch (e) { if (s) { s.play = before; renderDevices(); } toast(e.message, true); }
 }
 function renderLogin() {
   const el = document.getElementById("login");
@@ -266,14 +273,19 @@ async function login() {
 document.addEventListener("click", e => {
   if (e.target.id === "pw-go") return login();
   const b = e.target.closest("button[data-act]"); if (!b) return;  // sliders act on "change"
-  act(b.dataset.act, b.dataset.dev, b.dataset.val, b.dataset.ask);
+  // "说一句话": the text comes from the box next to the button
+  const value = b.dataset.from ? document.getElementById(b.dataset.from).value : b.dataset.val;
+  act(b.dataset.act, b.dataset.dev, value, b.dataset.ask);
 });
-document.addEventListener("keydown", e => { if (e.target.id === "pw" && e.key === "Enter") login(); });
+document.addEventListener("keydown", e => {
+  if (e.target.id === "pw" && e.key === "Enter") login();
+  if (e.target.matches("input[data-say]") && e.key === "Enter") e.target.nextElementSibling.click();
+});
 document.addEventListener("input", e => {
   if (e.target.matches("input[type=range]")) { busyUntil = Date.now() + 3000; e.target.nextElementSibling.value = e.target.value; }
 });
 document.addEventListener("change", e => {
-  const r = e.target.closest("input[data-act]"); if (r) act(r.dataset.act, r.dataset.dev, Number(r.value));
+  const r = e.target.closest("input[data-act]"); if (r) act(r.dataset.act, r.dataset.dev, Number(r.value), null, true);
 });
 const slider = (label, action, dev, value, off) => `<label>${label}</label>
   <input type="range" min="0" max="100" value="${value ?? 50}" data-act="${action}" data-dev="${esc(dev || "")}" ${off ? "disabled" : ""}>
@@ -359,9 +371,24 @@ function speakerCard(b, head) {
       <div><h4>声音</h4>${kv([["音量", s.volume], ["播放", PLAY[s.play] || null]])}</div>
       <div><h4>唤醒</h4>${kv([["唤醒词", esc(b.wake) || null], ["交给", esc(b.agent) || null]])}</div>
     </div>
-    <p class="note">小米音箱直接接进后端，${where}；没有屏幕，也没有 MCP 工具。这些信息是后端在音箱上执行固定的只读命令读到的，每分钟读一次。
+    ${speakerControls(b, s)}
+    <p class="note">小米音箱直接接进后端，${where}；没有屏幕，也没有 MCP 工具。这些信息是后端在音箱上执行固定的只读命令读到的，每 15 秒读一次。
       ${b.online ? "" : "下面是上次读到的，"}读取于 ${clock(s.read_at)}（${ago(s.read_at)}前）。</p>
   </div>`;
+}
+// G19d step 2: fixed commands on the speaker (core/gateway/xiaoai/control.py); only while it is connected
+function speakerControls(b, s) {
+  if (!canControl()) return "";
+  const off = !b.online ? "disabled" : "", dev = esc(b.id), box = "say-" + dev.replace(/\W/g, "");
+  return `<h4>控制${b.online ? "" : "（音箱没连着后端）"}</h4>
+    <div class="ctl">${slider("音箱音量", "speaker_volume", b.id, s.volume, !b.online)}</div>
+    <div class="btns">
+      ${s.play === "playing" ? `<button class="btn" data-act="speaker_pause" data-dev="${dev}" ${off}>⏸ 暂停</button>`
+        : `<button class="btn" data-act="speaker_play" data-dev="${dev}" ${off}>▶ 继续播放</button>`}
+      <button class="btn danger" data-act="speaker_stop_xiaoai" data-dev="${dev}" ${off}>打断小爱</button>
+    </div>
+    <div class="say"><input id="${box}" data-say maxlength="100" placeholder="让音箱说一句话（最多 100 字），回车发送" ${off}>
+      <button class="btn" data-act="speaker_say" data-dev="${dev}" data-from="${box}" ${off}>说</button></div>`;
 }
 function renderStats() {
   const online = data.boards.filter(b => b.online).length;
@@ -424,7 +451,8 @@ function renderLog() {
 function render() {
   renderNav(); renderStats(); renderBoards(); renderLog(); renderLogin();
   // Re-rendering would reset a slider while it is being dragged
-  if (Date.now() > busyUntil && !document.querySelector("#devices input:active, #music input:active")) { renderDevices(); renderMusic(); }
+  // ...and would wipe what is being typed into "说一句话"
+  if (Date.now() > busyUntil && !document.querySelector("#devices input:active, #music input:active, #devices input[data-say]:focus")) { renderDevices(); renderMusic(); }
 }
 
 async function refresh() {

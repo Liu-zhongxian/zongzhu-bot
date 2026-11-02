@@ -23,7 +23,7 @@ def make_conn(device="94:a9:90:2d:a3:70", **extra):
 
 class StatusTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        for store in (status._boards, status._conns, status._recent, status._linked):
+        for store in (status._boards, status._conns, status._recent, status._linked, status._speaker_play):
             store.clear()
         status._totals.update(sentences=0, local=0)
         # the board's chosen AI is read from data/agent_sessions.json; keep the real one out of it
@@ -220,6 +220,16 @@ class StatusTest(unittest.IsolatedAsyncioTestCase):
         board = {b["name"]: b for b in status.snapshot(CONFIG)["boards"]}["小米音箱 Pro"]
         self.assertEqual((board["online"], board["state"]["kind"]), (False, "offline"))
         self.assertEqual(board["info"]["speaker"]["model"], "OH2P")  # 断开后显示上次读到的
+
+    def test_speaker_play_state_follows_its_events(self):
+        status.note_ota("aa:bb:cc:dd:ee:99", "open-xiaoai", "Client 1.0.0", "192.168.1.30")
+        status.note_info("aa:bb:cc:dd:ee:99", {"speaker": {"play": "idle", "volume": 31}})
+        status.note_speaker_play("aa:bb:cc:dd:ee:99", "playing")
+        board = {b["name"]: b for b in status.snapshot(CONFIG)["boards"]}["小米音箱 Pro"]
+        self.assertEqual(board["info"]["speaker"], {"play": "playing", "volume": 31})
+        status.note_info("aa:bb:cc:dd:ee:99", {"speaker": {"play": "idle", "volume": 31}})  # 定时读不覆盖
+        board = {b["name"]: b for b in status.snapshot(CONFIG)["boards"]}["小米音箱 Pro"]
+        self.assertEqual(board["info"]["speaker"]["play"], "playing")
 
     def recent(self):
         return status.snapshot(CONFIG)["recent"]
