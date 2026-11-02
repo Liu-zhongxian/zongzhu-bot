@@ -112,7 +112,7 @@ class GrokWebhookAgent(Agent):
         found = replies.next_reply(directory, device)
         if found is not None:
             pending, request_id, text, created = found
-            return Reply(request_id, text, created, ref=("first", pending))
+            return Reply(request_id, text, created, ref=("first", pending), question=replies.question_of(pending))
         found = replies.next_follow_up(directory, device)
         if found is not None:
             path, request_id, text = found

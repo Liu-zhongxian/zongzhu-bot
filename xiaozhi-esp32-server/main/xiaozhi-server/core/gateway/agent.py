@@ -36,6 +36,7 @@ class Reply:
     text: str
     created: Optional[float] = None  # when the request was sent (time.time())
     ref: object = None  # whatever the module needs back in `delivered`
+    question: Optional[str] = None  # the sentence that was handed over, when the module kept it
 
 
 class Agent:
@@ -194,6 +195,8 @@ async def say_reply(conn, reply: TextDelta, request_id):
     sentence_id = uuid.uuid4().hex
     conn.sentence_id = sentence_id
     conn.bot_reply_sentence_id = sentence_id
+    # What is being said, so an interruption can keep the rest (waiting.on_abort)
+    conn.gateway_reply_now = {"text": text, "request_id": request_id, "sentence_id": sentence_id, "said": []}
     conn.client_abort = False
     conn.client_is_speaking = True
     conn.last_activity_time = time.time() * 1000

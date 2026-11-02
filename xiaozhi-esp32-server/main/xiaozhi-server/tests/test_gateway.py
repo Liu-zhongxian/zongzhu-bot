@@ -305,6 +305,62 @@ class WaitingTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.sent()[-1]["state"], "timeout")
         self.assertFalse(self.conn.bot_ui_waiting)
 
+    async def say(self, text, request_id="r0"):
+        """Like a delivered answer whose sentences the TTS queue sent, as far as `sent`."""
+        await waiting.say_reply(self.conn, TextDelta(text), request_id)
+        self.conn.client_is_speaking = False  # 念完或被打断（abort 清掉说话状态）
+
+    async def test_interrupted_answer_goes_on_after_the_new_question_then_the_new_answer(self):
+        # 你定的规则（2026-11-02）：打断后先回新问题的"交给 Bot"，再接着说剩下的，新回复带上问题
+        await self.say("南乐县现在晴，15度。明天阴，7到21度。后天有小雨。")
+        waiting.note_sentence(self.conn, "南乐县现在晴，15度")
+        waiting.note_sentence(self.conn, "明天阴，7到21度")
+        waiting.on_abort(self.conn)  # 说第二句时喊了唤醒词
+        self.speak_txt.reset_mock()
+        self.assertIsNone(await waiting.deliver(self.conn, self.agent))  # 先等新问题
+        self.conn.bot_input_until = 0  # 新问题交给 AI 了（hand_over）
+        self.agent.ready.append(Reply("r2", "现在下午5点。", created=time.time(), question="现在几点了？"))
+        self.assertEqual(await waiting.deliver(self.conn, self.agent), "resumed")
+        self.speak_txt.assert_called_once_with(self.conn, "明天阴，7到21度。后天有小雨。")
+        self.assertEqual(self.agent.done, [])
+        self.conn.client_is_speaking = False
+        self.assertTrue(await waiting.deliver(self.conn, self.agent))
+        self.speak_txt.assert_called_with(self.conn, "你刚才问「现在几点了」：现在下午5点。")
+
+    async def test_waking_again_lets_the_user_speak_before_the_rest(self):
+        await self.say("第一句。第二句。")
+        waiting.on_abort(self.conn)
+        self.conn.bot_input_until = time.monotonic() - 1  # 等的 15 秒过去了
+        waiting.resume_input(self.conn)                    # 又喊了唤醒词
+        self.assertIsNone(await waiting.deliver(self.conn, self.agent))
+
+    async def test_rest_is_said_when_nothing_new_is_asked(self):
+        await self.say("第一句。第二句。")
+        waiting.note_sentence(self.conn, "第一句")
+        waiting.on_abort(self.conn)
+        self.conn.bot_input_until = time.monotonic() - 1  # RESUME_SECONDS 过去了
+        self.speak_txt.reset_mock()
+        self.assertEqual(await waiting.deliver(self.conn, self.agent), "resumed")
+        self.speak_txt.assert_called_once_with(self.conn, "第一句。第二句。")
+
+    async def test_wake_long_after_the_answer_keeps_nothing(self):
+        await self.say("说完了。")
+        waiting.note_sentence(self.conn, "说完了")
+        waiting.note_stop(self.conn)
+        self.conn.gateway_reply_now["stopped_at"] -= waiting.INTERRUPT_GRACE_SECONDS + 1
+        waiting.on_abort(self.conn)
+        self.assertIsNone(getattr(self.conn, "gateway_resume", None))
+        self.agent.ready.append(Reply("r2", "答案。", created=time.time(), question="问题"))
+        await waiting.deliver(self.conn, self.agent)
+        self.speak_txt.assert_called_with(self.conn, "答案。")  # 没打断：不加问题
+
+    def test_remaining_text_starts_at_the_sentence_being_said(self):
+        text = "甲。乙，丙。乙！"
+        self.assertEqual(waiting.remaining_text(text, []), text)
+        self.assertEqual(waiting.remaining_text(text, ["甲。", "乙"]), "乙，丙。乙！")
+        self.assertEqual(waiting.remaining_text(text, ["甲", "乙", "丙", "乙"]), "乙！")
+        self.assertEqual(waiting.remaining_text(text, ["对不上"]), text)
+
     def test_progress_lines_follow_30_60_120(self):
         self.assertIsNone(waiting.progress_text(29, 0))
         self.assertEqual(waiting.progress_text(30, 0), "还在处理，请稍等。")

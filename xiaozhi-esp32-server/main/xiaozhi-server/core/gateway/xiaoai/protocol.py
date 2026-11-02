@@ -33,11 +33,15 @@ def mic_mono(pcm):
     return samples[:, :MIC_CHANNELS].astype(np.int32).mean(axis=1).astype("<i2").tobytes()
 
 
-def playback_active(pcm, threshold=100):
-    """这段录音里音箱是不是在出声（看 ch3：音箱实际放出的声音，不出声时正好是 0）"""
+def playback_active(pcm, threshold=1000):
+    """这段录音里音箱是不是在出声（看 ch3：音箱实际放出的声音）。
+
+    看起伏（最大减最小），不看数值大小：不出声时一般是 0，但 stop_play 停掉 aplay 以后
+    ch3 会一直停在 -256（2026-11-02 录音，停了 7 秒一直是 -256），偶尔有 ±256 的跳动。
+    """
     frame = 2 * RECORD_CHANNELS
     playback = memoryview(pcm[:len(pcm) // frame * frame]).cast("h")[RECORD_CHANNELS - 1::RECORD_CHANNELS]
-    return any(abs(v) > threshold for v in playback)
+    return bool(len(playback)) and max(playback) - min(playback) > threshold
 
 
 def silence(ms, rate=PLAY_CONFIG["sample_rate"]):

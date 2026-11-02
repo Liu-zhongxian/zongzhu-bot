@@ -248,16 +248,22 @@ class SpeakerDevice:
             self.waiting_playback = False
         if self.state != "listening" or not self.connected():
             return
+        if self.mic_open:
+            self.mic += pcm
+            self._send_frames()
+            return
         if self.waiting_playback:
             if self.heard - self.listen_mark < PLAYBACK_WAIT:
                 return
             self.waiting_playback = False
         if self.heard - self.last_playback < ECHO_TAIL:
             return
-        if not self.mic_open:
-            self.mic_open = True
-            self.note("开始把麦克风发给后端")
+        self.mic_open = True  # 开了就一直发到这次听完：中途不再看音箱有没有出声
+        self.note("开始把麦克风发给后端")
         self.mic += pcm
+        self._send_frames()
+
+    def _send_frames(self):
         while len(self.mic) >= FRAME_BYTES:
             frame, self.mic = bytes(self.mic[:FRAME_BYTES]), self.mic[FRAME_BYTES:]
             self.socket.put(self.encoder.encode(frame, FRAME_BYTES // 2))

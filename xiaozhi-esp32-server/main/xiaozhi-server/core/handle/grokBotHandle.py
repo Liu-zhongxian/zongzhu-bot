@@ -215,7 +215,7 @@ def prepare_submission(command, device, config_file):
     if config.get("reply_dir"):
         reply_token = secrets.token_urlsafe(24) if reply_url else None
         try:
-            pending, target = prepare_reply(config["reply_dir"], request_id, device, reply_token)
+            pending, target = prepare_reply(config["reply_dir"], request_id, device, reply_token, command)
         except (OSError, ValueError, TypeError):
             _recent.pop(key, None)
             return "Bot 回传目录不可用，任务未提交，请检查电脑上的配置。"

@@ -153,8 +153,11 @@ def four_channels(mono, playback=30000):
 
 class MicMonoTest(unittest.TestCase):
     def test_playback_is_seen_on_the_fourth_channel(self):
-        self.assertTrue(playback_active(four_channels(b"\0\0" * 10, playback=3000)))
+        sound = struct.pack("<8h", 0, 0, 0, 3000, 0, 0, 0, -3000)
+        self.assertTrue(playback_active(sound))
         self.assertFalse(playback_active(four_channels(b"\x00\x40" * 10, playback=0)))  # 只有人声
+        # stop_play 以后 ch3 停在 -256（2026-11-02 录音）：不算出声
+        self.assertFalse(playback_active(four_channels(b"\0\0" * 10, playback=-256)))
 
     def test_averages_the_three_microphones_and_drops_playback(self):
         raw = struct.pack("<8h", 300, 600, 900, 32000, -3, -3, -3, -32000)
@@ -378,6 +381,14 @@ class DeviceTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.frames())
         self.mic(0.12)
         self.assertEqual(len(self.frames()), 2)  # 60 毫秒一帧
+
+    async def test_once_open_the_mic_stays_open_for_this_listen(self):
+        await self.dev.start_listening(expect_playback=False)
+        self.mic(0.12)
+        sent = len(self.frames())
+        self.assertTrue(sent)
+        self.mic(0.12, playing=True)  # 以前这里会又停发，你说的后半句没了
+        self.assertEqual(len(self.frames()), sent + 2)
 
     async def test_listen_does_not_wait_forever_for_the_reply(self):
         await self.dev.start_listening()

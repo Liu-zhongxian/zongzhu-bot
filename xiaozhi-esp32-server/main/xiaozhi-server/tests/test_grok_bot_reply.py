@@ -476,3 +476,15 @@ class BotReplyEndpointTest(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class QuestionTest(unittest.TestCase):
+    def test_the_question_is_kept_with_the_request(self):
+        from core.handle.grokBotReply import question_of
+
+        with tempfile.TemporaryDirectory() as directory:
+            pending, _ = prepare_reply(directory, "ESP32-" + "c" * 32, "board-1", question="南乐县的天气")
+            self.assertEqual(question_of(pending), "南乐县的天气")
+            other, _ = prepare_reply(directory, "ESP32-" + "d" * 32, "board-1")
+            self.assertIsNone(question_of(other))
+            self.assertIsNone(question_of(Path(directory) / "missing.pending.json"))

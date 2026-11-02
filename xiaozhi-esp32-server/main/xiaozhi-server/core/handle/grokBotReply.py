@@ -21,13 +21,16 @@ def _token_hash(token):
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def prepare_reply(directory, request_id, device, token=None):
+def prepare_reply(directory, request_id, device, token=None, question=None):
+    """question：交给 Bot 的那句话，回复晚到时用来说明它答的是什么（question_of）"""
     directory = Path(directory)
     if not directory.is_absolute():
         raise ValueError("Bot reply directory must be absolute")
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     pending = directory / (request_id + ".pending.json")
     metadata = {"request_id": request_id, "device": device, "created": time.time()}
+    if question:
+        metadata["question"] = str(question)[:200]
     if token:
         # Only the hash is kept, so the reply directory never holds a usable token.
         metadata["token_sha256"] = _token_hash(token)
@@ -167,6 +170,15 @@ def next_reply(directory, device, max_age=REPLY_TOKEN_SECONDS, now=None):
             continue
         return (pending, *reply)
     return None
+
+
+def question_of(pending):
+    """请求记录里存的问题（prepare_reply 的 question），没有或读不了返回 None"""
+    try:
+        question = json.loads(Path(pending).read_text(encoding="utf-8")).get("question")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return question if isinstance(question, str) and question.strip() else None
 
 
 def mark_sent(pending, request_id):
