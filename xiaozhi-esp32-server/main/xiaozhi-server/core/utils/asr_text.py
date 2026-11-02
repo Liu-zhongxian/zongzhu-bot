@@ -28,17 +28,6 @@ DEFAULT_HOTWORDS = [
     "issue", "PR", "bug", "AI",
 ]
 
-# 本机点歌开着时追加（local_music.enabled）：实机把"晴天"认成"请帖"、"的"认成"在"（2026-10-22）。
-# 歌手和常被点的歌名，加上点歌指令。配置里写 local_music.hotwords 可以追加自己的。
-MUSIC_HOTWORDS = [
-    "周杰伦", "林俊杰", "陈奕迅", "邓紫棋", "薛之谦", "毛不易", "李荣浩", "王菲", "张学友", "刘德华", "五月天",
-    "蔡依林", "孙燕姿", "王力宏", "张惠妹", "华晨宇", "许嵩", "汪苏泷", "周深", "李健", "朴树", "赵雷", "陶喆",
-    "莫文蔚", "张杰", "梁静茹", "邓丽君", "Beyond",
-    "晴天", "七里香", "稻香", "青花瓷", "夜曲", "告白气球", "搁浅", "兰亭序", "简单爱", "江南", "孤勇者",
-    "光年之外", "演员", "消愁", "富士山下", "十年", "后来", "小幸运", "起风了", "平凡之路", "成都", "南山南",
-    "播放", "暂停", "继续播放", "下一首", "上一首", "切歌", "单曲循环", "快进", "快退", "音量", "静音",
-]
-
 _ASCII = re.compile(r"[A-Za-z0-9]")
 _TOKEN = re.compile(r"[A-Za-z0-9]+|\S")
 _GAP = r"[\s,，、]*"
@@ -106,10 +95,11 @@ def apply_corrections(text: str, corrections: dict) -> str:
 def hotwords_of(config: dict) -> list:
     value = (config or {}).get("asr_hotwords")
     words = DEFAULT_HOTWORDS[:] if value is None else _aliases(value)
-    music = (config or {}).get("local_music") or {}
-    if music.get("enabled"):
-        words += [w for w in MUSIC_HOTWORDS + _aliases(music.get("hotwords") or []) if w not in words]
-    return words
+    # 开着的技能自己提供热词（点歌：歌手、歌名和指令，见 core/gateway/skills/music）
+    from core import gateway
+
+    words += _aliases(gateway.hotwords(config or {}))
+    return list(dict.fromkeys(words))
 
 
 def fix_asr_result(result, config: dict):

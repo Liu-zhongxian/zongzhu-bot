@@ -4,10 +4,10 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-import core.music.player  # noqa: F401 -- loaded before setUp snapshots sys.modules
-from core.handle import localCommandHandle as local
-from core.handle.localCommandHandle import Command, cn_number, match, parse_song
-from core.music.source import GoMusicDL, Song, artist_is, is_original, sounds_like
+import core.gateway.skills.music.player  # noqa: F401 -- loaded before setUp snapshots sys.modules
+from core.gateway.skills.music import command as local
+from core.gateway.skills.music.command import Command, cn_number, match, parse_song
+from core.gateway.skills.music.source import GoMusicDL, Song, artist_is, is_original, sounds_like
 
 
 class MatchTest(unittest.TestCase):
@@ -98,6 +98,29 @@ class MatchTest(unittest.TestCase):
         self.assertIsNone(match("播放", has_song=True, playing=True))
         # Without music these stay with the Bot
         for text in ("快进五秒", "从头开始", "单曲循环", "停止", "跳过"[:0] or "从头再来"):
+            self.assertIsNone(match(text), text)
+
+    def test_dont_with_words_slipped_in(self):
+        on = dict(has_song=True, playing=True)
+        # 2026-10-25 实机："别再放了"曾被交给 Bot
+        for text in ("别再放了", "不要再放了", "你别再放了吧", "不用再放了", "别再唱了", "别播了", "不要再播音乐了",
+                     "别放音乐了", "别继续放了", "先别放了", "别再放这首歌了"):
+            self.assertEqual(match(text, **on), Command("stop"), text)
+        self.assertEqual(match("不要再循环了", **on), Command("loop", level=0))
+        self.assertEqual(match("还是下一首吧", **on), Command("next"))
+        self.assertEqual(match("再下一首", **on), Command("next"))
+        # Without music, and "don't" followed by anything else, stay with the Bot
+        self.assertIsNone(match("别再放了"))
+        for text in ("别再提醒我了", "不要再发邮件了", "别再放到桌面上了", "不要再播放广告", "别再说了"):
+            self.assertIsNone(match(text, **on), text)
+
+    def test_known_singer_and_title_without_a_verb(self):
+        # 2026-10-25 实机："放"没识别出来，"周杰伦的晴天。"被交给了 Bot
+        self.assertEqual(match("周杰伦的晴天。"), Command("play", title="晴天", artist="周杰伦"))
+        self.assertEqual(match("林俊杰的江南吧"), Command("play", title="江南", artist="林俊杰"))
+        self.assertEqual(match("周杰伦的歌"), Command("play", artist="周杰伦"))
+        for text in ("周杰伦的老婆是谁", "周杰伦的新专辑什么时候出", "周杰伦的演唱会在哪", "我同事的晴天",
+                     "帮我查一下周杰伦的晴天是哪年发行的", "张三的文件"):
             self.assertIsNone(match(text), text)
 
     def test_other_speech_goes_to_the_bot(self):
@@ -241,7 +264,7 @@ class HandleTest(unittest.IsolatedAsyncioTestCase):
 
     async def _handle(self, text, music, conn=None):
         conn = conn or self._conn()
-        with mock.patch("core.music.player.get_music", return_value=music):
+        with mock.patch("core.gateway.skills.music.player.get_music", return_value=music):
             handled = await local.handle_local_command(conn, text)
         return handled, conn
 
@@ -257,7 +280,7 @@ class HandleTest(unittest.IsolatedAsyncioTestCase):
         self.audio.send_tts_message.assert_any_call(conn, "sentence_start", "正在播放：周杰伦的晴天")
 
     async def test_volume_is_shown_and_spoken_short(self):
-        with mock.patch("core.music.player.set_system_volume", return_value=30):
+        with mock.patch("core.gateway.skills.music.player.set_system_volume", return_value=30):
             handled, conn = await self._handle("音量调到三十", FakeMusic())
         self.assertTrue(handled)
         self.speak_txt.assert_called_once_with(conn, "好的。")

@@ -13,10 +13,15 @@ import uuid
 from dataclasses import dataclass
 from typing import Optional
 
+from core.gateway.skills.music import SINGERS
 from core.handle import grokBotPhrases as phrases
 
 PUNCT = re.compile(r"[\s，。！？、,.!?~～:：…]+")
-POLITE = re.compile(r"^(?:请|麻烦你|麻烦|帮我|帮忙|给我|你|就|嗯|呃|那就|那|然后|再给我|再|先|赶紧|快点|马上|现在|可以|能不能|好的|好)+")
+POLITE = re.compile(r"^(?:请|麻烦你|麻烦|帮我|帮忙|给我|你|就|嗯|呃|那就|那|然后|再给我|再|先|赶紧|快点|马上|现在|可以|能不能|好的|好|还是)+")
+# Words slipped in after a "don't": "别再放了", "不要再唱了", "不用继续放了" (2026-10-25 实机："别再放了"曾被交给 Bot)
+NEG_INSERT = re.compile(r"^(别|不要|不用)(?:再|还|又|都|也|继续|给我|先)+")
+# "别放了", "不要播音乐了", "别唱这首歌了", with the trailing particles already taken off
+NEG_STOP = re.compile(r"^(?:别|不要|不用)(?:放|播|唱)(?:音乐|歌|这首歌?)?了?$")
 # Trailing particles: "暂停一下吧" is "暂停", "快进十秒好吗" is "快进十秒"
 TAIL = re.compile(r"(?:吧|呀|啊|呢|哈|啦|呗|嘛|了|好吗|好不好|可以吗|行吗|谢谢|一下)+$")
 NUM = r"\d{1,3}|[零一二两三四五六七八九十百]+"
@@ -30,6 +35,10 @@ MUSIC_VERB = re.compile(r"放|播|听|换|切|来一首|来首")
 CLAUSE = re.compile(r"[，。！？、,.!?；;~～…]+")
 # A second clause that only adds this much keeps the command: "…的音乐，你随意播放"
 MUSICISH = re.compile(r"播放|放|歌|音乐|随意|随便|随机|听|一下|吧")
+# "周杰伦的晴天" with the verb cut off at the start of recognition (2026-10-25 实机): a known
+# singer, "的", a short title, and nothing that makes it a question about the singer
+BARE_SONG = re.compile(r"^(?P<artist>[^的]{2,8})的(?P<title>[^的]{1,10})$")
+NOT_A_TITLE = re.compile(r"[谁什么哪吗几怎为是有在呢多少]")
 GENERIC = {"歌", "音乐", "首歌", "点歌", "点音乐", "一首歌", "歌曲", "放歌", "首"}
 STOP = {"别放了", "不要放了", "停止播放", "停止音乐", "关掉音乐", "关闭音乐", "关音乐", "不听了", "音乐关掉",
         "把音乐关掉", "把音乐关了", "音乐关了", "关了音乐", "停止", "结束播放", "别唱了", "不要唱了", "关掉歌", "把歌关了"}
@@ -179,12 +188,14 @@ def _goes_with(other: str, clause: str) -> bool:
 
 def _match_one(text: str, has_song: bool, playing: bool, paused: bool) -> Optional[Command]:
     raw = PUNCT.sub(" ", text).strip()
-    full = POLITE.sub("", raw.replace(" ", ""))
+    full = NEG_INSERT.sub(r"\1", POLITE.sub("", raw.replace(" ", "")))
     t = TAIL.sub("", full) or full
     if not t:
         return None
     if t in LOOP_OFF or full in LOOP_OFF:
         return Command("loop", level=0) if has_song else None
+    if NEG_STOP.match(t):
+        return Command("stop") if has_song else None
     if re.match(r"^(?:别|不要|不用)(?!放了|唱了)", full):
         return None
     if t in STOP or full in STOP:
@@ -251,6 +262,10 @@ def _match_one(text: str, has_song: bool, playing: bool, paused: bool) -> Option
                             a.group("artist")) or None
         if title and title not in GENERIC:
             return Command("play", title=title, artist=artist)
+    m = BARE_SONG.match(t)
+    if m and m.group("artist") in SINGERS and not NOT_A_TITLE.search(m.group("title")):
+        title, artist = parse_song(t)
+        return Command("play", title=title, artist=artist)
     # Matched with single spaces kept: "放 周杰伦 晴天" splits singer and title at the space
     m = PLAY.match(POLITE.sub("", raw))
     if m:
@@ -275,7 +290,7 @@ def _strong_music_request(text: str, cmd=None, why: str = "") -> bool:
 
 def _run(music, cmd: Command):
     """Blocking work; returns the reply, or None to hand the utterance to the Bot."""
-    from core.music.player import set_muted, set_system_volume, system_volume
+    from core.gateway.skills.music.player import set_muted, set_system_volume, system_volume
 
     if cmd.action == "ask":
         return "想听什么歌？可以说：放周杰伦的晴天。"
@@ -334,7 +349,7 @@ def duck(conn) -> None:
     """The board started listening: lower the music so it hears the user."""
     if not conn.config.get("local_music", {}).get("enabled"):
         return
-    from core.music.player import current_music
+    from core.gateway.skills.music.player import current_music
     music = current_music()
     if music:
         asyncio.get_running_loop().run_in_executor(None, music.duck)
@@ -344,8 +359,8 @@ async def handle_local_command(conn, text) -> bool:
     config = conn.config.get("local_music", {})
     if not config.get("enabled"):
         return False
-    from core.handle.grokBotHandle import extract_command, strip_wake_phrase
-    from core.music.player import MusicError, get_music
+    from core.handle.grokBotHandle import extract_command, strip_wake_phrase, wake_options
+    from core.gateway.skills.music.player import MusicError, get_music
 
     command = extract_command(text)
     if command is None:
@@ -353,7 +368,7 @@ async def handle_local_command(conn, text) -> bool:
     device_wake = getattr(conn, "device_wake_word", None)
     if re.sub(r"[\W_]", "", command) in [*conn.config.get("wakeup_words", []), device_wake]:
         return False  # the wake greeting, not a command
-    _, command = strip_wake_phrase(command, [device_wake] if device_wake else ())
+    _, command = strip_wake_phrase(command, **wake_options(conn))
     if not command.strip("，。！？,.!? "):
         return False
 
@@ -398,7 +413,7 @@ async def handle_local_command(conn, text) -> bool:
 
 
 async def _finish(work, log):
-    from core.music.player import MusicError
+    from core.gateway.skills.music.player import MusicError
     try:
         return await work
     except MusicError as error:
@@ -439,12 +454,11 @@ async def _say_more(conn, text):
 
 
 def warm(conn) -> None:
-    """When the board connects: synthesize the fixed replies and start the music programs."""
+    """When the board connects: start the music programs (the gateway synthesizes FIXED_REPLIES)."""
     config = conn.config.get("local_music", {})
     if not config.get("enabled"):
         return
-    from core.music.player import get_music
-    asyncio.create_task(phrases.warm(conn, FIXED_REPLIES))
+    from core.gateway.skills.music.player import get_music
     music = get_music(config)
 
     def start():

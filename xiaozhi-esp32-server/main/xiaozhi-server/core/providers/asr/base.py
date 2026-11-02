@@ -19,6 +19,7 @@ from core.handle.receiveAudioHandle import startToChat
 from core.handle.reportHandle import enqueue_asr_report
 from core.utils.util import remove_punctuation_and_length
 from core.utils.asr_text import fix_asr_result
+from core.gateway import status as gateway_status
 from core.handle.receiveAudioHandle import handleAudioMessage
 from typing import Optional, Tuple, List, NamedTuple, TYPE_CHECKING
 
@@ -124,6 +125,7 @@ class ASRProviderBase(ABC):
             before = raw_text.get("content") if isinstance(raw_text, dict) else raw_text
             raw_text = fix_asr_result(raw_text, conn.config)
             after = raw_text.get("content") if isinstance(raw_text, dict) else raw_text
+            gateway_status.note_asr(conn, before, after, total_start_time)
             if re.sub(r"\s", "", before or "") != re.sub(r"\s", "", after or ""):
                 logger.bind(tag=TAG).info(f"识别纠错: {before} -> {after}")
             logger.bind(tag=TAG).info(f"识别耗时: {asr_time:.3f}s")

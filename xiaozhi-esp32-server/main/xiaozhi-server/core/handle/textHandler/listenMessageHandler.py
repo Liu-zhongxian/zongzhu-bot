@@ -28,10 +28,8 @@ class ListenTextMessageHandler(TextMessageHandler):
 
     async def handle(self, conn: "ConnectionHandler", msg_json: Dict[str, Any]) -> None:
         if msg_json.get("state") in ("start", "detect"):
-            from core.handle.grokBotReply import resume_bot_input
-            from core.handle.localCommandHandle import duck
-            resume_bot_input(conn)
-            duck(conn)
+            from core import gateway
+            gateway.on_listen(conn)
         if "mode" in msg_json:
             conn.client_listen_mode = msg_json["mode"]
             conn.logger.bind(tag=TAG).debug(

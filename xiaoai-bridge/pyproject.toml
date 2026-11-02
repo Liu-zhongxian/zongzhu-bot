@@ -1,0 +1,39 @@
+[project]
+name = "open-xiaoai-bridge"
+version = "1.0.0"
+description = "小爱音箱与外部 AI 服务的桥接器"
+requires-python = ">=3.12"
+dependencies = [
+    "aiohttp>=3.9.0",
+    "asyncio>=3.4.3",
+    "cryptography>=46.0.5",
+    "maturin>=1.8.3",
+    "numpy>=2.2.3",
+    "onnxruntime==1.23.2",
+    "pyaudio>=0.2.14",
+    "pypinyin>=0.54.0",
+    "python-socks>=2.8.1",
+    "requests>=2.32.3",
+    "scipy>=1.15.0",
+    "sentencepiece>=0.2.0",
+    "sherpa-onnx>=1.12.26",
+    "soundfile>=0.13.0",
+    "websockets>=15.0.1",
+]
+
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+manifest-path = "native/Cargo.toml"
+
+[tool.uv]
+# Rebuild package when any rust files change
+# https://github.com/PyO3/maturin/issues/2314#issuecomment-2488542771
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "native/Cargo.toml" },
+    { file = "native/src/**/*.rs" },
+]

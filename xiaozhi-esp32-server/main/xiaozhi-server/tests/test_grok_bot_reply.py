@@ -7,10 +7,38 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
-from core.handle.grokBotReply import (prepare_reply, read_reply, deliver_replies,
-                                      waiting_for_reply, hold_connection, watch_replies,
-                                      update_wait_ui, resume_bot_input, accept_reply)
+from core.gateway import waiting
+from core.gateway.agents.grok_webhook import GrokWebhookAgent
+from core.handle.grokBotReply import prepare_reply, read_reply, waiting_for_reply, accept_reply
 from core.handle.grokBotHandle import submit_command, _recent
+
+AGENT = GrokWebhookAgent()
+# The waiting screen and reply delivery moved to core/gateway/waiting.py (G4); these keep the
+# old names so the assertions below are the ones written for the Grok-only code.
+hold_connection = waiting.hold_connection
+resume_bot_input = waiting.resume_input
+
+
+def _use(conn, directory, wait_seconds=300, hint_seconds=30):
+    webhook = Path(directory) / "webhook.json"
+    webhook.write_text(json.dumps({"reply_dir": str(directory), "reply_wait_seconds": wait_seconds,
+                                   "approval_hint_seconds": hint_seconds}))
+    config = getattr(conn, "config", {})
+    conn.config = dict(config, grok_bot=dict(config.get("grok_bot", {}), config_file=str(webhook)))
+
+
+async def deliver_replies(conn, directory):
+    _use(conn, directory)
+    return await waiting.deliver(conn, AGENT)
+
+
+async def update_wait_ui(conn, directory, wait_seconds, hint_seconds=30):
+    _use(conn, directory, wait_seconds, hint_seconds)
+    await waiting.update_screen(conn, AGENT)
+
+
+async def watch_replies(conn):
+    await waiting.watch(conn, AGENT)
 
 
 class GrokBotReplyTest(unittest.IsolatedAsyncioTestCase):
@@ -106,8 +134,8 @@ class GrokBotReplyTest(unittest.IsolatedAsyncioTestCase):
         self.conn.config = {"grok_bot": {"config_file": str(config)}}
         self.conn.client_is_speaking = True
         self.conn.bot_reply_sentence_id = self.conn.sentence_id = "reply-playing"
-        with patch("core.handle.grokBotReply.asyncio.sleep", AsyncMock(side_effect=[None, asyncio.CancelledError])), \
-             patch("core.handle.grokBotReply.hold_connection", AsyncMock()) as hold:
+        with patch("core.gateway.waiting.asyncio.sleep", AsyncMock(side_effect=[None, asyncio.CancelledError])), \
+             patch("core.gateway.waiting.hold_connection", AsyncMock()) as hold:
             with self.assertRaises(asyncio.CancelledError):
                 await watch_replies(self.conn)
             hold.assert_awaited_once_with(self.conn)
@@ -145,7 +173,7 @@ class GrokBotReplyTest(unittest.IsolatedAsyncioTestCase):
         self.conn.bot_reply_since = json.loads(self.pending.read_text())["created"] + 1
         await deliver_replies(self.conn, self.directory)
         message = json.loads(self.conn.websocket.send.call_args.args[0])
-        self.assertEqual(message["text"], "稍早的 Bot 回复：这是 Bot 的实际回复。")
+        self.assertEqual(message["text"], "Bot做完了：这是 Bot 的实际回复。")
 
     def test_partial_invalid_oversized_or_symlink_reply_rejected(self):
         self.result.write_text('{"request_id":')
@@ -259,6 +287,78 @@ class GrokBotReplyTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.conn.bot_ui_waiting)
         self.assertEqual(self.conn.websocket.send.await_count, 2)
 
+
+    async def test_interrupted_task_is_reported_by_name_at_the_next_connection(self):
+        # 原 A3: interrupted by the button, the board slept; the answer comes at the next connection
+        self.conn.features = {"bot_ui": True}
+        self.conn.reset_audio_states = Mock()
+        await update_wait_ui(self.conn, self.directory, 300)
+        resume_bot_input(self.conn)  # button while waiting
+        self.write_reply(text="新闻整理好了。")
+        await deliver_replies(self.conn, self.directory)
+        self.speak.assert_not_called()  # the user is talking now
+        next_conn = SimpleNamespace(**dict(vars(self.conn), bot_input_until=0, bot_ui_waiting=False,
+                                           bot_reply_since=json.loads(self.pending.read_text())["created"] + 60,
+                                           websocket=SimpleNamespace(send=AsyncMock())))
+        next_conn.config = {"grok_bot": {"bot_name": "硬件"}}
+        await deliver_replies(next_conn, self.directory)
+        self.speak.assert_called_once_with(next_conn, "硬件做完了：新闻整理好了。")
+
+    async def test_answers_older_than_a_day_are_not_said(self):
+        metadata = json.loads(self.pending.read_text())
+        metadata["created"] -= 25 * 3600
+        self.pending.write_text(json.dumps(metadata))
+        self.write_reply()
+        await deliver_replies(self.conn, self.directory)
+        self.speak.assert_not_called()
+        self.assertTrue(self.pending.exists())
+
+    def write_follow_up(self, n, text, request_id=None):
+        path = self.directory / f"{request_id or self.request_id}.more-{n}.json"
+        path.write_text(json.dumps({"request_id": request_id or self.request_id, "text": text}), encoding="utf-8")
+        return path
+
+    async def test_follow_ups_are_said_after_the_first_answer(self):
+        # 2026-10-25 实机: the first answer was wrong, the correction only reached the Grok chat
+        self.write_follow_up(1, "更正：其实能看到。")
+        await deliver_replies(self.conn, self.directory)
+        self.speak.assert_not_called()  # nothing before the first answer
+        self.write_reply(text="看不到其他 Bot。")
+        await deliver_replies(self.conn, self.directory)
+        self.conn.client_is_speaking = False
+        await deliver_replies(self.conn, self.directory)
+        self.conn.client_is_speaking = False
+        self.write_follow_up(2, "New Bot 回复了：你好。")
+        await deliver_replies(self.conn, self.directory)
+        self.conn.client_is_speaking = False
+        await deliver_replies(self.conn, self.directory)  # each said once
+        said = [c.args[1] for c in self.speak.call_args_list]
+        self.assertEqual(said, ["看不到其他 Bot。", "Bot 补充：更正：其实能看到。", "Bot 补充：New Bot 回复了：你好。"])
+        self.assertTrue((self.directory / f"{self.request_id}.more-2.sent.json").exists())
+
+    async def test_follow_ups_only_for_this_board_and_recent_requests(self):
+        self.write_reply()
+        await deliver_replies(self.conn, self.directory)
+        self.conn.client_is_speaking = False
+        self.speak.reset_mock()
+        sent = self.directory / f"{self.request_id}.sent.json"
+        other = "ESP32-" + "c" * 32
+        prepare_reply(self.directory, other, "board-2")[0].rename(self.directory / f"{other}.sent.json")
+        self.write_follow_up(1, "别的板子的。", other)
+        metadata = json.loads(sent.read_text())
+        metadata["created"] -= 2 * 24 * 3600
+        sent.write_text(json.dumps(metadata))
+        self.write_follow_up(1, "两天前的请求。")
+        await deliver_replies(self.conn, self.directory)
+        self.speak.assert_not_called()
+
+    def test_instructions_tell_the_bot_where_follow_ups_go(self):
+        _recent.clear()
+        config = self.directory / "config.json"
+        config.write_text(json.dumps({"url": "https://example.test", "token": "t", "reply_dir": str(self.directory)}))
+        from core.handle.grokBotHandle import prepare_submission
+        submission = prepare_submission("帮我查天气", "board-1", config)
+        self.assertIn(submission.payload["request_id"] + ".more-1.json", submission.payload["command"])
 
     async def test_hello_without_features_is_not_an_error(self):
         # conn.features stays None when the board's hello has no features field.

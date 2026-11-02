@@ -1,69 +1,166 @@
-"""Forward conversation to the user's existing Grok Bot without a chat model."""
-import asyncio
+"""Grok Bot Webhook submission, plus the wake-phrase helpers the gateway uses (see core/gateway/agents/grok_webhook.py)."""
 import json
 import re
 import secrets
 import time
 import uuid
 from collections import OrderedDict
+from functools import lru_cache
 from pathlib import Path
 
 import httpx
-from core.handle import grokBotPhrases as phrases
 from core.handle.grokBotReply import prepare_reply
 
 
 PREFIX = re.compile(r"^(?:请)?让\s*(?:grok\s*bot|bot|机器人|波特|博特)[\s，,:：]*", re.I)
 _recent = OrderedDict()
 
-# ASR often mishears "你好宗主" once the board is already listening, e.g. "个你好，中猪公".
-_ZONG = set("宗总综踪棕纵中钟忠终种众重肿仲粽")
-_ZHU = set("主住注猪朱珠竹逐助祝煮柱著诸蛛驻铸筑属嘱")
+# The firmware's default wake word; always matched besides the one the board reports.
+DEFAULT_WAKE_WORD = "你好宗主"
+_GREETINGS = ("你好", "您好")
+# Near-sound chars pypinyin's main reading misses but ASR returned (属 is zhǔ in 属意).
+_EXTRA_SIMILAR = {"主": "属"}
 _FILLER = set("个啊呀嗯哦诶唉哎嘿那")
 _PUNCT = re.compile(r"[\s，。！？、,.!?~～:：]+")
 
 
+def _fold(syllable):
+    """Pinyin without the distinctions ASR often loses: z/zh, c/ch, s/sh, n/l, en/eng, in/ing."""
+    for retroflex in ("zh", "ch", "sh"):
+        if syllable.startswith(retroflex):
+            syllable = syllable[0] + syllable[2:]
+            break
+    if syllable.startswith("n") and syllable not in ("n", "ng"):
+        syllable = "l" + syllable[1:]
+    return syllable[:-1] if syllable.endswith(("eng", "ing")) else syllable
+
+
+@lru_cache(maxsize=1)
+def _chars_by_sound():
+    """Every GB2312 hanzi grouped by its folded main reading (built once, ~30 ms)."""
+    from pypinyin import Style, pinyin
+
+    table = {}
+    for high in range(0xB0, 0xF8):
+        for low in range(0xA1, 0xFF):
+            try:
+                char = bytes([high, low]).decode("gb2312")
+            except UnicodeDecodeError:
+                continue
+            table.setdefault(_fold(pinyin(char, style=Style.NORMAL)[0][0]), set()).add(char)
+    return table
+
+
+@lru_cache(maxsize=512)
+def _similar(char, extra=""):
+    """`char` and the chars ASR may write for it ("中猪" for "宗主"), plus configured `extra`."""
+    from pypinyin import Style, pinyin
+
+    table = _chars_by_sound()
+    readings = pinyin(char, style=Style.NORMAL, heteronym=True)[0]
+    return frozenset({char, *extra, *_EXTRA_SIMILAR.get(char, ""),
+                      *(c for r in readings for c in table.get(_fold(r), ()))})
+
+
+def _is_latin(char):
+    return char.isascii() and char.isalnum()
+
+
 def _match_word(raw, i, word):
-    """End index of `word` at raw[i:], ignoring punctuation inside raw; None if absent."""
+    """End index of `word` at raw[i:], ignoring punctuation and letter case; None if absent.
+
+    A Latin word must end on a word boundary ("hi esp" is not in "hi espresso").
+    """
+    word = _PUNCT.sub("", word).casefold()
     for char in word:
         while i < len(raw) and _PUNCT.match(raw[i]):
             i += 1
-        if i >= len(raw) or raw[i] != char:
+        if i >= len(raw) or raw[i].casefold() != char:
             return None
         i += 1
+    if word and _is_latin(word[-1]) and i < len(raw) and _is_latin(raw[i]):
+        return None
     return i
 
 
-def strip_wake_phrase(text, wake_words=()):
-    """Return (had_wake_phrase, remainder) for a leading, possibly misheard wake phrase.
+def _split_greeting(word):
+    """("你好", "宗主") for "你好宗主"; None for a word without a greeting or name."""
+    greeting = next((g for g in _GREETINGS if word.startswith(g)), None)
+    return (greeting, word[len(greeting):]) if greeting and len(word) > len(greeting) else None
 
-    `wake_words` (e.g. the one the board reported) are matched exactly; "你好宗主" also
-    has a fuzzy rule for the ways ASR mishears it.
+
+def _fuzzy_name_end(raw, j, name, similar):
+    """End index of a misheard `name` at raw[j:] ("中猪" for "宗主"); None if absent.
+
+    The first char must be at j; one stray char may sit between the others ("中x主").
     """
-    raw = text.strip()
+    if j >= len(raw) or raw[j] not in _similar(name[0], similar.get(name[0], "")):
+        return None
+    end, skipped = j + 1, False
+    for char in name[1:]:
+        chars = _similar(char, similar.get(char, ""))
+        if end < len(raw) and raw[end] in chars:
+            end += 1
+        elif not skipped and end + 1 < len(raw) and raw[end + 1] in chars:
+            end, skipped = end + 2, True
+        else:
+            return None
+    # A trailing filler right after the name ("中猪公") belongs to the wake phrase.
+    if not skipped and end < len(raw) and raw[end] in _FILLER | set("公"):
+        end += 1
+    return end
+
+
+def _wake_end(raw, wake_words, similar):
+    """End index of one leading, possibly misheard wake phrase in `raw`; None if absent."""
     i = 0
     while i < len(raw) and (raw[i] in _FILLER or _PUNCT.match(raw[i])):
         i += 1
     for word in wake_words:
-        end = _match_word(raw, i, word) if word else None
+        end = _match_word(raw, i, word)
         if end is not None:
-            return True, _PUNCT.sub(" ", raw[end:]).strip()
-    if not raw.startswith(("你好", "您好"), i):
-        return False, text
+            return end
+    split = [s for s in map(_split_greeting, wake_words) if s]
+    # A bare name only counts on its own ("宗主。你好宗主"), not as the start of a sentence.
+    for _, name in split:
+        end = _match_word(raw, i, name)
+        if end is not None and (end == len(raw) or _PUNCT.match(raw[end])):
+            return end
+    if not raw.startswith(_GREETINGS, i):
+        return None
     j = i + 2
     while j < len(raw) and _PUNCT.match(raw[j]):
         j += 1
-    word = raw[j:j + 3]
-    if not word or word[0] not in _ZONG:
-        return False, text
-    hit = next((k for k in range(1, len(word)) if word[k] in _ZHU), None)
-    if hit is None:
-        return False, text
-    end = j + hit + 1
-    # A trailing filler right after the name ("中猪公") belongs to the wake phrase.
-    if end < len(raw) and end - j < 3 and raw[end] in _FILLER | set("公"):
-        end += 1
-    return True, _PUNCT.sub(" ", raw[end:]).strip()
+    for _, name in split:
+        end = _fuzzy_name_end(raw, j, name, similar)
+        if end is not None:
+            return end
+    return None
+
+
+def wake_options(conn):
+    """strip_wake_phrase keyword arguments for this connection: the board's wake word and the
+    near-sound chars added in config (`gateway.similar_chars`, e.g. {"宗": "粽"})."""
+    wake = getattr(conn, "device_wake_word", None)
+    similar = ((getattr(conn, "config", None) or {}).get("gateway") or {}).get("similar_chars")
+    return {"wake_words": [wake] if wake else (), "similar": similar or {}}
+
+
+def strip_wake_phrase(text, wake_words=(), similar=None):
+    """Return (had_wake_phrase, remainder) for leading, possibly misheard wake phrases.
+
+    `wake_words` (e.g. the one the board reported) and DEFAULT_WAKE_WORD are matched
+    exactly; "你好<name>" words also match a name ASR misheard as near-sound chars
+    (pypinyin, plus `similar` {char: extra chars}). Repeats are all removed: a wake word
+    said again while the board listens can come back as "宗主。你好宗主。" (2026-10-25).
+    """
+    words = list(dict.fromkeys(w.strip() for w in [*wake_words, DEFAULT_WAKE_WORD] if w and w.strip()))
+    similar = {k: str(v) for k, v in (similar or {}).items()}
+    rest = text.strip()
+    had = False
+    while (end := _wake_end(rest, words, similar)) is not None:
+        had, rest = True, rest[end:].strip()
+    return (True, _PUNCT.sub(" ", rest).strip()) if had else (False, text)
 
 
 def extract_command(text):
@@ -147,6 +244,8 @@ def prepare_submission(command, device, config_file):
             + "\ntext 使用中文纯文本，保留回答的主要内容，不要只写已收到或已完成；"
             "较长结果请给出最多2000字的可读摘要，完整版保留在原对话。"
             "请先写同目录临时文件再重命名为目标文件，避免读取半写入内容。"
+            "之后对这件事还有补充、更正或新结果（例如转给别的 Bot 后它回复了），再按同样格式写到同目录的 "
+            + request_id + ".more-1.json，第二次写 .more-2.json，依此类推，板子会接着念出来。"
             "不要为回传修改任何权限设置；若本机能力不可用，请在原对话说明。"
             "回传成功后正常回复用户，不必在对话中展示文件路径。"
         )
@@ -180,72 +279,3 @@ async def submit_command(command, device, config_file, transport=None):
     if isinstance(submission, str):
         return submission
     return (await post_submission(submission, transport))[1]
-
-
-async def _speak_after_ack(conn, status, reply):
-    """A second sentence after the cached acknowledgement, which already ended with tts stop."""
-    from core.handle.sendAudioHandle import send_tts_message
-    from core.handle.intentHandler import speak_txt
-
-    if status == "rejected" and (getattr(conn, "features", None) or {}).get("bot_ui"):
-        # Leaves any waiting screen and keeps the reason on screen, like a delivered reply.
-        await conn.websocket.send(json.dumps({
-            "type": "bot_wait", "state": "reply", "text": reply, "session_id": conn.session_id,
-        }, ensure_ascii=False))
-        conn.bot_ui_waiting = False
-    conn.sentence_id = uuid.uuid4().hex
-    await send_tts_message(conn, "start")
-    conn.client_is_speaking = True
-    speak_txt(conn, reply)
-
-
-async def handle_grok_bot(conn, text):
-    config = conn.config.get("grok_bot", {})
-    command = extract_command(text)
-    if not config.get("enabled") or command is None:
-        return False
-    device_wake = getattr(conn, "device_wake_word", None)
-    # Wake phrases use the local cached greeting; they are not Bot tasks.
-    if re.sub(r"[\W_]", "", command) in [*conn.config.get("wakeup_words", []), device_wake]:
-        return False
-    from core.handle.sendAudioHandle import send_stt_message
-    from core.handle.intentHandler import speak_txt
-
-    had_wake, rest = strip_wake_phrase(command, [device_wake] if device_wake else ())
-    if had_wake:
-        if not rest.strip("，。！？,.!? "):
-            # The user repeated the wake word mid-conversation: acknowledge, submit nothing.
-            conn.logger.bind(tag="grokBot").info(f"忽略重复唤醒词，不提交: {text}")
-            conn.client_abort = False
-            if not await phrases.speak(conn, phrases.HERE, send_start=True):
-                speak_txt(conn, phrases.HERE)
-            return True
-        command = rest
-
-    conn.bot_input_until = 0
-    conn.client_abort = False
-    conn.sentence_id = uuid.uuid4().hex
-    await send_stt_message(conn, text)
-    submission = prepare_submission(command, conn.headers.get("device-id", "unknown"),
-                                    config.get("config_file", ""))
-    if isinstance(submission, str):
-        if not conn.client_abort:
-            speak_txt(conn, submission)
-        return True
-    # The acknowledgement plays while the Webhook is in flight, so it does not claim success.
-    posting = asyncio.create_task(post_submission(submission))
-    if submission.pending and (getattr(conn, "features", None) or {}).get("bot_ui"):
-        # Stop ordinary input now: speech that continues past the submission would otherwise
-        # become separate tasks before the waiting screen appears (three in a row, 2026-10-22).
-        # Wake or button resumes input; a rejection or a delivered reply clears it as before.
-        conn.bot_ui_waiting = True
-        conn.reset_audio_states()
-    acked = await phrases.speak(conn, phrases.ACK)
-    status, reply = await posting
-    if conn.client_abort:
-        return True
-    if not acked:
-        speak_txt(conn, reply)
-    elif status != "accepted" or not submission.pending:
-        await _speak_after_ack(conn, status, reply)
-    return True

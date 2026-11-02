@@ -1,0 +1,46 @@
+--- squashfs-root/bin/ota	2024-12-06 15:11:58
++++ squashfs-root-patched/bin/ota	2025-02-13 21:50:40
+@@ -133,6 +133,9 @@
+ 
+ 
+ download_upgrade() {
++    logger -t ota -p 3 "download upgrade failed"
++    return 1
++
+     if [ -f $OTA_FILE ]; then
+         logger -t ota -p 3 "ota is in progress now, exit this one."
+         exit 1
+@@ -278,6 +281,9 @@
+ }
+ 
+ upgrade() {
++    logger -t ota -p 3 "no upgrade"
++    return 1
++
+     if [ -z "$1" -o -z "$2" ]; then
+         upgrade_failed
+         return 1
+--- squashfs-root/bin/flash.sh	2024-12-06 15:11:58
++++ squashfs-root-patched/bin/flash.sh	2025-02-18 23:21:57
+@@ -5,6 +5,9 @@
+ . /bin/boardupgrade.sh
+ 
+ upgrade_param_check() {
++	klogger "no upgrade"
++	return 1
++
+ 	if [ -z "$1" -o ! -f "$1" ]; then
+ 		klogger "USAGE: $0 input.bin [1: slient] [1:don't reboot]"
+ 		return 1
+--- squashfs-root/etc/init.d/wireless	2024-12-06 15:11:58
++++ squashfs-root-patched/etc/init.d/wireless	2025-02-18 23:15:31
+@@ -1361,6 +1361,9 @@
+     password=$3
+     identity=$4
+ 
++    echo "download_fail"
++    exit 3;
++
+     trylock "ota"
+     [ $? != 0 ] && {
+         # shut_led 10

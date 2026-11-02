@@ -1,0 +1,35 @@
+--- squashfs-root/etc/shadow	2024-12-06 15:11:58
++++ squashfs-root-patched/etc/shadow	2025-02-13 21:07:41
+@@ -1,4 +1,4 @@
+-root:$1$N0Iz0LLs$kZ5zG/Y2AUWHNE5I3ElWm1:18128:0:99999:7:::
++root:{SSH_PASSWORD}:18128:0:99999:7:::
+ daemon:*:0:0:99999:7:::
+ ftp:*:0:0:99999:7:::
+ network:*:0:0:99999:7:::
+diff --color -Naur squashfs-root/etc/inittab squashfs-root-patched/etc/inittab
+--- squashfs-root/etc/inittab	2024-12-06 15:11:58
++++ squashfs-root-patched/etc/inittab	2025-02-13 20:56:13
+@@ -1,5 +1,5 @@
+ ::sysinit:/etc/init.d/rcS S boot
+ ::shutdown:/etc/init.d/rcS K shutdown
+ tts/0::askfirst:/bin/ash --login
+-ttyS0::askfirst:/bin/login
++ttyS0::askfirst:/bin/ash --login
+ tty1::askfirst:/bin/ash --login
+diff --color -Naur squashfs-root/etc/pam.d/common-auth squashfs-root-patched/etc/pam.d/common-auth
+--- squashfs-root/etc/pam.d/common-auth	2024-12-06 15:11:58
++++ squashfs-root-patched/etc/pam.d/common-auth	2025-02-13 21:09:02
+@@ -8,10 +8,10 @@
+ # traditional Unix authentication mechanisms.
+ #
+ 
+-auth sufficient libmico-pam.so
+-account sufficient libmico-pam.so
++# auth sufficient libmico-pam.so
++# account sufficient libmico-pam.so
+ # here are the per-package modules (the "Primary" block)
+-# auth	[success=1 default=ignore]	pam_unix.so nullok_secure
++auth	[success=1 default=ignore]	pam_unix.so nullok_secure
+ # here's the fallback if no module succeeds
+ auth	requisite			pam_deny.so
+ # prime the stack with a positive return value if there isn't one already;

@@ -19,7 +19,7 @@ import urllib.request
 from pathlib import Path
 from typing import List, Optional
 
-from core.music.source import SEPARATORS, GoMusicDL, Song
+from core.gateway.skills.music.source import SEPARATORS, GoMusicDL, Song
 
 # macOS limits a Unix socket path to 104 bytes; a longer one makes mpv skip the
 # socket silently and leaves an uncontrollable player behind (2026-10-22).

@@ -15,6 +15,7 @@ openai==2.8.1
 google-generativeai==0.8.5
 edge_tts==7.2.8
 httpx==0.28.1
+pypinyin==0.55.0  # 唤醒词近音字（core/handle/grokBotHandle.py）
 aiohttp==3.13.2
 aiohttp_cors==0.8.1
 ormsgpack==1.12.0

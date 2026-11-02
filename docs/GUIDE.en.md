@@ -2,7 +2,7 @@
 
 [中文](GUIDE.md) | English · [Back to README](../README.en.md)
 
-The README is the summary. This page has the details: features, local music, manual setup without the web page, flashing, the Bot interface, building, tests and known limitations.
+The README is the summary. This page has the details: features, local music, the Xiaomi speaker, manual setup without the web page, flashing, the Bot interface, building, tests and known limitations.
 
 ## Features
 
@@ -11,6 +11,7 @@ The README is the summary. This page has the details: features, local music, man
 - Whatever you say after the wake word goes straight to the Bot. No "ask the robot to…" prefix needed.
 - The Bot writes its answer to a local reply file. The backend validates it and sends subtitles plus EdgeTTS speech back to the board.
 - While waiting, the screen shows a seconds counter and normal listening pauses. The default wait is 300 seconds. Timed-out tasks are kept, not resent. You can add to a request by waking it again or pressing the button.
+- If you interrupt with the button, the wait times out, or the board goes to sleep, the Bot's answer isn't lost: it's read out when the board is idle, or after the greeting at the next wake, starting with "<Bot name>做完了：" ("<Bot name> finished:"). Later additions and corrections from the Bot follow, starting with "Bot 补充：" ("Bot adds:"). Answers older than 24 hours aren't read.
 - Long replies scroll automatically, and the full text stays on screen after playback. Replies that couldn't be delivered while the board was disconnected are sent when it reconnects.
 - Saying the wake word again mid-conversation (including misrecognitions such as "你好中主" or "你好宗猪") just gets "我在" ("I'm here") and is not submitted as a task. "你好宗主, check the weather for me" has the wake word stripped and only submits "check the weather for me".
 
@@ -97,6 +98,28 @@ Needs macOS 14 or later on Apple Silicon, or macOS 15 or later on Intel.
 - **Then it rests**: the board goes idle after answering, so the music isn't taken for the next command.
 - **Music ducks while you talk**: waking the board lowers the music to 25% until the command is done (or 15 s).
 
+## Xiaomi Smart Speaker Pro (optional)
+
+With the [open-xiaoai](https://github.com/idootop/open-xiaoai) patched firmware, a Xiaomi Smart Speaker Pro (OH2P) works like a Zongzhu board without a screen: say "你好宗主", it answers "在", and what you say next goes through the same gateway (local music, Bot, calling by name); the answer is spoken by the speaker. XiaoAI keeps working.
+
+```
+speaker (patched firmware + Client) --4399--> xiaoai-bridge on your computer --Xiaozhi protocol--> Zongzhu backend
+```
+
+- **On the speaker**: the patched firmware enables SSH, turns off Xiaomi's automatic updates and runs `/data/init.sh` at boot; the open-xiaoai Client hands the microphone and playback to your computer.
+- **On your computer**: `xiaoai-bridge/` spots the wake word and the end of speech locally, then connects to the backend like a Xiaozhi board (it gets a token from OTA, and reconnects on the next wake after the backend closes an idle connection). The gateway page lists it as "小米音箱 Pro"; it has no screen and no MCP tools, so there are no volume or brightness controls.
+
+Steps (details in [xiaoai-bridge/README.md](../xiaoai-bridge/README.md), Chinese):
+
+1. Check the speaker's version and find the matching official package with `ota_query.py`.
+2. `build_image.sh` patches and repacks it, and checks that only the 8 patched files changed.
+3. `backup_readonly.sh` makes a read-only backup in burning mode; use it to see which A/B slot is in use.
+4. `flash_slot.sh` writes only the other slot and switches the boot slot only after a byte-by-byte read-back check, so the official system stays as a fallback.
+5. `build_client.sh` builds the Client, `install_client.sh` installs it on the speaker.
+6. `scripts/run-zongzhu.sh` starts the bridge.
+
+Tested end to end only on the OH2P with firmware 1.62.2 and an Apple Silicon Mac. **Flashing can brick the speaker**; make the backup first.
+
 ## Manual setup (without the web page)
 
 The web flasher and the one-line installer do exactly this. Follow it to control each step yourself, or when the web page is not an option.
@@ -141,6 +164,18 @@ done
 Speech recognition defaults to X-ASR and needs no torch; hotwords and post-recognition corrections are described in `examples/backend.config.yaml`. To go back to FunASR (SenseVoiceSmall, about 900MB), also install `requirements-macos-funasr.txt`, download its model as upstream describes, and change `ASR: SherpaXASR` to `ASR: FunASR`.
 
 `start.sh` runs in the foreground; closing the terminal stops the service. Don't run more than one. The backend uses port 8000 (WebSocket) and 8003 (HTTP/OTA).
+
+Open `http://localhost:8003/gateway` in a browser for the gateway page. Other devices on the LAN can open it too, and it shows no keys. Three pages:
+
+- **Overview**: which boards are online and what they're doing (listening, speaking, waiting N seconds for the Bot).
+- **Recent sentences**: for the last 30 sentences, which layer handled each one, who got it and how long until sound. Kept in memory only, cleared when the backend restarts.
+- **Devices**: what was read from each board while it was awake: WiFi and signal, IP, firmware version, memory, volume, brightness, theme, and the board's MCP tool list; after the board goes to standby the last values are shown. You can change the board's volume, screen brightness and theme (the theme makes no visible difference on the 立创 board's eye UI yet), reboot it, and put it into its WiFi setup hotspot (shown only if the firmware has that tool). At the top: previous, pause / resume, next, stop and computer volume for music playing on this Mac. Board controls work only while the board is awake.
+
+Anyone who opens the page can change things by default. To require a password, set `gateway.password` in `.config.yaml` (see `examples/backend.config.yaml`).
+
+**Changing the wake word** (no reflash): with the board connected to the backend, run `.venv/bin/python tools/wake_word.py 你好小雨` from the repo root. The script waits for you to wake the board, then makes it reboot and download an assets package with the new wake word (about 4–5 MB; the screen shows progress; don't cut power), after which the new wake word works. The assets package must match the board's firmware version; the script finds it in `firmware/` by model and version. Chinese wake words only.
+
+**Calling by name**: wake the board with "你好宗主" first, then say "嗨 <Bot name>, …" ("hi <name>"; "嘿" works too). Anything after the name goes straight to that Bot, skipping local music; the name alone gets "我在。" ("I'm here.") and nothing is submitted. The Bot name is the name it has in Grok, set as `grok_bot.bot_name` in `.config.yaml` (for example `硬件`); without it the call names are "Grok Bot" and "Grok". Once a second AI is added, the board keeps using whichever AI was called last, stored in `data/agent_sessions.json` across reconnects and restarts. `gateway.call_names` replaces the names altogether. Calling a name without waking the board does nothing: the board only listens for its wake word.
 
 To start the backend in the background at login (restarted if it exits; the Mac does not idle-sleep while it runs):
 
@@ -200,6 +235,7 @@ Say "你好宗主", wait for the response, then make a request. The screen first
 | --- | --- |
 | Board never connects | Board and computer on the same subnet; the IP in `.config.yaml` and in the board's OTA URL is the computer's current IP; macOS firewall allows Python on ports 8000/8003 |
 | Computer's IP changed | Update the WebSocket URL in `.config.yaml`. The board's OTA URL needs no change with option 1 (`.local` name); a typed IP must be changed on the setup page |
+| After a backend restart the board stays on "connecting" until it is unplugged and plugged back in | `server.auth_key` is missing from `.config.yaml`, so the backend picks a new random one at every start and the token the board got at boot stops working. Set a fixed random string as in `examples/backend.config.yaml`, restart the backend and power-cycle the board once; later restarts need nothing on the board |
 | You hear "好的，正在交给 Bot" ("OK, handing it to the Bot") and the screen waits, but no reply ever arrives | The Bot didn't write the file on this computer. Make sure it has local file write access, writes under `reply_dir`, and the `request_id` in the file matches the request |
 | Screen says the Bot rejected the request | The webhook returned 4xx; check `url` and `token` |
 | Screen says the reply directory is unavailable | `reply_dir` isn't an existing, writable absolute path |
@@ -253,11 +289,12 @@ These builds default to the official XiaoZhi OTA server. To build in your own ba
 | Path | Contents |
 | --- | --- |
 | `xiaozhi-esp32/` | Full firmware source; this project's changes live in `main/boards/common/zongzhu/` (shared) and the board folders (`waveshare/esp32-s3-touch-amoled-1.75/`, `lckfb/szpi-esp32s3/`, `m5stack/stopwatch/`) |
-| `xiaozhi-esp32-server/main/xiaozhi-server/` | The Python backend that actually runs; the Bot bridge is `core/handle/grokBotHandle.py`, local music is `core/handle/localCommandHandle.py` and `core/music/`, recognition corrections are in `core/utils/asr_text.py` |
+| `xiaozhi-esp32-server/main/xiaozhi-server/` | The Python backend that actually runs; the Bot bridge is the gateway AI module `core/gateway/agents/grok_webhook.py` (submission and replies in `core/handle/grokBot*.py`), local music is `core/gateway/skills/music/` (the gateway's first skill module), recognition corrections are in `core/utils/asr_text.py` |
 | `firmware/` | Release packages per board: image set, checksums, build info |
 | `web/` | The web flasher and the macOS backend installer `install-mac.sh`, published to GitHub Pages on every push to main |
 | `deploy/` | Deploying the backend to a public Linux server (Caddy, systemd, server config) |
 | `tools/` | `build_firmware.py` (builds with the OTA URL, packages, flashes), `build_web.py` (assembles the site), `autostart.sh` (start at login), `local_music_setup.sh` (downloads go-music-dl and mpv), `verify/` (end-to-end checks), `asr-bench/` (recognizer comparison) |
+| `xiaoai-bridge/` | The bridge between a Xiaomi speaker and the Zongzhu backend (based on coderzc/open-xiaoai-bridge); `speaker/` holds the patches, the Client source and the flashing and install scripts, `scripts/run-zongzhu.sh` starts it; see its README |
 | `local-music/` | Programs downloaded by `local_music_setup.sh` and go-music-dl's data (including sign-in cookies); local only, not in Git |
 | `examples/` | Config templates without real credentials |
 | `docs/` | This guide and per-board notes, indexed in [docs/README.md](README.md) (Chinese) |
@@ -289,14 +326,13 @@ In each board's directory:
 
 ```sh
 cd xiaozhi-esp32-server/main/xiaozhi-server
-../../../.venv/bin/python -m unittest tests.test_grok_bot tests.test_grok_bot_phrases tests.test_grok_bot_reply \
-  tests.test_asr_text tests.test_tts_prefetch tests.test_device_allowlist tests.test_text_message_log tests.test_local_music
+../../../.venv/bin/python -m unittest tests                 # all; one file: -m unittest tests.test_gateway
 cd ../../../web && node --test test/*.test.mjs    # web flasher library code
 ```
 
-`tools/verify/` holds end-to-end checks against the real pipeline (run from the repo root, e.g. `python tools/verify/verify_bot_reply.py`). `verify_bot_bridge.py`, `verify_bot_reply.py` and `verify_bot_speech.py` call the Bot you configured for real; only use them in a test environment you're authorized for, and start the backend first. `verify_bot_wait_display.py` uses local test files and normally doesn't call the webhook. `verify_local_music.py` speaks music commands with macOS speech synthesis as a simulated device; it plays a few seconds of music and doesn't call the Bot.
+`tools/verify/` holds end-to-end checks against the real pipeline (run from the repo root, e.g. `python tools/verify/verify_bot_reply.py`). `verify_bot_bridge.py`, `verify_bot_reply.py` and `verify_bot_speech.py` call the Bot you configured for real (one harmless test task each); only use them in a test environment you're authorized for, and start the backend first. They and `verify_local_music.py` speak through a simulated board using macOS speech synthesis (shared `sim_board.py`), so they need macOS and ffmpeg. `verify_bot_wait_display.py` uses local test files and normally doesn't call the webhook. `verify_local_music.py` speaks music commands with macOS speech synthesis as a simulated device; it plays a few seconds of music and doesn't call the Bot.
 
-Run the tests with the `unittest` command above, not pytest. pytest loads upstream's `tests/conftest.py`, which replaces `httpx.AsyncClient` with a stub that refuses every connection, including the mock transports the Bot tests pass in. `tools/asr-bench/` compares speech recognizers.
+Run the tests with the `unittest` command above, not pytest. pytest loads upstream's `tests/conftest.py`, which replaces `httpx.AsyncClient` with a stub that refuses every connection, including the mock transports the Bot tests pass in. The other way round, `unittest` skips upstream's pytest-only test files automatically (`tests/__init__.py`) and doesn't need `data/.config.yaml`, so it runs right after cloning. `tools/asr-bench/` compares speech recognizers.
 
 ## Known limitations
 
@@ -309,4 +345,4 @@ Run the tests with the `unittest` command above, not pytest. pytest loads upstre
   - go-music-dl has no option to listen on localhost only, so it listens on port 18080 on every interface.
   - When a song ends, the next one doesn't start on its own.
   - A misheard title said without the singer isn't corrected.
-  - go-music-dl's endpoints were read from its web page, not a documented API; recheck them after upgrading (see `core/music/source.py`).
+  - go-music-dl's endpoints were read from its web page, not a documented API; recheck them after upgrading (see `core/gateway/skills/music/source.py`).

@@ -2,7 +2,7 @@
 
 中文 | [English](GUIDE.en.md) · [返回 README](../README.md)
 
-首页 README 只放概要。这里是完整说明：功能细节、本机点歌、不用网页的手动安装、刷机、Bot 接口、构建、测试和已知限制。
+首页 README 只放概要。这里是完整说明：功能细节、本机点歌、接入小米音箱、不用网页的手动安装、刷机、Bot 接口、构建、测试和已知限制。
 
 ## 功能
 
@@ -11,6 +11,7 @@
 - 唤醒后说的话直接提交给 Bot，不用加"让机器人"之类的前缀。
 - Bot 把回答写进本机回复文件，后端校验后把字幕和 EdgeTTS 语音发回板子。
 - 等待时显示秒数，并暂停普通收音。默认最多等 300 秒，超时的任务会保留，不会自动重发。唤醒或按键可以追加内容。
+- 按键打断、等超时、或板子待机了，Bot 做完的结果不会丢：板子空闲时、或下次唤醒问候之后会念出来，开头是"<Bot 名字>做完了："。Bot 之后的补充和更正也接着念，开头是"Bot 补充："。超过 24 小时的不再念。
 - 长回复会自动滚动，朗读完后保留全文。连接断开期间没送出的回复，下次连上会补发。
 - 对话中再说一次"你好宗主"（包括"你好中主""你好宗猪"这类误识别）只会回一句"我在"，不会当成任务提交；"你好宗主，帮我查天气"会去掉唤醒词，只提交"帮我查天气"。
 
@@ -119,6 +120,28 @@
 | 歌手名老是识别错 | 在配置的 `local_music.hotwords` 里加上这位歌手和歌名（会追加到语音识别的热词里），然后重启后端 |
 | 说完很久才有反应 | 后端刚重启后的第一句，要等短句合成好（每句 1–3 秒），之后就快了；"这是什么歌"要现场念歌名，约 2 秒 |
 
+## 接入小米智能音箱 Pro（可选）
+
+给小米智能音箱 Pro（OH2P）刷 [open-xiaoai](https://github.com/idootop/open-xiaoai) 的补丁固件后，音箱就像一块没有屏幕的宗主板子：喊"你好宗主"，音箱回"在"，后面的话交给后端，走的是同一个网关（点歌、Bot、呼名），回答从音箱里念出来。小爱同学照常能用。
+
+```
+音箱（补丁固件 + Client）──4399──▶ 电脑上的 xiaoai-bridge ──小智协议──▶ 宗主后端
+```
+
+- **音箱上**：补丁固件开 SSH、关小米自动升级、开机运行 `/data/init.sh`；open-xiaoai 的 Client 把麦克风和播放交给电脑。
+- **电脑上**：`xiaoai-bridge/` 在本机识别唤醒词"你好宗主"、检测说完没有，再像一块小智板子一样连后端（向 OTA 要 token，空闲被断开后，下次唤醒自动重连）。网关页面上显示为"小米音箱 Pro"，没有屏幕和 MCP 工具，所以没有音量、亮度这些控件。
+
+步骤（详见 [xiaoai-bridge/README.md](../xiaoai-bridge/README.md)）：
+
+1. 查音箱版本，用 `ota_query.py` 找到同版本的官方固件包；
+2. `build_image.sh` 打补丁、打包，并核对只改了补丁的 8 个文件；
+3. `backup_readonly.sh` 进刷机模式只读备份，判断现在用的是 A/B 哪一边；
+4. `flash_slot.sh` 只写另一边，读回逐字节核对后才切启动参数，官方系统留在原来那边当退路；
+5. `build_client.sh` 编译 Client，`install_client.sh` 装到音箱上；
+6. `scripts/run-zongzhu.sh` 启动 bridge。
+
+只在 OH2P、固件 1.62.2、Apple Silicon 的 Mac 上完整做过。**刷机有变砖的风险**，务必先备份。
+
 ## 手动安装（不用网页）
 
 网页刷机和一键安装脚本做的就是下面这些事。想自己控制每一步、或者网页用不了时，照这里做。
@@ -163,6 +186,18 @@ done
 语音识别默认用 X-ASR，不需要 torch；热词和识别后纠错的写法见 `examples/backend.config.yaml`。想换回 FunASR（SenseVoiceSmall，约 900MB）：再装 `requirements-macos-funasr.txt`，按上游说明下载模型，把配置里的 `ASR: SherpaXASR` 改成 `ASR: FunASR`。
 
 `start.sh` 在前台运行，关掉终端服务就停了，不要同时开多个。后端占用 8000（WebSocket）和 8003（HTTP/OTA）两个端口。
+
+浏览器打开 `http://localhost:8003/gateway` 是网关页面，局域网里的其他设备也能打开，页面上不显示任何密钥。三页：
+
+- **总览**：哪几块板子在线、在做什么（在听、在说、等 Bot 几秒）。
+- **最近的话**：最近 30 句各走了哪一层、交给了谁、多久出声。只在内存里，后端重启后清空。
+- **设备**：板子醒着时读到的 WiFi 和信号、IP、固件版本、内存、音量、亮度、主题，以及板子的 MCP 工具列表；板子待机后显示上次读到的值。可以改板子音量、屏幕亮度、主题（立创板的眼睛界面上暂时看不出主题变化），重启板子，让板子进配网热点（固件有这个工具时才显示）；最上面是这台 Mac 上点歌的上一首、暂停 / 继续、下一首、停止和电脑音量。改板子的按钮只在板子醒着时能用。
+
+默认打开页面就能改。不想让局域网里的人随便改，在 `.config.yaml` 里写 `gateway.password`，页面会先要口令（见 `examples/backend.config.yaml`）。
+
+**改唤醒词**（不用重刷固件）：板子连着后端时，在仓库根目录运行 `.venv/bin/python tools/wake_word.py 你好小雨`。脚本会等你喊唤醒词叫醒板子，然后让板子重启、下载换了唤醒词的资源包（约 4–5 MB，屏幕显示进度，过程中不要断电），之后用新唤醒词。资源包要和板子的固件同一版，脚本从 `firmware/` 里按型号和版本找；只支持中文唤醒词。
+
+**呼名**：先喊"你好宗主"唤醒，再说"嗨 <Bot 的名字>，……"（"嘿"也行），后面的话直接交给这个 Bot，不经过点歌；只喊名字回一句"我在。"，什么也不提交。Bot 的名字是它在 Grok 里的名字，写在 `.config.yaml` 的 `grok_bot.bot_name`（例如 `硬件`），不写时称呼是"Grok Bot""Grok"。以后接了第二个 AI，喊谁的名字，这块板子之后就交给谁，记在 `data/agent_sessions.json`，重连、重启后照旧。称呼也可以在 `gateway.call_names` 里整个替换。没唤醒时直接喊名字，板子听不到：板子只认它的唤醒词。
 
 想让后端开机自动在后台运行（进程退出会自动拉起，运行期间 Mac 不会因空闲睡眠）：
 
@@ -221,6 +256,7 @@ esptool --chip esp32s3 --port /dev/cu.usbmodemXXXX --baud 921600 write-flash @fl
 | 现象 | 先查这里 |
 | --- | --- |
 | 板子一直连不上服务 | 电脑和板子是否在同一网段；`.config.yaml` 和板子 OTA 地址里的 IP 是否是电脑当前的 IP；macOS 防火墙是否放行了 Python 的 8000/8003 端口 |
+| 后端重启后板子一直"连接中"，要拔线重插才好 | `.config.yaml` 的 `server` 下没写 `auth_key`：后端每次启动随机换一个，板子开机时拿到的 token 就失效了。照 `examples/backend.config.yaml` 写一个固定的随机串，重启后端后再给板子上电一次，以后重启后端就不用再动板子 |
 | 电脑 IP 变了 | `.config.yaml` 里的 WebSocket 地址要改。板子的 OTA 地址：用方式一（`.local` 名字）刷的不用改；手填 IP 的要在配网页改 |
 | 听到"好的，正在交给 Bot"、屏幕在等待，但一直没有回复 | Bot 没把文件写到这台电脑。确认 Bot 有本机文件写入权限，写到的是 `reply_dir` 下的路径，内容里的 `request_id` 和请求里的一致 |
 | 回执之后接着说"Bot 服务拒绝了请求" | Webhook 返回了 4xx，检查 `url` 和 `token` |
@@ -275,11 +311,12 @@ python scripts/build.py lckfb/szpi-esp32s3 --name lichuang-dev-zongzhu          
 | 路径 | 内容 |
 | --- | --- |
 | `xiaozhi-esp32/` | 完整固件源码；本项目的改动集中在 `main/boards/common/zongzhu/`（各板共用）和各板目录（`waveshare/esp32-s3-touch-amoled-1.75/`、`lckfb/szpi-esp32s3/`、`m5stack/stopwatch/`） |
-| `xiaozhi-esp32-server/main/xiaozhi-server/` | 实际运行的 Python 后端；Bot 桥接在 `core/handle/grokBotHandle.py`，本机点歌在 `core/handle/localCommandHandle.py` 和 `core/music/`，识别纠错在 `core/utils/asr_text.py` |
+| `xiaozhi-esp32-server/main/xiaozhi-server/` | 实际运行的 Python 后端；Bot 桥接是网关的 AI 模块 `core/gateway/agents/grok_webhook.py`（提交和回复在 `core/handle/grokBot*.py`），本机点歌在 `core/gateway/skills/music/`（网关的第一个技能模块），识别纠错在 `core/utils/asr_text.py` |
 | `firmware/` | 各板的发布包：分段固件、校验值、构建记录 |
 | `web/` | 网页刷机页面和 macOS 后端安装脚本 `install-mac.sh`，推到 main 后自动发布到 GitHub Pages |
 | `deploy/` | 把后端部署到公网 Linux 服务器（Caddy、systemd、服务器配置） |
 | `tools/` | `build_firmware.py`（编进 OTA 地址、打包、刷写）、`build_web.py`（组装网页）、`autostart.sh`（开机自启）、`local_music_setup.sh`（下载点歌用的 go-music-dl 和 mpv）、`verify/`（端到端检查）、`asr-bench/`（识别对比） |
+| `xiaoai-bridge/` | 小米音箱和宗主后端之间的桥（基于 coderzc/open-xiaoai-bridge）；`speaker/` 是补丁、Client 源码和刷机、安装脚本，`scripts/run-zongzhu.sh` 启动它；说明见它的 README |
 | `local-music/` | `local_music_setup.sh` 下载的程序和 go-music-dl 的数据（含登录 Cookie）；只在本机，不进 Git |
 | `examples/` | 不含真实凭证的配置模板 |
 | `docs/` | 本文、各板说明，目录见 [docs/README.md](README.md) |
@@ -311,14 +348,13 @@ python scripts/build.py lckfb/szpi-esp32s3 --name lichuang-dev-zongzhu          
 
 ```sh
 cd xiaozhi-esp32-server/main/xiaozhi-server
-../../../.venv/bin/python -m unittest tests.test_grok_bot tests.test_grok_bot_phrases tests.test_grok_bot_reply \
-  tests.test_asr_text tests.test_tts_prefetch tests.test_device_allowlist tests.test_text_message_log tests.test_local_music
+../../../.venv/bin/python -m unittest tests                 # 全部；只跑一个文件：-m unittest tests.test_gateway
 cd ../../../web && node --test test/*.test.mjs    # 网页刷机的库代码
 ```
 
-`tools/verify/` 里是连真实设备链路的端到端检查（在仓库根目录运行，例如 `python tools/verify/verify_bot_reply.py`）。`verify_bot_bridge.py`、`verify_bot_reply.py`、`verify_bot_speech.py` 会真的调用你配置的 Bot，只在你有权限的测试环境里用，运行前先启动后端；`verify_bot_wait_display.py` 用本机测试文件，正常情况下不会调用 Webhook；`verify_local_music.py` 用 macOS 合成语音模拟设备说点歌指令，会在电脑上放几秒歌，不调用 Bot。
+`tools/verify/` 里是连真实设备链路的端到端检查（在仓库根目录运行，例如 `python tools/verify/verify_bot_reply.py`）。`verify_bot_bridge.py`、`verify_bot_reply.py`、`verify_bot_speech.py` 会真的调用你配置的 Bot（每个脚本发一条无副作用的测试任务），只在你有权限的测试环境里用，运行前先启动后端；这几个脚本和 `verify_local_music.py` 都用 macOS 合成语音模拟板子说话（共用 `sim_board.py`），需要 macOS 和 ffmpeg；`verify_bot_wait_display.py` 用本机测试文件，正常情况下不会调用 Webhook；`verify_local_music.py` 用 macOS 合成语音模拟设备说点歌指令，会在电脑上放几秒歌，不调用 Bot。
 
-用上面的 `unittest` 命令跑，不要用 pytest：pytest 会加载上游的 `tests/conftest.py`，它把 `httpx.AsyncClient` 整个换成了一律拒绝连接的替身，Bot 测试自己传入的模拟网络也会被拦住，测试就会失败。语音识别对比用 `tools/asr-bench/`。
+用上面的 `unittest` 命令跑，不要用 pytest：pytest 会加载上游的 `tests/conftest.py`，它把 `httpx.AsyncClient` 整个换成了一律拒绝连接的替身，Bot 测试自己传入的模拟网络也会被拦住，测试就会失败。反过来，`unittest` 会自动跳过上游给 pytest 写的那几个测试文件（`tests/__init__.py`），也不需要 `data/.config.yaml`，clone 下来就能跑。语音识别对比用 `tools/asr-bench/`。
 
 ## 已知限制
 
@@ -331,4 +367,4 @@ cd ../../../web && node --test test/*.test.mjs    # 网页刷机的库代码
   - go-music-dl 没有只监听本机的选项，会监听所有网卡的 18080 端口。
   - 歌放完不会自动接下一首。
   - 只说歌名、歌名又被识别错时（比如只说了"放请帖"），不会按读音纠正。
-  - go-music-dl 的接口是从它的网页里看出来的，不是正式接口，升级后需要重新核对（`core/music/source.py` 里有说明）。
+  - go-music-dl 的接口是从它的网页里看出来的，不是正式接口，升级后需要重新核对（`core/gateway/skills/music/source.py` 里有说明）。
