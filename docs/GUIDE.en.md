@@ -298,7 +298,7 @@ These builds default to the official XiaoZhi OTA server. To build in your own ba
 | `local-music/` | Programs downloaded by `local_music_setup.sh` and go-music-dl's data (including sign-in cookies); local only, not in Git |
 | `examples/` | Config templates without real credentials |
 | `docs/` | This guide and per-board notes, indexed in [docs/README.md](README.md) (Chinese) |
-| `requirements-macos*.txt` | Backend dependencies: default (X-ASR), optional FunASR, and the full tested set |
+| `requirements-macos*.txt` | Backend dependencies: default (X-ASR), optional FunASR, optional pytest, and the full tested set |
 
 <details>
 <summary>Key files</summary>
@@ -326,13 +326,14 @@ In each board's directory:
 
 ```sh
 cd xiaozhi-esp32-server/main/xiaozhi-server
-../../../.venv/bin/python -m unittest tests                 # all; one file: -m unittest tests.test_gateway
+../../../.venv/bin/python -m unittest tests                 # nothing extra to install; one file: -m unittest tests.test_gateway
+../../../.venv/bin/python -m pytest tests                   # also runs the pytest-style tests; install requirements-macos-test.txt first
 cd ../../../web && node --test test/*.test.mjs    # web flasher library code
 ```
 
 `tools/verify/` holds end-to-end checks against the real pipeline (run from the repo root, e.g. `python tools/verify/verify_bot_reply.py`). `verify_bot_bridge.py`, `verify_bot_reply.py` and `verify_bot_speech.py` call the Bot you configured for real (one harmless test task each); only use them in a test environment you're authorized for, and start the backend first. They and `verify_local_music.py` speak through a simulated board using macOS speech synthesis (shared `sim_board.py`), so they need macOS and ffmpeg. `verify_bot_wait_display.py` uses local test files and normally doesn't call the webhook. `verify_local_music.py` speaks music commands with macOS speech synthesis as a simulated device; it plays a few seconds of music and doesn't call the Bot.
 
-Run the tests with the `unittest` command above, not pytest. pytest loads upstream's `tests/conftest.py`, which replaces `httpx.AsyncClient` with a stub that refuses every connection, including the mock transports the Bot tests pass in. The other way round, `unittest` skips upstream's pytest-only test files automatically (`tests/__init__.py`) and doesn't need `data/.config.yaml`, so it runs right after cloning. `tools/asr-bench/` compares speech recognizers.
+Neither command needs `data/.config.yaml`, so both run right after cloning, and neither sends real network requests: the tests use only the repo's `config.yaml`, and any httpx request without its own mock transport is treated as unreachable (`tests/conftest.py`). `unittest` can't run the few pytest-style files (`test_llm`, `test_tts` and so on) and skips them automatically (`tests/__init__.py`); `pytest` runs both kinds. Three items in `test_llm` need a real API key and are skipped by default; to really call the model, `export RUN_LIVE_API_TESTS=1`, fill in the keys in `data/.config.yaml` and run pytest. `tools/asr-bench/` compares speech recognizers.
 
 ## Known limitations
 

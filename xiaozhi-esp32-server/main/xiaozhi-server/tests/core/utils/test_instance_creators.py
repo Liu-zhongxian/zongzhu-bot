@@ -5,22 +5,12 @@ on disk. We only test:
 - the ValueError path for unknown names (no providers need to exist)
 - that the signature accepts *args / **kwargs (so all three modules work)
 
-NOTE: This test file is currently skipped at module level because importing
-`core.utils.intent` triggers `setup_logging()` at module load time, which
-requires `data/.config.yaml` to exist. That file is .gitignore'd and not
-present in CI. To enable this test suite, either:
-  1. Make `setup_logging()` lazy (move the call out of module-level scope).
-  2. Provide a stub `data/.config.yaml` in the test environment.
-Tracked as deferred-minor in progress.md.
+导入 `core.utils.intent` 时会调 `setup_logging()`，以前没有 `data/.config.yaml` 就报错，所以整个文件跳过；
+现在 tests/__init__.py 先放好了默认配置，不再跳过。
 """
 import pytest
 
-pytest.skip(
-    "setup_logging() at module import requires data/.config.yaml; skipped",
-    allow_module_level=True,
-)
-
-from core.utils import intent, llm, memory  # noqa: E402  (unreachable when skipped)
+from core.utils import intent, llm, memory
 
 
 @pytest.mark.parametrize("factory,module_type", [
