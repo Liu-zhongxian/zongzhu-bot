@@ -601,3 +601,51 @@ class CallNameDispatchTest(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PageSettingsTest(unittest.IsolatedAsyncioTestCase):
+    """G8b 第 5 步：唤醒词、呼名在网关页面上改，存在 data/gateway_settings.json，马上生效。"""
+
+    def setUp(self):
+        from core.gateway import settings
+        from core.gateway.xiaoai import control as speaker_control
+        self.settings = settings
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        patcher = mock.patch.object(settings, "PATH", Path(directory.name) / "gateway_settings.json")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.server = mock.Mock(reload=mock.AsyncMock(return_value=(["宗主"], [])), skipped=[])
+        patcher = mock.patch.object(speaker_control, "server", self.server)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.config = {"grok_bot": {"enabled": True, "bot_name": "硬件"},
+                       "gateway": {"call_names": {"grok_bot": ["bot"]}}}
+
+    def test_words_are_checked(self):
+        self.assertEqual(self.settings.words("宗主， 你好宗主、宗主,Bot"), ["宗主", "你好宗主", "Bot"])
+        for bad in ("", "宗主; rm -rf", "a" * 21, ",".join(str(i) for i in range(11))):
+            with self.assertRaises(self.settings.SettingError):
+                self.settings.words(bad)
+        self.assertEqual(self.settings.words("", allow_empty=True), [])
+
+    async def test_call_names_set_on_the_page_win_and_take_effect_at_once(self):
+        from core.gateway import control
+        self.assertEqual(gateway.agent_call_names(self.config)["grok_bot"], ["bot"])  # 配置里的
+        result = await control.settings_action(self.config, "set_call_names", {"agent": "grok_bot", "names": "bot、but"})
+        self.assertIn("bot、but", result["message"])
+        self.assertEqual(gateway.agent_call_names(self.config)["grok_bot"], ["bot", "but"])
+        self.server.reload.assert_awaited_once()  # 音箱的唤醒词跟着换
+        view = control.settings_view(self.config)
+        self.assertEqual(view["call_names"][0]["names"], ["bot", "but"])
+        with self.assertRaises(control.ControlError):
+            await control.settings_action(self.config, "set_call_names", {"agent": "nobody", "names": "x"})
+
+    async def test_speaker_wake_words_set_on_the_page(self):
+        from core.gateway import control
+        from core.gateway.xiaoai import server
+        self.assertEqual(server.wake_words(self.config), ["宗主"])  # 默认
+        await control.settings_action(self.config, "set_speaker_wake_words", "宗主、你好宗主")
+        self.assertEqual(server.wake_words(self.config), ["宗主", "你好宗主"])
+        with self.assertRaises(control.ControlError):
+            await control.settings_action(self.config, "set_speaker_wake_words", "")  # 至少留一个

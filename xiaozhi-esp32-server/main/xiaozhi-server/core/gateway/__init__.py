@@ -71,9 +71,14 @@ def connection_skills(conn):
 
 
 def agent_call_names(config) -> dict:
-    """{AI module name: [call names]} for the AIs that are switched on."""
+    """{AI module name: [call names]} for the AIs that are switched on. Names set on the gateway page
+    (data/gateway_settings.json) come first, then `gateway.call_names` in the config, then the module's own."""
+    from core.gateway import settings
+
     custom = (config.get("gateway") or {}).get("call_names")
-    custom = custom if isinstance(custom, dict) else {}
+    custom = dict(custom) if isinstance(custom, dict) else {}
+    saved = settings.get("call_names")
+    custom.update(saved if isinstance(saved, dict) else {})
     return {name: custom.get(name, agent.names(config)) for name, agent in AGENTS.items() if agent.enabled(config)}
 
 

@@ -41,7 +41,8 @@ class GatewayPageHandler:
     async def handle_status(self, request):
         music = await asyncio.to_thread(control.music_status)
         return web.json_response(status.snapshot(self.config) | {"music": music,
-                                 "password": control.password_required(self.config)},
+                                 "password": control.password_required(self.config),
+                                 "settings": control.settings_view(self.config)},
                                  headers=NO_STORE)
 
     def _token_ok(self, request):
@@ -72,6 +73,8 @@ class GatewayPageHandler:
         try:
             if action in control.MUSIC_ACTIONS:
                 return web.json_response(await control.music_action(action, body.get("value")))
+            if action in control.SETTING_ACTIONS:
+                return web.json_response(await control.settings_action(self.config, action, body.get("value")))
             if action in speaker_control.ACTIONS:
                 return web.json_response(await speaker_control.act(self.config, body.get("device"), action,
                                                                     body.get("value")))

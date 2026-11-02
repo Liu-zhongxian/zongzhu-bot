@@ -26,6 +26,7 @@ SAY_MAX = 100  # "说一句话"最多这么多字
 
 # device id -> (SpeakerLink, SpeakerDevice)：连着的音箱，server.py 连上时登记、断开时去掉
 speakers: dict = {}
+server = None  # XiaoaiServer：网关页面上改了唤醒词、呼名时让它重载（server.py 设）
 
 
 def _find(device):

@@ -35,6 +35,14 @@ def settings(config):
     return (config.get("gateway") or {}).get("xiaoai") or {}
 
 
+def wake_words(config):
+    """音箱的唤醒词：网关页面上改过的（data/gateway_settings.json），再是配置，再是默认的「宗主」"""
+    from core.gateway import settings as page_settings
+
+    return list(page_settings.get("speaker_wake_words") or settings(config).get("wake_words")
+                or wake.DEFAULT_WAKE_WORDS)
+
+
 def read_token(xiaoai):
     """token 文件的内容；没配或读不到返回空串（这时拒绝所有连接）"""
     path = str(xiaoai.get("token_file") or "").strip()
@@ -85,10 +93,13 @@ class XiaoaiServer:
         self.spotter = None
         self.call_words = {}  # 呼名（小写）-> AI 模块名：喊它也唤醒，并换成那个 AI
         self.wake_words = []  # 实际在认的唤醒词（含呼名），设备页上显示
+        self.skipped = []     # 模型认不了、跳过的词
+        self.listeners: set = set()
         self.ready = asyncio.Event()  # 端口开好了（测试用）
+        speaker_control.server = self  # 网关页面上改唤醒词、呼名时要它重载
 
     def _load_spotter(self, xiaoai):
-        words = list(xiaoai.get("wake_words") or wake.DEFAULT_WAKE_WORDS)
+        words = wake_words(self.config)
         # 呼名也是唤醒词：直接喊"硬件"就唤醒并交给那个 AI，不用先喊"你好宗主"再说"嗨 硬件"（2026-11-02 你定）
         if self.ws_server and xiaoai.get("call_names_wake", True):
             from core import gateway
@@ -99,12 +110,24 @@ class XiaoaiServer:
             self.spotter = wake.Spotter(xiaoai.get("kws_model_dir") or wake.DEFAULT_MODEL_DIR, words,
                                         score=float(xiaoai.get("kws_score", 2.0)),
                                         threshold=float(xiaoai.get("kws_threshold", wake.DEFAULT_THRESHOLD)))
+            self.skipped = list(self.spotter.skipped)
             self.wake_words = [w for w in words if w.strip().lower() not in self.spotter.skipped]
             logger.bind(tag=TAG).info(f"音箱唤醒词：{'、'.join(self.wake_words)}")
             if self.spotter.skipped:
                 logger.bind(tag=TAG).warning(f"这些词唤醒词模型认不了，跳过：{'、'.join(self.spotter.skipped)}")
         except Exception as e:
             logger.bind(tag=TAG).error(f"音箱唤醒词识别没有启动：{type(e).__name__} {e}")
+
+    async def reload(self):
+        """网关页面上改了唤醒词或呼名：重建唤醒词识别，连着的音箱马上换上（不用重启后端）"""
+        await asyncio.to_thread(self._load_spotter, settings(self.config))
+        for listener in list(self.listeners):
+            listener.use(self.spotter)
+        shown = "、".join(self.wake_words)
+        for device_id, (_, device) in speaker_control.speakers.items():
+            device.wake_word = wake_words(self.config)[0]
+            status.speaker_linked(device_id, True, shown)
+        return self.wake_words, self.skipped
 
     def _check_auth(self, connection, request):
         token = read_token(settings(self.config))
@@ -156,6 +179,7 @@ class XiaoaiServer:
             listener = wake.WakeListener(
                 self.spotter, lambda word: loop.call_soon_threadsafe(self._woken, link, listener, word, note, device),
                 on_ignored=lambda word: loop.call_soon_threadsafe(note, f"认出唤醒词但在放声音，忽略：{word}"))
+            self.listeners.add(listener)
 
         def on_record(raw):
             if recorder:
@@ -178,7 +202,7 @@ class XiaoaiServer:
             if self.ws_server:
                 device_id = str(xiaoai.get("device_id") or f"xiaoai-{address}")
                 status.note_ota(device_id, BOARD_TYPE, f"Client {version}", address)
-                words = xiaoai.get("wake_words") or list(wake.DEFAULT_WAKE_WORDS)
+                words = wake_words(self.config)
                 device = SpeakerDevice(link, self.ws_server, device_id, address, words[0], note)
                 status.speaker_linked(device_id, True, "、".join(self.wake_words or words))
                 speaker_control.speakers[device_id] = (link, device)  # 网关页面上的控制（control.py）
@@ -212,6 +236,7 @@ class XiaoaiServer:
                 await device.close()
             if listener:
                 listener.close()
+                self.listeners.discard(listener)
             if recorder:
                 recorder.close()
             self.links.discard(link)

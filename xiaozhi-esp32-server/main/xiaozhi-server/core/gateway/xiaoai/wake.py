@@ -108,8 +108,16 @@ class WakeListener:
     def close(self):
         self.queue.put(None)
 
+    def use(self, spotter):
+        """换一套唤醒词（网关页面上改了）：在识别线程里换，不和正在识别的声音抢"""
+        self.queue.put(("use", spotter))
+
     def _run(self):
         while (pcm := self.queue.get()) is not None:
+            if isinstance(pcm, tuple):
+                self.spotter = pcm[1]
+                self.stream = self.spotter.create_stream()
+                continue
             word = self.spotter.feed(self.stream, pcm)
             if not word:
                 continue

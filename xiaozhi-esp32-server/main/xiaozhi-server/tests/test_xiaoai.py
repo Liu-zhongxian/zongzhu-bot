@@ -198,6 +198,23 @@ class WakeListenerTest(unittest.TestCase):
         listener.thread.join(2)
         self.assertEqual(heard, ["你好宗主"])
 
+    def test_new_wake_words_are_swapped_in_on_the_listening_thread(self):
+        class Other:
+            def create_stream(self):
+                return None
+
+            def feed(self, stream, pcm):
+                return "宗主" if b"NEW" in pcm else None
+
+        heard = []
+        listener = wake.WakeListener(FakeSpotter(), heard.append)
+        listener.use(Other())
+        listener.feed(b"WAKE")  # 旧的词不认了
+        listener.feed(b"NEW")
+        listener.close()
+        listener.thread.join(2)
+        self.assertEqual(heard, ["宗主"])
+
     @unittest.skipUnless(Path(wake.DEFAULT_MODEL_DIR, "tokens.txt").exists(), "本机没有唤醒词模型")
     def test_keyword_lines_with_the_real_model(self):
         model = Path(wake.DEFAULT_MODEL_DIR)

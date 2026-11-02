@@ -274,12 +274,13 @@ document.addEventListener("click", e => {
   if (e.target.id === "pw-go") return login();
   const b = e.target.closest("button[data-act]"); if (!b) return;  // sliders act on "change"
   // "说一句话": the text comes from the box next to the button
-  const value = b.dataset.from ? document.getElementById(b.dataset.from).value : b.dataset.val;
+  let value = b.dataset.from ? document.getElementById(b.dataset.from).value : b.dataset.val;
+  if (b.dataset.agent) value = { agent: b.dataset.agent, names: value };  // 呼名：哪个 AI 的
   act(b.dataset.act, b.dataset.dev, value, b.dataset.ask);
 });
 document.addEventListener("keydown", e => {
   if (e.target.id === "pw" && e.key === "Enter") login();
-  if (e.target.matches("input[data-say]") && e.key === "Enter") e.target.nextElementSibling.click();
+  if (e.target.matches("input[data-keep]") && e.key === "Enter") e.target.nextElementSibling.click();
 });
 document.addEventListener("input", e => {
   if (e.target.matches("input[type=range]")) { busyUntil = Date.now() + 3000; e.target.nextElementSibling.value = e.target.value; }
@@ -353,7 +354,7 @@ function renderDevices() {
       <p class="note">紫色是 AI 能调的工具；"仅后端"的不给 AI，只有后端能调（改唤醒词、重启、升级固件都用它们）。最低剩余内存是开机以来的最低值；固件不报 PSRAM。
         ${b.online ? "" : "板子待机中，"}读取于 ${clock(i.read_at)}（${ago(i.read_at)}前）。</p>
     </div>`;
-  }).join("");
+  }).join("") + callNamesCard();
 }
 // G19d: the Xiaomi speaker (no MCP): what the backend reads on it with fixed read-only commands
 const PLAY = { idle: "没在放", playing: "在放", paused: "暂停" };
@@ -387,8 +388,30 @@ function speakerControls(b, s) {
         : `<button class="btn" data-act="speaker_play" data-dev="${dev}" ${off}>▶ 继续播放</button>`}
       <button class="btn danger" data-act="speaker_stop_xiaoai" data-dev="${dev}" ${off}>打断小爱</button>
     </div>
-    <div class="say"><input id="${box}" data-say maxlength="100" placeholder="让音箱说一句话（最多 100 字），回车发送" ${off}>
-      <button class="btn" data-act="speaker_say" data-dev="${dev}" data-from="${box}" ${off}>说</button></div>`;
+    <div class="say"><input id="${box}" data-keep maxlength="100" placeholder="让音箱说一句话（最多 100 字），回车发送" ${off}>
+      <button class="btn" data-act="speaker_say" data-dev="${dev}" data-from="${box}" ${off}>说</button></div>
+    ${speakerWakeEditor()}`;
+}
+// G8b step 5: wake words and call names, saved on this page (data/gateway_settings.json), in effect at once
+const joinWords = list => (list || []).join("、");
+function speakerWakeEditor() {
+  const st = data.settings || {};
+  return `<h4>唤醒词</h4>
+    <div class="say"><input id="wake-speaker" data-keep value="${esc(joinWords(st.speaker_wake_words))}" placeholder="比如：宗主、你好宗主">
+      <button class="btn" data-act="set_speaker_wake_words" data-from="wake-speaker">保存</button></div>
+    <p class="note">几个词用顿号或逗号隔开，最多 10 个；改完马上生效，不用重启。下面"呼名"里每个 AI 的名字也能直接唤醒音箱。
+      ${st.skipped && st.skipped.length ? `<b>唤醒词模型认不了：${esc(joinWords(st.skipped))}</b>，音箱不会被它们唤醒。` : ""}</p>`;
+}
+function callNamesCard() {
+  const st = data.settings || {}, rows = st.call_names || [];
+  if (!canControl() || !rows.length) return "";
+  return `<div class="card device"><h3>呼名</h3>
+    <div class="sub">喊 AI 的名字就交给它：板子上先唤醒再说"嗨 + 名字"；小米音箱上直接喊名字</div>
+    ${rows.map(r => `<h4>${esc(r.label)}</h4>
+      <div class="say"><input id="call-${esc(r.agent)}" data-keep value="${esc(joinWords(r.names))}" placeholder="比如：bot、波特">
+        <button class="btn" data-act="set_call_names" data-agent="${esc(r.agent)}" data-from="call-${esc(r.agent)}">保存</button></div>`).join("")}
+    <p class="note">几个名字用顿号或逗号隔开；可以把识别常听成的写法也加上（比如把 bot 听成 but，就加个 but）。留空就不能用名字叫这个 AI。改完马上生效。</p>
+  </div>`;
 }
 function renderStats() {
   const online = data.boards.filter(b => b.online).length;
@@ -452,7 +475,7 @@ function render() {
   renderNav(); renderStats(); renderBoards(); renderLog(); renderLogin();
   // Re-rendering would reset a slider while it is being dragged
   // ...and would wipe what is being typed into "说一句话"
-  if (Date.now() > busyUntil && !document.querySelector("#devices input:active, #music input:active, #devices input[data-say]:focus")) { renderDevices(); renderMusic(); }
+  if (Date.now() > busyUntil && !document.querySelector("#devices input:active, #music input:active, #devices input[data-keep]:focus")) { renderDevices(); renderMusic(); }
 }
 
 async function refresh() {
