@@ -1,4 +1,4 @@
-"""音箱上 open-xiaoai Client 的连接协议（照 xiaoai-bridge/speaker/client/client-rust/src/services/connect/ 写）。
+"""音箱上 open-xiaoai Client 的连接协议（照 zongzhu-speaker/client/client-rust/src/services/connect/ 写）。
 
 - WebSocket，Client 连上来时带 `Authorization: Bearer <token>`。
 - 文本消息是 JSON，外面包一层类型：`{"Request": {id, command, payload}}`、

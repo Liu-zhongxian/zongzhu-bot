@@ -1,5 +1,5 @@
 """G19i 第 1、2 步：宗主后端开端口接小米音箱，认唤醒词回"在"。假 Client 照 open-xiaoai Client 的消息格式回应
-（xiaoai-bridge/speaker/client/client-rust/src/services/connect/）。"""
+（zongzhu-speaker/client/client-rust/src/services/connect/）。"""
 import asyncio
 import json
 import socket

@@ -1,4 +1,4 @@
-"""G19i：宗主后端直接接小米音箱（音箱上跑 open-xiaoai Client），不再经过 xiaoai-bridge。
+"""G19i：宗主后端直接接小米音箱（音箱上跑 open-xiaoai Client）；以前要经过电脑上单独运行的 xiaoai-bridge。
 
 配置（.config.yaml，默认关）：
 

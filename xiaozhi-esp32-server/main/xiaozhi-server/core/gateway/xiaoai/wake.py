@@ -1,6 +1,6 @@
 """音箱的唤醒词识别（G19i 第 2 步）：sherpa-onnx 的 KeywordSpotter，在后端直接听音箱的麦克风。
 
-模型用 xiaoai-bridge 一直在用的那套（coderzc/open-xiaoai-bridge 发布的 models.zip 里的
+模型用原来的 bridge 一直在用的那套（coderzc/open-xiaoai-bridge 发布的 models.zip 里的
 encoder.onnx、decoder.onnx、joiner.onnx、tokens.txt、bpe.model），放在 `gateway.xiaoai.kws_model_dir`
 （默认 models/sherpa-onnx-kws-open-xiaoai/，.gitignore 已排除 models/sherpa-onnx*）。
 """

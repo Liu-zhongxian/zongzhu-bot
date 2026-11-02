@@ -131,7 +131,7 @@
 - **音箱上**：补丁固件开 SSH、关小米自动升级、开机运行 `/data/init.sh`；open-xiaoai 的 Client 把麦克风和播放交给后端。
 - **后端里**：唤醒词在后端识别（sherpa-onnx），之后和板子走同一套识别、网关、TTS。音箱按 4 个声道录音：3 个麦克风，加 1 个音箱自己放出的声音。后端只用麦克风，所以音箱说话时也能喊醒；等音箱真的放完、回声过去才开始听，不会把它自己的声音当成你的话。网关页面上显示为"小米音箱 Pro"，没有屏幕和 MCP 工具，所以没有音量、亮度这些控件。
 
-步骤（刷机和 Client 的细节见 [xiaoai-bridge/README.md](../xiaoai-bridge/README.md) 第 1–6、8 节）：
+步骤（刷机和 Client 的细节见 [zongzhu-speaker/README.md](../zongzhu-speaker/README.md)）：
 
 1. 查音箱版本，用 `ota_query.py` 找到同版本的官方固件包；
 2. `build_image.sh` 打补丁、打包，并核对只改了补丁的 8 个文件；
@@ -163,8 +163,6 @@
 8. `install_client.sh <音箱 IP> ws://<电脑的局域网 IP>:4399 <token 文件>` 把 Client 装到音箱上；约 20 秒后后端日志出现 `小米音箱已连接`，音箱"嘀"一声。
 
 电脑的 IP 写进了音箱，所以要在路由器里给电脑固定一个 IP。只在 OH2P、固件 1.62.2、Apple Silicon 的 Mac 上完整做过。**刷机有变砖的风险**，务必先备份。
-
-`xiaoai-bridge/` 里原来那个在电脑上单独运行的 bridge 不用再启动了（音箱已经直接接进后端），目录留着作参考；补丁、Client 源码和刷机、安装脚本仍然在它的 `speaker/` 里。
 
 ## 手动安装（不用网页）
 
@@ -340,7 +338,7 @@ python scripts/build.py lckfb/szpi-esp32s3 --name lichuang-dev-zongzhu          
 | `web/` | 网页刷机页面和 macOS 后端安装脚本 `install-mac.sh`，推到 main 后自动发布到 GitHub Pages |
 | `deploy/` | 把后端部署到公网 Linux 服务器（Caddy、systemd、服务器配置） |
 | `tools/` | `build_firmware.py`（编进 OTA 地址、打包、刷写）、`build_web.py`（组装网页）、`autostart.sh`（开机自启）、`local_music_setup.sh`（下载点歌用的 go-music-dl 和 mpv）、`verify/`（端到端检查）、`asr-bench/`（识别对比） |
-| `xiaoai-bridge/` | 小米音箱：`speaker/` 是补丁、Client 源码和刷机、安装脚本，说明见它的 README；目录里原来的 bridge（基于 coderzc/open-xiaoai-bridge）已经并进后端的 `core/gateway/xiaoai/`，不用再启动，留作参考 |
+| `zongzhu-speaker/` | 小米音箱这一边：补丁、Client 源码和刷机、安装脚本，说明见它的 README；后端接音箱的代码在 `core/gateway/xiaoai/` |
 | `local-music/` | `local_music_setup.sh` 下载的程序和 go-music-dl 的数据（含登录 Cookie）；只在本机，不进 Git |
 | `examples/` | 不含真实凭证的配置模板 |
 | `docs/` | 本文、各板说明，目录见 [docs/README.md](README.md) |

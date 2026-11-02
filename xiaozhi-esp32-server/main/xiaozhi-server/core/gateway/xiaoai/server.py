@@ -115,7 +115,7 @@ class XiaoaiServer:
                 self.ready.set()
                 await asyncio.Future()
         except OSError as e:
-            # 多半是 xiaoai-bridge 还在跑，占着 4399
+            # 多半是以前的 xiaoai-bridge 还在跑，占着 4399
             logger.bind(tag=TAG).error(f"小米音箱接入没有启动：端口 {port} 被占用（xiaoai-bridge 还在跑？）{e}")
 
     async def _handle(self, ws):

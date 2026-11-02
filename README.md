@@ -44,7 +44,7 @@
 **小米智能音箱 Pro（可选，实验）**
 
 - 给音箱刷 open-xiaoai 补丁固件后，它直接连宗主后端，也能喊"你好宗主"：后面的话交给 Bot，回答从音箱里念出来；念的时候喊"你好宗主"能打断，问完新问题它把没念完的接着念完。小爱同学照常能用。网关页面上显示为"小米音箱 Pro"。
-- 只在 OH2P、固件 1.62.2 上完整做过；刷机有风险，步骤见 [GUIDE](docs/GUIDE.md#接入小米智能音箱-pro可选)，刷机和退路的细节见 [xiaoai-bridge](xiaoai-bridge/README.md)。
+- 只在 OH2P、固件 1.62.2 上完整做过；刷机有风险，步骤见 [GUIDE](docs/GUIDE.md#接入小米智能音箱-pro可选)，刷机和退路的细节见 [zongzhu-speaker](zongzhu-speaker/README.md)。
 
 **听得准**
 
@@ -98,14 +98,14 @@ bash tools/local_music_setup.sh    # 下载 go-music-dl 和 mpv 到 local-music/
 | [docs/GUIDE.md](docs/GUIDE.md) | 使用说明：功能、本机点歌、手动安装、刷机、常见问题、Bot 接口、构建、测试、已知限制 |
 | [docs/README.md](docs/README.md) | 全部文档目录，包括各板说明 |
 | [deploy/README.md](deploy/README.md) | 部署到公网服务器 |
-| [xiaoai-bridge/README.md](xiaoai-bridge/README.md) | 小米智能音箱 Pro 的刷机和 Client（原来的 bridge 已并进后端） |
+| [zongzhu-speaker/README.md](zongzhu-speaker/README.md) | 小米智能音箱 Pro 的刷机和 Client |
 
 ## 关于这个仓库
 
 本项目自己的改动集中在这几处：
 - **固件**：`xiaozhi-esp32/main/boards/common/zongzhu/`，以及各板目录。
 - **后端**：`xiaozhi-esp32-server/main/xiaozhi-server/core/` 下的 `handle/grokBot*.py`、`gateway/`（网关；本机点歌在 `gateway/skills/music/`）、`utils/asr_text.py`。
-- **小米音箱**：后端的 `core/gateway/xiaoai/`（音箱直接接进后端）；`xiaoai-bridge/speaker/` 是补丁、Client 源码和刷机、安装脚本，说明见 `xiaoai-bridge/README.md`（目录里原来的 bridge 留作参考）。
+- **小米音箱**：后端的 `core/gateway/xiaoai/`（音箱直接接进后端）；`zongzhu-speaker/` 是补丁、Client 源码和刷机、安装脚本，说明见 `zongzhu-speaker/README.md`。
 - **其他**：`web/`、`tools/`、`deploy/`、`examples/`、`docs/`。
 
 两个上游目录里其余的代码基本保持原样，方便以后合并上游、跟上小智固件的更新。上游基线提交记录在 `UPSTREAM.json`。
@@ -115,4 +115,4 @@ bash tools/local_music_setup.sh    # 下载 go-music-dl 和 mpv 到 local-music/
 - 本项目代码：[MIT 许可证](LICENSE)。
 - 固件基于 [78/xiaozhi-esp32](https://github.com/78/xiaozhi-esp32)，后端基于 [xinnan-tech/xiaozhi-esp32-server](https://github.com/xinnan-tech/xiaozhi-esp32-server)，两者都是 MIT 许可证。
 - 本机点歌用到 [go-music-dl](https://github.com/guohuiyuan/go-music-dl)（AGPL-3.0）和 [mpv](https://github.com/mpv-player/mpv)，两者都不在这个仓库里：由 `tools/local_music_setup.sh` 从各自的发布页下载，作为独立程序运行，遵循各自的许可证。
-- `xiaoai-bridge/` 基于 [coderzc/open-xiaoai-bridge](https://github.com/coderzc/open-xiaoai-bridge)（MIT，版权声明见 [xiaoai-bridge/LICENSE](xiaoai-bridge/LICENSE)）。音箱的补丁和 Client 源码（`xiaoai-bridge/speaker/`）来自 [open-xiaoai](https://github.com/idootop/open-xiaoai)（MIT，见 [xiaoai-bridge/speaker/LICENSE.open-xiaoai](xiaoai-bridge/speaker/LICENSE.open-xiaoai)）。小米官方固件和刷机工具不在这个仓库里。
+- 音箱的补丁和 Client 源码（`zongzhu-speaker/`）来自 [open-xiaoai](https://github.com/idootop/open-xiaoai)（MIT，见 [zongzhu-speaker/LICENSE.open-xiaoai](zongzhu-speaker/LICENSE.open-xiaoai)）。后端接音箱的做法（`core/gateway/xiaoai/`）参考了 [coderzc/open-xiaoai-bridge](https://github.com/coderzc/open-xiaoai-bridge)（MIT），唤醒词模型用它发布的那套。小米官方固件和刷机工具不在这个仓库里。

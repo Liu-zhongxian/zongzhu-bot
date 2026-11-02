@@ -46,7 +46,7 @@ eyes                    ├ music and volume → runs on this computer
 **Xiaomi Smart Speaker Pro (optional, experimental)**
 
 - After flashing the open-xiaoai patched firmware, the speaker connects straight to the Zongzhu backend and answers "你好宗主" too: what you say next goes to the Bot and the answer is spoken by the speaker; say "你好宗主" while it speaks to interrupt, and after your new question it finishes what it was saying. XiaoAI keeps working. The gateway page lists it as "小米音箱 Pro".
-- Tested end to end only on the OH2P with firmware 1.62.2. Flashing carries risk; the steps are in the [GUIDE](docs/GUIDE.en.md#xiaomi-smart-speaker-pro-optional), flashing details and the way back in [xiaoai-bridge](xiaoai-bridge/README.md) (Chinese).
+- Tested end to end only on the OH2P with firmware 1.62.2. Flashing carries risk; the steps are in the [GUIDE](docs/GUIDE.en.md#xiaomi-smart-speaker-pro-optional), flashing details and the way back in [zongzhu-speaker](zongzhu-speaker/README.md) (Chinese).
 
 **Accurate recognition**
 
@@ -100,14 +100,14 @@ Prefer not to use the web page, want to build the firmware yourself, or the page
 | [docs/GUIDE.en.md](docs/GUIDE.en.md) | Full guide: features, local music, manual setup, flashing, troubleshooting, Bot interface, building, tests, known limitations |
 | [docs/README.md](docs/README.md) | Index of all docs, including board notes (Chinese) |
 | [deploy/README.md](deploy/README.md) | Deploying to a public server (Chinese) |
-| [xiaoai-bridge/README.md](xiaoai-bridge/README.md) | Xiaomi Smart Speaker Pro: flashing and the Client; the old bridge has moved into the backend (Chinese) |
+| [zongzhu-speaker/README.md](zongzhu-speaker/README.md) | Xiaomi Smart Speaker Pro: flashing and the Client (Chinese) |
 
 ## About this repository
 
 This project's own changes are in:
 - **Firmware**: `xiaozhi-esp32/main/boards/common/zongzhu/` and the board directories.
 - **Backend**: under `xiaozhi-esp32-server/main/xiaozhi-server/core/`, the files `handle/grokBot*.py`, `gateway/` (the gateway; local music is in `gateway/skills/music/`) and `utils/asr_text.py`.
-- **Xiaomi speaker**: the backend's `core/gateway/xiaoai/` (the speaker connects straight to the backend); `xiaoai-bridge/speaker/` holds the patches, the Client source and the flashing and install scripts, see `xiaoai-bridge/README.md` (the old bridge in that directory stays for reference).
+- **Xiaomi speaker**: the backend's `core/gateway/xiaoai/` (the speaker connects straight to the backend); `zongzhu-speaker/` holds the patches, the Client source and the flashing and install scripts, see `zongzhu-speaker/README.md`.
 - **Everything else**: `web/`, `tools/`, `deploy/`, `examples/` and `docs/`.
 
 The rest of the two upstream directories is kept mostly as is, so that later upstream merges, which keep up with Xiaozhi firmware updates, stay simple. Upstream base commits are in `UPSTREAM.json`.
@@ -117,5 +117,5 @@ The rest of the two upstream directories is kept mostly as is, so that later ups
 - This project's code: [MIT License](LICENSE).
 - The firmware is based on [78/xiaozhi-esp32](https://github.com/78/xiaozhi-esp32) and the backend on [xinnan-tech/xiaozhi-esp32-server](https://github.com/xinnan-tech/xiaozhi-esp32-server), both MIT.
 - Local music uses [go-music-dl](https://github.com/guohuiyuan/go-music-dl) (AGPL-3.0) and [mpv](https://github.com/mpv-player/mpv). Neither is in this repository: `tools/local_music_setup.sh` downloads them from their release pages, and they run as separate programs under their own licenses.
-- `xiaoai-bridge/` is based on [coderzc/open-xiaoai-bridge](https://github.com/coderzc/open-xiaoai-bridge) (MIT; copyright notices in [xiaoai-bridge/LICENSE](xiaoai-bridge/LICENSE)). The speaker patches and Client source (`xiaoai-bridge/speaker/`) come from [open-xiaoai](https://github.com/idootop/open-xiaoai) (MIT; see [xiaoai-bridge/speaker/LICENSE.open-xiaoai](xiaoai-bridge/speaker/LICENSE.open-xiaoai)). Xiaomi's official firmware and the flashing tool are not in this repository.
+- The speaker patches and Client source (`zongzhu-speaker/`) come from [open-xiaoai](https://github.com/idootop/open-xiaoai) (MIT; see [zongzhu-speaker/LICENSE.open-xiaoai](zongzhu-speaker/LICENSE.open-xiaoai)). The way the backend connects the speaker (`core/gateway/xiaoai/`) follows [coderzc/open-xiaoai-bridge](https://github.com/coderzc/open-xiaoai-bridge) (MIT), and the wake word model is the one it publishes. Xiaomi's official firmware and the flashing tool are not in this repository.
 - Real keys, Wi-Fi settings, flash backups, model weights, sign-in cookies, logs and conversations stay on the local machine and are not in this repository.
