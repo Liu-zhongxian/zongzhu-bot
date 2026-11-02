@@ -8,6 +8,7 @@ from config.logger import setup_logging
 from core.utils.util import get_local_ip, validate_mcp_endpoint
 from core.http_server import SimpleHttpServer
 from core.websocket_server import WebSocketServer
+from core.gateway.xiaoai.server import XiaoaiServer
 from core.utils.util import check_ffmpeg_installed
 from core.utils.gc_manager import get_gc_manager
 
@@ -74,6 +75,8 @@ async def main():
     # 启动 Simple http 服务器
     ota_server = SimpleHttpServer(config)
     ota_task = asyncio.create_task(ota_server.start())
+    # 小米音箱直接接进来（gateway.xiaoai，默认关；G19i）
+    xiaoai_task = asyncio.create_task(XiaoaiServer(config).start())
 
     read_config_from_api = config.get("read_config_from_api", False)
     port = int(config["server"].get("http_port", 8003))
@@ -133,12 +136,13 @@ async def main():
         # 取消所有任务（关键修复点）
         stdin_task.cancel()
         ws_task.cancel()
+        xiaoai_task.cancel()
         if ota_task:
             ota_task.cancel()
 
         # 等待任务终止（必须加超时）
         await asyncio.wait(
-            [stdin_task, ws_task, ota_task] if ota_task else [stdin_task, ws_task],
+            [stdin_task, ws_task, xiaoai_task, ota_task] if ota_task else [stdin_task, ws_task, xiaoai_task],
             timeout=3.0,
             return_when=asyncio.ALL_COMPLETED,
         )
