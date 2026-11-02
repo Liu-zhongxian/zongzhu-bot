@@ -215,6 +215,19 @@ class ReplyTest(unittest.IsolatedAsyncioTestCase):
         listener.mute.assert_called_once()
 
 
+class SpeakerInfoTest(unittest.TestCase):
+    def test_parses_what_the_speaker_printed(self):
+        from core.gateway.xiaoai import info
+        # 2026-11-02 音箱上真实的输出格式（序列号、MAC 换成假的）
+        out = ("model=OH2P\nsn=12345/A0B000000\nmac=00:11:22:33:44:55\nboot=boot0\n"
+               "rom=1.62.2\nchannel=release\nhardware=OH2P\n"
+               'play={\t"code": 0,\t"info": "{ \\"status\\": 1, \\"volume\\": 31, \\"loop_type\\": 1 }"}\n')
+        self.assertEqual(info.parse(out), {"model": "OH2P", "sn": "12345/A0B000000", "mac": "00:11:22:33:44:55",
+                                           "boot": "boot0", "rom": "1.62.2", "channel": "release",
+                                           "hardware": "OH2P", "volume": 31, "play": "playing"})
+        self.assertEqual(info.parse("model=\nplay=not json\n"), {})  # 读不到的不放
+
+
 class CallWordTest(unittest.IsolatedAsyncioTestCase):
     async def test_ai_name_heard_while_the_speaker_talks_is_ignored(self):
         # 音箱自己会说"好的，正在交给 Bot。"：放声音时听到 bot 不算，听到唤醒词照样打断

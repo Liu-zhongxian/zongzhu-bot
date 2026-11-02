@@ -205,6 +205,7 @@ function stateText(state) {
   }
   if (state.kind === "speaking") return `<span class="pill ok">正在说</span>`;
   if (state.kind === "listening") return `<span class="pill ok">在听</span>`;
+  if (state.kind === "standby") return `<span class="pill ok">待机</span>`;
   return `<span class="pill">离线</span>`;
 }
 function renderBoards() {
@@ -314,9 +315,7 @@ function renderDevices() {
     const i = b.info;
     const head = `<h3><span class="dot ${b.online ? "" : "off"}"></span>${esc(b.name)}</h3>
       <div class="sub">${esc([b.id, b.type].filter(Boolean).join(" · "))}</div>`;
-    if (b.bridge) return `<div class="card device ${b.online ? "" : "off"}">${head}
-      <p class="note">小米音箱直接接进后端（4399 端口）：没有屏幕，也没有 MCP 工具，读不到 WiFi、固件这些信息，音量、亮度和重启也不能在这里改。
-        ${b.online ? "正连着。" : "待机中（后端会断开空闲连接），喊“你好宗主”就会连上。"}</p></div>`;
+    if (b.bridge) return speakerCard(b, head);
     if (!i) return `<div class="card device ${b.online ? "" : "off"}">${head}
       <p class="note">${b.online ? "正在读……板子连上后几秒钟内会读到。" : "还没读到过：唤醒板子后几秒钟内自动读取。"}</p></div>`;
     const w = i.wifi || {}, f = i.firmware || {}, tools = i.tools || [];
@@ -343,6 +342,26 @@ function renderDevices() {
         ${b.online ? "" : "板子待机中，"}读取于 ${clock(i.read_at)}（${ago(i.read_at)}前）。</p>
     </div>`;
   }).join("");
+}
+// G19d: the Xiaomi speaker (no MCP): what the backend reads on it with fixed read-only commands
+const PLAY = { idle: "没在放", playing: "在放", paused: "暂停" };
+function speakerCard(b, head) {
+  const s = (b.info || {}).speaker;
+  const where = b.online ? "连着后端（4399 端口）" : "没连上后端：音箱关机、断网，或者 Client 没在跑";
+  if (!s) return `<div class="card device ${b.online ? "" : "off"}">${head}
+    <p class="note">小米音箱直接接进后端，${where}。${b.online ? "连上后几秒钟内会读到设备信息。" : ""}</p></div>`;
+  return `<div class="card device ${b.online ? "" : "off"}">${head}
+    <div class="cols">
+      <div><h4>设备</h4>${kv([["型号", esc(s.model || s.hardware) || null], ["序列号", esc(s.sn) || null],
+        ["MAC", esc(s.mac) || null], ["IP", esc(b.ip) || null]])}</div>
+      <div><h4>系统</h4>${kv([["版本", esc(s.rom) || null], ["渠道", esc(s.channel) || null],
+        ["启动分区", esc(s.boot) || null]])}</div>
+      <div><h4>声音</h4>${kv([["音量", s.volume], ["播放", PLAY[s.play] || null]])}</div>
+      <div><h4>唤醒</h4>${kv([["唤醒词", esc(b.wake) || null], ["交给", esc(b.agent) || null]])}</div>
+    </div>
+    <p class="note">小米音箱直接接进后端，${where}；没有屏幕，也没有 MCP 工具。这些信息是后端在音箱上执行固定的只读命令读到的，每分钟读一次。
+      ${b.online ? "" : "下面是上次读到的，"}读取于 ${clock(s.read_at)}（${ago(s.read_at)}前）。</p>
+  </div>`;
 }
 function renderStats() {
   const online = data.boards.filter(b => b.online).length;

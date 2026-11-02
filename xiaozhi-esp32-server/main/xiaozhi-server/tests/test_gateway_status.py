@@ -23,7 +23,7 @@ def make_conn(device="94:a9:90:2d:a3:70", **extra):
 
 class StatusTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        for store in (status._boards, status._conns, status._recent):
+        for store in (status._boards, status._conns, status._recent, status._linked):
             store.clear()
         status._totals.update(sentences=0, local=0)
         # the board's chosen AI is read from data/agent_sessions.json; keep the real one out of it
@@ -208,6 +208,18 @@ class StatusTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((record["board"], record["text"], record["layer"], record["target"]),
                          ("小米音箱 Pro", "你好宗主", "wake", "回「在」"))
         self.assertEqual(status.snapshot(CONFIG)["totals"]["sentences"], 0)  # 唤醒不算一句话
+
+    def test_speaker_is_online_while_connected_even_with_no_conversation(self):
+        status.note_ota("aa:bb:cc:dd:ee:99", "open-xiaoai", "Client 1.0.0", "192.168.1.30")
+        status.speaker_linked("aa:bb:cc:dd:ee:99", True, "宗主、bot")
+        status.note_info("aa:bb:cc:dd:ee:99", {"speaker": {"model": "OH2P", "volume": 31}})
+        board = {b["name"]: b for b in status.snapshot(CONFIG)["boards"]}["小米音箱 Pro"]
+        self.assertEqual((board["online"], board["state"]["kind"], board["wake"]), (True, "standby", "宗主、bot"))
+        self.assertEqual(board["info"]["speaker"]["volume"], 31)
+        status.speaker_linked("aa:bb:cc:dd:ee:99", False)
+        board = {b["name"]: b for b in status.snapshot(CONFIG)["boards"]}["小米音箱 Pro"]
+        self.assertEqual((board["online"], board["state"]["kind"]), (False, "offline"))
+        self.assertEqual(board["info"]["speaker"]["model"], "OH2P")  # 断开后显示上次读到的
 
     def recent(self):
         return status.snapshot(CONFIG)["recent"]

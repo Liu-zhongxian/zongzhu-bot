@@ -11,7 +11,7 @@ import websockets
 
 from config.logger import setup_logging
 from core.gateway import status
-from core.gateway.xiaoai import debug, prompts, wake
+from core.gateway.xiaoai import debug, info as speaker_info, prompts, wake
 from core.gateway.xiaoai.device import BOARD_TYPE, SpeakerDevice
 from core.gateway.xiaoai.protocol import (PLAY_CONFIG, RECORD_CHANNELS, ClientError, SpeakerLink, mic_mono,
                                           playback_active, silence)
@@ -20,6 +20,7 @@ TAG = __name__
 logger = setup_logging()
 
 DEFAULT_PORT = 4399
+INFO_SECONDS = 60  # 设备页上的音箱信息（音量、播放状态这些）多久读一次
 LEVEL_REPORT_SECONDS = 15  # 连上后这么久里每秒报一次麦克风音量（第 1 步验收用）
 WAKE_REPLY = "在"
 # 放"在"后再多这么久不认唤醒词（音箱放出来比发出去晚约 0.1 秒，加上房间回声；也免得一声喊认两次）。
@@ -83,6 +84,7 @@ class XiaoaiServer:
         self.links: set[SpeakerLink] = set()
         self.spotter = None
         self.call_words = {}  # 呼名（小写）-> AI 模块名：喊它也唤醒，并换成那个 AI
+        self.wake_words = []  # 实际在认的唤醒词（含呼名），设备页上显示
         self.ready = asyncio.Event()  # 端口开好了（测试用）
 
     def _load_spotter(self, xiaoai):
@@ -97,7 +99,8 @@ class XiaoaiServer:
             self.spotter = wake.Spotter(xiaoai.get("kws_model_dir") or wake.DEFAULT_MODEL_DIR, words,
                                         score=float(xiaoai.get("kws_score", 2.0)),
                                         threshold=float(xiaoai.get("kws_threshold", wake.DEFAULT_THRESHOLD)))
-            logger.bind(tag=TAG).info(f"音箱唤醒词：{'、'.join(w for w in words if w not in self.spotter.skipped)}")
+            self.wake_words = [w for w in words if w.strip().lower() not in self.spotter.skipped]
+            logger.bind(tag=TAG).info(f"音箱唤醒词：{'、'.join(self.wake_words)}")
             if self.spotter.skipped:
                 logger.bind(tag=TAG).warning(f"这些词唤醒词模型认不了，跳过：{'、'.join(self.spotter.skipped)}")
         except Exception as e:
@@ -141,6 +144,7 @@ class XiaoaiServer:
         link = SpeakerLink(ws, on_event=lambda event, data: logger.bind(tag=TAG).debug(f"音箱事件 {event}: {data}"))
         listener = None
         device = None
+        poller = None
         if self.spotter:
             listener = wake.WakeListener(
                 self.spotter, lambda word: loop.call_soon_threadsafe(self._woken, link, listener, word, note, device),
@@ -169,10 +173,14 @@ class XiaoaiServer:
                 status.note_ota(device_id, BOARD_TYPE, f"Client {version}", address)
                 words = xiaoai.get("wake_words") or list(wake.DEFAULT_WAKE_WORDS)
                 device = SpeakerDevice(link, self.ws_server, device_id, address, words[0], note)
+                status.speaker_linked(device_id, True, "、".join(self.wake_words or words))
+                poller = asyncio.create_task(self._poll_info(link, device_id))
             await link.start_recording()
             note("start_recording 已回应")
-            if xiaoai.get("debug_dir") and xiaoai.get("debug_inspect"):
-                path = await debug.inspect(link, xiaoai["debug_dir"])
+            inspect_dir = xiaoai.get("debug_inspect")
+            inspect_dir = inspect_dir if isinstance(inspect_dir, str) else (inspect_dir and xiaoai.get("debug_dir"))
+            if inspect_dir:
+                path = await debug.inspect(link, inspect_dir)
                 logger.bind(tag=TAG).info(f"音箱只读检查结果：{path}")
             if recorder and xiaoai.get("debug_probe"):
                 await debug.probe(link, recorder, asyncio.sleep)
@@ -187,7 +195,10 @@ class XiaoaiServer:
         finally:
             runner.cancel()
             warm.cancel()
+            if poller:
+                poller.cancel()
             if device:
+                status.speaker_linked(device.device_id, False)
                 await device.close()
             if listener:
                 listener.close()
@@ -195,6 +206,15 @@ class XiaoaiServer:
                 recorder.close()
             self.links.discard(link)
             logger.bind(tag=TAG).info(f"小米音箱断开：{address}")
+
+    async def _poll_info(self, link, device_id):
+        """设备页的音箱信息：连上读一次，之后每 INFO_SECONDS 秒读一次（只读命令，见 info.py）"""
+        while True:
+            try:
+                status.note_info(device_id, {"speaker": await speaker_info.read(link)})
+            except (ConnectionError, ClientError, asyncio.TimeoutError, websockets.ConnectionClosed) as e:
+                logger.bind(tag=TAG).debug(f"读音箱信息失败：{type(e).__name__} {e}")
+            await asyncio.sleep(INFO_SECONDS)
 
     def _woken(self, link, listener, word, note=lambda text: None, device=None):
         agent = self.call_words.get(word)

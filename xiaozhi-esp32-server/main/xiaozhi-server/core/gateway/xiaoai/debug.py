@@ -8,6 +8,7 @@
         debug_dir: /path/to/logs/xiaoai-debug   # 每次连上一组文件
         debug_probe: true                       # 连上后放一组测试音（见 probe）
         debug_inspect: true                     # 连上后在音箱上跑几条只读命令，结果存成 inspect-*.txt（见 inspect）
+                                                # 写成目录（如 /path/to/logs/xiaoai-debug）时不开录音也能跑
 """
 import time
 import wave
@@ -137,6 +138,17 @@ INSPECT_COMMANDS = [
     "ps w 2>&1",
     "ls -la /tmp /usr/share/mipns 2>&1",
     "cat /proc/asound/card0/pcm3c/sub0/status /proc/asound/card0/pcm2p/sub0/status 2>&1",
+    # G19d：设备页要显示的型号、序列号、版本、启动分区、音量从哪里读，能用哪些控制接口（都只读）
+    "cat /usr/share/mico/version 2>&1",
+    "fw_env -g boot_part 2>&1",
+    "ls /usr/bin /usr/sbin | grep -i -E 'mico|mphelper|cfg|tts|volume' 2>&1",
+    "for c in micocfg_sn micocfg_model micocfg_hardware micocfg_mac micocfg_did; do echo \"$c: $($c 2>&1)\"; done",
+    "ubus list 2>&1",
+    "ubus -v list mediaplayer 2>&1",
+    "ubus -v list mibrain 2>&1",
+    "ubus call mediaplayer player_get_play_status 2>&1",
+    "cat /usr/bin/mphelper 2>&1",
+    "amixer get mysoftvol 2>&1",
 ]
 
 

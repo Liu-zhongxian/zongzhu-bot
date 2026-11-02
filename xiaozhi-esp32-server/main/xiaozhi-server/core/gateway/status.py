@@ -86,6 +86,20 @@ def is_live(conn):
     return id(conn) in _conns
 
 
+_linked = set()  # device ids of Xiaomi speakers connected to the backend (port 4399) right now
+
+
+def speaker_linked(device_id, linked, wake=None):
+    """The Xiaomi speaker is connected to the backend: listed online ("待机") even with no conversation."""
+    if linked:
+        _linked.add(device_id)
+        if wake:
+            _boards.setdefault(device_id, {})["wake"] = wake
+            _save()
+    else:
+        _linked.discard(device_id)
+
+
 def note_info(device_id, info):
     """G18a: what the board reported over MCP (core/gateway/board_info.py)."""
     if device_id:
@@ -283,15 +297,18 @@ def snapshot(config):
         if not conns and info.get("type") in SIMULATED_TYPES:
             continue
         conn = conns[-1] if conns else None
+        bridge = info.get("type") in BRIDGE_TYPES
+        linked = device_id in _linked
         boards.append({
             "id": device_id[-5:], "name": name, "type": info.get("type", ""), "version": info.get("version", ""),
-            "ip": (conn.client_ip if conn else None) or info.get("ip", ""), "online": bool(conns),
-            "wake": (getattr(conn, "device_wake_word", None) if conn else None) or info.get("wake", ""),
+            "ip": (conn.client_ip if conn else None) or info.get("ip", ""), "online": bool(conns) or linked,
+            "wake": (info.get("wake") if bridge else None)
+            or (getattr(conn, "device_wake_word", None) if conn else None) or info.get("wake", ""),
             "agent": _agent_label(_agent(conn, device_id, agent), config),
-            "state": _state(conn, now) if conn else {"kind": "offline"},
+            "state": _state(conn, now) if conn else {"kind": "standby" if linked else "offline"},
             "seen": info.get("seen"),
             "info": info.get("info"),
-            "bridge": info.get("type") in BRIDGE_TYPES,
+            "bridge": bridge,
         })
     boards.sort(key=lambda b: (not b["online"], b["name"]))
     recent = [{k: v for k, v in r.items() if not k.startswith("_")} | {"board": names.get(r["device"], "")}
