@@ -76,7 +76,7 @@ async def main():
     ota_server = SimpleHttpServer(config)
     ota_task = asyncio.create_task(ota_server.start())
     # 小米音箱直接接进来（gateway.xiaoai，默认关；G19i）
-    xiaoai_task = asyncio.create_task(XiaoaiServer(config).start())
+    xiaoai_task = asyncio.create_task(XiaoaiServer(config, ws_server).start())
 
     read_config_from_api = config.get("read_config_from_api", False)
     port = int(config["server"].get("http_port", 8003))

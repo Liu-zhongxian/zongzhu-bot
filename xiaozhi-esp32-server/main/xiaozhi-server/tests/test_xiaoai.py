@@ -7,6 +7,7 @@ import struct
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 import websockets
@@ -67,7 +68,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
             p.start()
             self.addCleanup(p.stop)
         self.task = asyncio.create_task(self.server.start())
-        await asyncio.sleep(0.2)
+        await asyncio.wait_for(self.server.ready.wait(), 5)  # 等端口真的开了
 
     async def asyncTearDown(self):
         self.task.cancel()
@@ -279,3 +280,118 @@ class LinkTest(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+class PlayerTest(unittest.IsolatedAsyncioTestCase):
+    async def test_sends_in_pieces_and_never_more_than_a_second_ahead(self):
+        from core.gateway.xiaoai import device
+        clock = FakeClock()
+        sent = []
+        link = mock.Mock(play=mock.AsyncMock(side_effect=lambda pcm: sent.append((clock.now, len(pcm)))))
+
+        async def sleep(seconds):
+            clock.now += seconds
+            await asyncio.sleep(0)
+
+        player = device.Player(link, clock=clock, sleep=sleep)
+        player.add(b"\0\0" * 24000 * 3)  # 3 秒
+        for _ in range(50):
+            await asyncio.sleep(0)
+        player.close()
+        self.assertEqual(sum(n for _, n in sent), 24000 * 2 * 3)
+        self.assertTrue(all(n <= 24000 for _, n in sent))  # 每次最多 0.5 秒
+        start = sent[0][0]
+        for k, (t, n) in enumerate(sent):
+            already = sum(m for _, m in sent[:k]) / 48000
+            self.assertLessEqual(already - (t - start), device.SEND_AHEAD + 1e-6)
+
+
+class DeviceTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        import opuslib_next
+        from core.gateway.xiaoai import device
+        self.device_mod = device
+        self.clock = FakeClock()
+        self.link = mock.Mock(play=mock.AsyncMock())
+        self.dev = device.SpeakerDevice(self.link, ws_server=None, device_id="xiaoai-test", address="1.2.3.4",
+                                        wake_word="你好宗主", clock=self.clock)
+        self.sent = []
+
+        async def connect():
+            self.dev.socket = device.VirtualSocket({}, "1.2.3.4", self.dev._from_server, self.dev._closed)
+            self.dev.socket.put = self.sent.append
+            self.dev.handler = SimpleNamespace(session_id="s1", sample_rate=24000)
+            self.dev.decoder = opuslib_next.Decoder(24000, 1)
+            return True
+
+        self.dev.connect = connect
+        self.encoder = opuslib_next.Encoder(24000, 1, opuslib_next.APPLICATION_AUDIO)
+
+    async def asyncTearDown(self):
+        self.dev.watch.cancel()
+        self.dev.player.close()
+
+    def texts(self):
+        return [json.loads(m) for m in self.sent if isinstance(m, str)]
+
+    async def test_listen_starts_after_the_reply_and_mic_goes_out_as_opus(self):
+        await self.dev.start_listening(0.5)
+        self.assertEqual(self.texts()[-1]["state"], "start")
+        self.assertEqual(self.texts()[-1]["mode"], "auto")
+        self.dev.on_mic(b"\1\0" * 960)  # "在"还在放：不发
+        self.assertFalse([m for m in self.sent if isinstance(m, bytes)])
+        self.clock.now += 0.6
+        self.dev.on_mic(b"\1\0" * 960)
+        self.assertEqual(len([m for m in self.sent if isinstance(m, bytes)]), 1)  # 60 毫秒一帧
+
+    async def test_reply_is_played_and_then_idle(self):
+        await self.dev.start_listening(0)
+        await self.dev._from_server(json.dumps({"type": "stt", "text": "现在几点"}))
+        self.assertEqual(self.dev.state, "thinking")
+        await self.dev._from_server(json.dumps({"type": "tts", "state": "start"}))
+        self.assertEqual(self.dev.state, "speaking")
+        self.dev.on_mic(b"\1\0" * 960)  # 说的时候不发麦克风
+        self.assertFalse([m for m in self.sent if isinstance(m, bytes)])
+        await self.dev._from_server(self.encoder.encode(b"\0\0" * 1440, 1440))
+        self.assertTrue(self.dev.player.busy())
+        await self.dev._from_server(json.dumps({"type": "tts", "state": "stop"}))
+        await asyncio.sleep(0.05)  # 让 Player 把声音发出去
+        self.clock.now += 5        # 放完了
+        for _ in range(30):
+            await asyncio.sleep(0.02)
+            if self.dev.state == "idle":
+                break
+        self.assertEqual(self.dev.state, "idle")
+
+    async def test_late_reply_while_idle_is_played(self):
+        # Bot 晚到的回答：音箱在待机也照样放
+        await self.dev.connect()
+        await self.dev._from_server(json.dumps({"type": "tts", "state": "start"}))
+        await self.dev._from_server(self.encoder.encode(b"\0\0" * 1440, 1440))
+        self.assertEqual(self.dev.state, "speaking")
+        self.assertTrue(self.dev.player.busy())
+
+    async def test_wake_while_speaking_interrupts(self):
+        await self.dev.connect()
+        await self.dev._from_server(json.dumps({"type": "tts", "state": "start"}))
+        self.dev.player.add(b"\0\0" * 24000)
+        self.dev.interrupt()
+        self.assertEqual(self.texts()[-1], {"type": "abort", "session_id": "s1"})
+        self.assertFalse(self.dev.player.buffer)
+
+    async def test_nothing_heard_goes_back_to_idle(self):
+        await self.dev.start_listening(0)
+        self.clock.now += self.device_mod.LISTEN_TIMEOUT + 1
+        for _ in range(30):
+            await asyncio.sleep(0.02)
+            if self.dev.state == "idle":
+                break
+        self.assertEqual(self.dev.state, "idle")

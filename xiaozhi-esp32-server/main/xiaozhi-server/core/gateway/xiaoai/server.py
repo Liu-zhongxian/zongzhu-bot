@@ -1,4 +1,5 @@
-"""在宗主后端开 4399 端口接小米音箱（G19i）。第 1 步：连上后放提示音、报麦克风音量；第 2 步：认唤醒词，回"在"。"""
+"""在宗主后端开 4399 端口接小米音箱（G19i）。第 1 步：连上后放提示音、报麦克风音量；第 2 步：认唤醒词，回"在"；
+第 3 步：唤醒后当成一块板子和后端对话（device.py）。"""
 import asyncio
 import math
 import struct
@@ -9,7 +10,9 @@ from pathlib import Path
 import websockets
 
 from config.logger import setup_logging
+from core.gateway import status
 from core.gateway.xiaoai import debug, prompts, wake
+from core.gateway.xiaoai.device import BOARD_TYPE, SpeakerDevice
 from core.gateway.xiaoai.protocol import PLAY_CONFIG, ClientError, SpeakerLink, silence
 
 TAG = __name__
@@ -20,6 +23,7 @@ LEVEL_REPORT_SECONDS = 15  # 连上后这么久里每秒报一次麦克风音量
 WAKE_REPLY = "在"
 # 放"在"后再多这么久不认唤醒词（音箱放出来比发出去晚约 0.1 秒，加上房间回声）
 REPLY_ECHO_SECONDS = 0.2
+LISTEN_AFTER_REPLY = 0.15  # "在"放完再过这么久开始把麦克风发给后端（别把"在"的回声当成你说的话）
 
 
 def settings(config):
@@ -69,10 +73,12 @@ class LevelMeter:
 
 
 class XiaoaiServer:
-    def __init__(self, config):
+    def __init__(self, config, ws_server=None):
         self.config = config
+        self.ws_server = ws_server  # 有它才接对话（用它已经加载好的 VAD、ASR 这些）；没有就只认唤醒词
         self.links: set[SpeakerLink] = set()
         self.spotter = None
+        self.ready = asyncio.Event()  # 端口开好了（测试用）
 
     def _load_spotter(self, xiaoai):
         words = xiaoai.get("wake_words") or list(wake.DEFAULT_WAKE_WORDS)
@@ -104,6 +110,7 @@ class XiaoaiServer:
             async with websockets.serve(self._handle, "0.0.0.0", port, process_request=self._check_auth,
                                         ping_interval=None, max_size=None):
                 logger.bind(tag=TAG).info(f"小米音箱接入：ws://0.0.0.0:{port}")
+                self.ready.set()
                 await asyncio.Future()
         except OSError as e:
             # 多半是 xiaoai-bridge 还在跑，占着 4399
@@ -120,15 +127,21 @@ class XiaoaiServer:
         meter = LevelMeter(lambda level: logger.bind(tag=TAG).info(f"音箱麦克风音量：{level}"))
         link = SpeakerLink(ws, on_event=lambda event, data: logger.bind(tag=TAG).debug(f"音箱事件 {event}: {data}"))
         listener = None
+        device = None
         if self.spotter:
             listener = wake.WakeListener(
-                self.spotter, lambda word: loop.call_soon_threadsafe(self._woken, link, listener, word, note),
+                self.spotter, lambda word: loop.call_soon_threadsafe(self._woken, link, listener, word, note, device),
                 on_ignored=lambda word: loop.call_soon_threadsafe(note, f"认出唤醒词但在放声音，忽略：{word}"))
 
         def on_record(pcm):
             if recorder:
                 recorder.mic(pcm)
             meter.feed(pcm)
+            if device:
+                device.on_mic(pcm)
+                if device.player.busy():
+                    # 音箱在放声音时认出来的不算（自己的声音被麦克风录到）
+                    listener and listener.mute(device.speaking_for() + REPLY_ECHO_SECONDS)
             if listener:
                 listener.feed(pcm)
 
@@ -140,6 +153,11 @@ class XiaoaiServer:
         try:
             version = await link.call("get_version")
             logger.bind(tag=TAG).info(f"小米音箱已连接：{address}，Client 版本 {version}")
+            if self.ws_server:
+                device_id = str(xiaoai.get("device_id") or f"xiaoai-{address}")
+                status.note_ota(device_id, BOARD_TYPE, f"Client {version}", address)
+                words = xiaoai.get("wake_words") or list(wake.DEFAULT_WAKE_WORDS)
+                device = SpeakerDevice(link, self.ws_server, device_id, address, words[0], note)
             await link.start_recording()
             note("start_recording 已回应")
             if recorder and xiaoai.get("debug_probe"):
@@ -155,6 +173,8 @@ class XiaoaiServer:
         finally:
             runner.cancel()
             warm.cancel()
+            if device:
+                await device.close()
             if listener:
                 listener.close()
             if recorder:
@@ -162,23 +182,30 @@ class XiaoaiServer:
             self.links.discard(link)
             logger.bind(tag=TAG).info(f"小米音箱断开：{address}")
 
-    def _woken(self, link, listener, word, note=lambda text: None):
+    def _woken(self, link, listener, word, note=lambda text: None, device=None):
         logger.bind(tag=TAG).info(f"音箱唤醒：{word}")
         note(f"认出唤醒词：{word}")
-        asyncio.create_task(self._reply(link, listener, note))
+        asyncio.create_task(self._reply(link, listener, note, device))
 
-    async def _reply(self, link, listener, note=lambda text: None):
-        """回一声"在"；合成不出来就用提示音代替"""
+    async def _reply(self, link, listener, note=lambda text: None, device=None):
+        """回一声"在"（合成不出来就用提示音代替）；接了对话的话，"在"放完开始听"""
         try:
             pcm = await prompts.phrase(self.config, WAKE_REPLY)
         except Exception as e:
             logger.bind(tag=TAG).warning(f"合成「{WAKE_REPLY}」失败，用提示音代替：{type(e).__name__} {e}")
             pcm = beep(1320)
+        length = len(pcm) / (2 * PLAY_CONFIG["sample_rate"])
         # 放的时候认出来的不算
-        seconds = len(pcm) / (2 * PLAY_CONFIG["sample_rate"]) + REPLY_ECHO_SECONDS
+        seconds = length + REPLY_ECHO_SECONDS
         listener.mute(seconds)
+        if device:
+            device.interrupt()
+            device.player.add(pcm)
+            note(f"发出「{WAKE_REPLY}」：{length:.3f} 秒，忽略唤醒 {seconds:.3f} 秒")
+            await device.start_listening(length + LISTEN_AFTER_REPLY)
+            return
         try:
             await link.play(pcm)
-            note(f"发出「{WAKE_REPLY}」：{len(pcm) / 2 / PLAY_CONFIG['sample_rate']:.3f} 秒，忽略唤醒 {seconds:.3f} 秒")
+            note(f"发出「{WAKE_REPLY}」：{length:.3f} 秒，忽略唤醒 {seconds:.3f} 秒")
         except (ConnectionError, ClientError, asyncio.TimeoutError, websockets.ConnectionClosed) as e:
             logger.bind(tag=TAG).warning(f"放「{WAKE_REPLY}」失败：{type(e).__name__} {e}")

@@ -1,0 +1,272 @@
+"""音箱当成一块小智板子接进后端（G19i 第 3 步）。
+
+ConnectionHandler 只用到 websocket 的几样东西（请求头和路径、对方地址、逐条收消息、send、close），
+这里给它一个进程内的 VirtualSocket：板子发给后端的消息由我们塞进去，后端发给板子的交给 SpeakerDevice 处理。
+后端那边的识别、网关、TTS、等待和待汇报全部照用，和板子一样。
+
+音箱这一端照板子固件的做法，只有三种状态：
+- idle：后端认唤醒词（wake.py）。认出来就回"在"，连上后端（没连着的话）、发 listen start（auto），转到 listening。
+- listening：麦克风编成 opus 发给后端，后端自己判断说完（Silero VAD）。后端回 stt 或开始说话就不再发；
+  10 秒没认出一句话就回 idle。认出一句话（stt）以后是 thinking，20 秒后端还没开始说也回 idle。
+- speaking：后端发 tts start 以后。opus 解码成 24 kHz PCM，分段、按播放速度发给音箱（一次发多了音箱会丢，
+  见 protocol.py）。tts stop 并且声音放完以后回 idle：和宗主板子一样，回答完直接待机。
+没在 listening 时后端发来的声音（比如 Bot 晚到的回答）照样放。
+"""
+import asyncio
+import json
+import time
+import uuid
+from types import SimpleNamespace
+
+import opuslib_next
+
+from config.logger import setup_logging
+from core.gateway import status
+from core.gateway.xiaoai.protocol import PLAY_CONFIG
+
+TAG = __name__
+logger = setup_logging()
+
+BOARD_TYPE = "open-xiaoai"
+MIC_RATE = 16000
+FRAME_MS = 60
+FRAME_BYTES = MIC_RATE * FRAME_MS // 1000 * 2
+LISTEN_TIMEOUT = 10        # 唤醒后这么久没认出一句话就回 idle
+THINK_TIMEOUT = 20         # 认出一句话以后这么久后端还没开始说就回 idle（Bot 晚到的回答之后照样放）
+SEND_AHEAD = 1.0           # 发给音箱的声音最多比实际播放领先这么多秒
+SEND_PIECE = 0.5           # 每次最多发这么多秒
+HELLO = {"type": "hello", "version": 1, "transport": "websocket", "features": {},
+         "audio_params": {"format": "opus", "sample_rate": MIC_RATE, "channels": 1, "frame_duration": FRAME_MS}}
+
+
+class VirtualSocket:
+    """ConnectionHandler 看到的 websocket"""
+
+    def __init__(self, headers, address, on_send, on_close):
+        self.request = SimpleNamespace(headers=headers, path="/xiaozhi/v1/")
+        self.remote_address = (address, 0)
+        self.state = SimpleNamespace(name="OPEN")
+        self.closed = False
+        self._inbox: asyncio.Queue = asyncio.Queue()
+        self._on_send = on_send
+        self._on_close = on_close
+
+    def put(self, message):
+        """板子发给后端的一条消息（str 是 JSON，bytes 是 opus）"""
+        if not self.closed:
+            self._inbox.put_nowait(message)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        message = await self._inbox.get()
+        if message is None:
+            raise StopAsyncIteration
+        return message
+
+    async def send(self, message):
+        if not self.closed:
+            await self._on_send(message)
+
+    async def close(self):
+        if not self.closed:
+            self.closed = True
+            self.state.name = "CLOSED"
+            self._inbox.put_nowait(None)
+            self._on_close()
+
+
+class Player:
+    """把后端发来的 PCM 分段、按播放速度发给音箱"""
+
+    def __init__(self, link, rate=PLAY_CONFIG["sample_rate"], clock=time.monotonic, sleep=asyncio.sleep):
+        self.link = link
+        self.bytes_per_second = rate * 2
+        self.clock = clock
+        self.sleep = sleep
+        self.buffer = bytearray()
+        self.play_end = 0.0  # 已经发出去的声音大约放到什么时候
+        self.wakeup = asyncio.Event()
+        self.task = asyncio.create_task(self._run())
+
+    def add(self, pcm):
+        self.buffer += pcm
+        self.wakeup.set()
+
+    def clear(self):
+        self.buffer.clear()
+
+    def busy(self):
+        """还有没发的，或者发出去的还没放完"""
+        return bool(self.buffer) or self.clock() < self.play_end
+
+    def remaining(self):
+        return len(self.buffer) / self.bytes_per_second + max(0.0, self.play_end - self.clock())
+
+    async def _run(self):
+        piece = int(self.bytes_per_second * SEND_PIECE) // 2 * 2
+        while True:
+            if not self.buffer:
+                self.wakeup.clear()
+                await self.wakeup.wait()
+                continue
+            now = self.clock()
+            ahead = self.play_end - now
+            if ahead > SEND_AHEAD:
+                await self.sleep(ahead - SEND_AHEAD)
+                continue
+            chunk = bytes(self.buffer[:piece])
+            del self.buffer[:piece]
+            self.play_end = max(now, self.play_end) + len(chunk) / self.bytes_per_second
+            try:
+                await self.link.play(chunk)
+            except Exception as e:
+                logger.bind(tag=TAG).warning(f"发给音箱的声音没发出去：{type(e).__name__} {e}")
+
+    def close(self):
+        self.task.cancel()
+
+
+class SpeakerDevice:
+    def __init__(self, link, ws_server, device_id, address, wake_word, note=lambda text: None,
+                 clock=time.monotonic):
+        self.link = link
+        self.ws_server = ws_server
+        self.device_id = device_id
+        self.address = address
+        self.wake_word = wake_word
+        self.note = note
+        self.clock = clock
+        self.state = "idle"
+        self.listen_since = 0.0
+        self.think_since = 0.0
+        self.handler = None
+        self.socket = None
+        self.hello = None
+        self.player = Player(link, clock=clock)
+        self.encoder = opuslib_next.Encoder(MIC_RATE, 1, opuslib_next.APPLICATION_VOIP)
+        self.decoder = None
+        self.mic = bytearray()
+        self.tts_done = False
+        self.client_id = str(uuid.uuid4())
+        self.watch = asyncio.create_task(self._watch())
+
+    # 连后端
+
+    def connected(self):
+        return self.socket is not None and not self.socket.closed
+
+    async def connect(self):
+        if self.connected():
+            return True
+        from core.connection import ConnectionHandler
+
+        server = self.ws_server
+        self.hello = asyncio.Event()
+        self.socket = VirtualSocket({"device-id": self.device_id, "client-id": self.client_id},
+                                    self.address, self._from_server, self._closed)
+        self.handler = ConnectionHandler(server.config, server._vad, server._asr, server._llm,
+                                         server._memory, server._intent, server)
+        asyncio.create_task(self.handler.handle_connection(self.socket))
+        self.socket.put(json.dumps(HELLO))
+        try:
+            await asyncio.wait_for(self.hello.wait(), 5)
+        except asyncio.TimeoutError:
+            logger.bind(tag=TAG).warning("音箱连后端：5 秒没收到 hello 回应")
+            return False
+        self.decoder = opuslib_next.Decoder(self.handler.sample_rate, 1)
+        # 板子在 detect 里报唤醒词，网关靠它去掉句首的唤醒词（我们不发 detect，免得后端再回一句问候）
+        self.handler.device_wake_word = self.wake_word
+        self.note("连上后端")
+        return True
+
+    def _closed(self):
+        # 后端主动断开（空闲约 2 分钟），或者我们关掉；下次唤醒再连，和板子一样
+        self.note("后端连接断开")
+        self.state = "idle"
+        self.mic.clear()
+
+    async def close(self):
+        self.watch.cancel()
+        self.player.close()
+        if self.handler and self.connected():
+            await self.handler.close(self.socket)
+
+    # 唤醒、听
+
+    def interrupt(self):
+        """唤醒时后端还在说（比如晚到的回答）：打断，和板子在说话时被唤醒一样。没发出去的声音不放了。"""
+        if self.state == "speaking" and self.connected():
+            self.socket.put(json.dumps({"type": "abort", "session_id": self.handler.session_id}))
+            self.note("打断后端说话")
+        self.player.clear()
+
+    async def start_listening(self, delay):
+        """唤醒以后：连后端、发 listen start；delay 秒以后（"在"放完）开始发麦克风"""
+        if not await self.connect():
+            return
+        self.socket.put(json.dumps({"type": "listen", "state": "start", "mode": "auto",
+                                    "session_id": self.handler.session_id}))
+        self.mic.clear()
+        self.state = "listening"
+        self.listen_since = self.clock() + delay
+        self.note("开始听")
+
+    def on_mic(self, pcm):
+        if self.state != "listening" or self.clock() < self.listen_since or not self.connected():
+            return
+        self.mic += pcm
+        while len(self.mic) >= FRAME_BYTES:
+            frame, self.mic = bytes(self.mic[:FRAME_BYTES]), self.mic[FRAME_BYTES:]
+            self.socket.put(self.encoder.encode(frame, FRAME_BYTES // 2))
+
+    # 后端发来的
+
+    async def _from_server(self, message):
+        if isinstance(message, (bytes, bytearray)):
+            if self.decoder is None:
+                return
+            pcm = self.decoder.decode(bytes(message), self.handler.sample_rate * 120 // 1000)
+            self.player.add(pcm)
+            return
+        try:
+            data = json.loads(message)
+        except ValueError:
+            return
+        kind, state = data.get("type"), data.get("state")
+        if kind == "hello":
+            self.hello.set()
+        elif kind == "stt":
+            self.note(f"后端认出：{data.get('text')}")
+            if self.state == "listening":
+                self.state = "thinking"
+                self.think_since = self.clock()
+        elif kind == "tts" and state == "start":
+            self.state = "speaking"
+            self.tts_done = False
+            self.mic.clear()
+        elif kind == "tts" and state == "sentence_start":
+            self.note(f"后端说：{data.get('text')}")
+        elif kind == "tts" and state == "stop":
+            self.tts_done = True
+
+    async def _watch(self):
+        """说完回 idle、听太久没结果回 idle"""
+        while True:
+            await asyncio.sleep(0.1)
+            now = self.clock()
+            if self.state == "speaking" and self.tts_done and not self.player.busy():
+                self.state = "idle"
+                self.note("说完，待机")
+            elif self.state == "listening" and now - self.listen_since > LISTEN_TIMEOUT:
+                self.state = "idle"
+                self.mic.clear()
+                self.note(f"{LISTEN_TIMEOUT} 秒没听到一句话，待机")
+            elif self.state == "thinking" and now - self.think_since > THINK_TIMEOUT:
+                self.state = "idle"
+                self.note(f"认出一句话后 {THINK_TIMEOUT} 秒还没开始说，待机")
+
+    def speaking_for(self):
+        """音箱还要放多久（认唤醒词时用：放的时候认出来的不算）"""
+        return self.player.remaining()
