@@ -148,6 +148,20 @@ if [ -f "$CONFIG" ]; then
 else
   sed "s/192\.168\.1\.100/$IP/g" examples/backend.config.yaml > "$CONFIG"
   chmod 600 "$CONFIG"
+  NEW_CONFIG=1
+fi
+# 板子连接用的令牌靠 auth_key 签名：每台电脑随机生成一个。2026-11-04 以前的安装没换，大家用的是模板里
+# 同一个公开的值，重新运行本脚本时一起换掉（换了以后板子要重启一次，重新领令牌）
+if grep -q "REPLACE_WITH_RANDOM_STRING" "$CONFIG"; then
+  .venv/bin/python - "$CONFIG" <<'PY'
+import secrets, sys
+path = sys.argv[1]
+with open(path, encoding="utf-8") as f:
+    text = f.read()
+with open(path, "w", encoding="utf-8") as f:
+    f.write(text.replace("REPLACE_WITH_RANDOM_STRING", secrets.token_hex(32)))
+PY
+  [ -n "${NEW_CONFIG:-}" ] || warn "后端配置里的 auth_key 还是模板里的公开值，已换成随机的。后端重启后，板子要重启一次才能重新连上。"
 fi
 
 say "下载语音识别模型 X-ASR（约 174MB，已下载的会跳过）"
