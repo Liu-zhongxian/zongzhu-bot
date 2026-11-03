@@ -74,6 +74,15 @@ td.nowrap { white-space: nowrap; }
 .layer.filter, .layer.wake { color: var(--l-filter); }
 .layer.call { color: var(--l-name); }
 .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.flow { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; }
+.step { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; width: 168px; }
+.step b { display: block; } .step .v { color: var(--accent); font-weight: 600; font-size: 13px; } .step .sub { font-size: 12px; }
+.arrow { align-self: center; color: var(--muted); }
+.branches { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-top: 14px; }
+.branch { border-left: 4px solid var(--line); }
+.branch.rule { border-left-color: var(--l-rule); } .branch.name { border-left-color: var(--l-name); } .branch.front { border-left-color: var(--l-front); }
+.targets { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+@media (max-width: 640px) { .step { width: 100%; } .arrow { transform: rotate(90deg); margin: 0 auto; } }
 .chips .label { color: var(--muted); font-size: 13px; padding: 4px 0; }
 .reply { margin-top: 6px; padding: 6px 10px; border-left: 3px solid var(--accent); background: var(--accent-soft);
   border-radius: 4px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -166,6 +175,12 @@ section[hidden] { display: none; }
       <div id="tasks"></div>
     </section>
 
+    <section data-page="flow" hidden>
+      <h1>工作原理</h1>
+      <p class="lead">按现在的配置画出一句话怎么走。灰色的是没开的；这里的数字都是配置里的，不是统计。</p>
+      <div id="flow"></div>
+    </section>
+
     <section data-page="log" hidden>
       <h1>最近的话</h1>
       <p class="lead">最近 30 句：识别出来的话、走了哪一层、交给了谁、多久出声，交给 AI 的话下面是它的回复。只存在内存里，后端重启后清空。</p>
@@ -181,7 +196,8 @@ section[hidden] { display: none; }
 <div id="toast" hidden></div>
 
 <script>
-const PAGES = [["overview", "◎", "总览"], ["devices", "▣", "设备"], ["log", "☰", "最近的话"], ["tasks", "⇄", "转交任务"]];
+const PAGES = [["overview", "◎", "总览"], ["devices", "▣", "设备"], ["log", "☰", "最近的话"], ["tasks", "⇄", "转交任务"],
+  ["flow", "✦", "工作原理"]];
 const SIGNAL = { strong: "强", medium: "中", weak: "弱" };
 const LAYERS = { skill: "① 本机技能", agent: "转交 AI", call: "呼名", filter: "过滤掉", wake: "唤醒", upstream: "上游对话" };
 let data = null, fetchedAt = 0, filter = "all", replyMode = "all";
@@ -452,6 +468,33 @@ function renderTasks() {
     section("念过了", t.done, x => x.replied ? `用了 ${duration(Math.max(0, Math.round(x.replied - x.created)))}` : "已念", "最近 24 小时还没有。") +
     (t.timeout.length ? section("没等到回复", t.timeout, () => "超过等待时间（一天内晚到的回复照样念）", "") : "");
 }
+// G17: how a sentence goes, from the current config (core/gateway/flow.py)
+function renderFlow() {
+  const f = data.flow; if (!f) return;
+  const pill = (text, kind) => `<span class="pill ${kind}">${esc(text)}</span>`;
+  const steps = f.steps.map(s => `<div class="step"><b>${s.icon} ${esc(s.name)}</b><div class="v">${esc(s.value)}</div>
+    <div class="sub">${esc(s.note)}</div></div>`).join(`<div class="arrow">→</div>`);
+  const calls = f.calls.flatMap(c => c.names.length ? [pill(`${c.names.join("、")} → ${c.agent}`, "acc")] : [pill(`${c.agent}（没设呼名）`, "off")]);
+  const wakes = [...f.boards.map(([w, n]) => `${n}：说"${w || "唤醒词"}"`), ...(f.speaker.on ? [`小米音箱：说"${f.speaker.wake_words.join("、")}"，或者直接喊 AI 的名字`] : [])];
+  document.getElementById("flow").innerHTML = `
+    <h2>一句话怎么走</h2>
+    <div class="flow">${steps}</div>
+    <div class="branches">
+      <div class="card branch rule ${f.skills.length ? "" : "off"}"><h3>① 本机技能</h3><div class="sub">固定说法在这台 Mac 上直接办，不经过 AI；小米音箱不走这一层</div>
+        <div class="targets">${f.skills.length ? f.skills.map(s => pill(s.name, "ok")).join("") : pill("没开", "off")}</div></div>
+      <div class="card branch name"><h3>② 呼名</h3><div class="sub">句首"嗨 + 名字"直接交给那个 AI，之后这台设备都交给它</div>
+        <div class="targets">${calls.join("") || pill("没有 AI", "off")}</div></div>
+      <div class="card branch front ${f.agent ? "" : "off"}"><h3>③ 交给 AI</h3><div class="sub">前两层不接的都交给它；回复晚到时屏幕显示等待秒数，回复到了再念</div>
+        <div class="targets">${f.agent ? pill(f.agent, "acc") : pill("没设：交给上游对话模型", "off")}</div></div>
+    </div>
+    <h2>怎么跟它说话</h2>
+    <div class="grid">
+      <div class="card"><h3>唤醒</h3><div class="sub">${wakes.map(esc).join("<br>") || "还没有板子连上来"}</div></div>
+      ${f.skills.length ? `<div class="card"><h3>放歌</h3><div class="sub">"放周杰伦的晴天""下一首""大声点"，在这台 Mac 上放</div></div>` : ""}
+      <div class="card"><h3>派活</h3><div class="sub">唤醒后直接说任务${f.calls.some(c => c.names.length) ? `，或者"嗨 ${esc(f.calls.find(c => c.names.length).names[0])}，……"` : ""}；做完的在"转交任务"里能看到</div></div>
+      <div class="card"><h3>打断</h3><div class="sub">它说话时再喊一次唤醒词（板子也可以按键）；没念完的，问完新问题接着念完</div></div>
+    </div>`;
+}
 function renderStats() {
   const online = data.boards.filter(b => b.online).length;
   document.getElementById("s-online").textContent = `${online} / ${data.boards.length}`;
@@ -511,7 +554,7 @@ function renderLog() {
     </tr>`).join("") : `<tr><td colspan="6" class="empty">还没有${filter === "all" ? "" : "这一类的"}话。</td></tr>`;
 }
 function render() {
-  renderNav(); renderStats(); renderBoards(); renderModules(); renderLog(); renderTasks(); renderLogin();
+  renderNav(); renderStats(); renderBoards(); renderModules(); renderLog(); renderTasks(); renderFlow(); renderLogin();
   // Re-rendering would reset a slider while it is being dragged
   // ...and would wipe what is being typed into "说一句话"
   if (Date.now() > busyUntil && !document.querySelector("#devices input:active, #music input:active, #devices input[data-keep]:focus")) { renderDevices(); renderMusic(); }

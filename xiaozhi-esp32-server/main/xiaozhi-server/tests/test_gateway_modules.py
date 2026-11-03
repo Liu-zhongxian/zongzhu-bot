@@ -81,3 +81,26 @@ class ModulesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FlowTest(unittest.TestCase):
+    """G17：工作原理页按配置画（core/gateway/flow.py）。"""
+
+    def test_drawn_from_the_config(self):
+        from core.gateway import flow
+        config = {"selected_module": {"VAD": "SileroVAD", "ASR": "SherpaXASR", "TTS": "EdgeTTS"},
+                  "VAD": {"SileroVAD": {"min_silence_duration_ms": 1000}},
+                  "ASR": {"SherpaXASR": {"type": "sherpa_onnx_local"}},
+                  "TTS": {"EdgeTTS": {"type": "edge", "voice": "zh-CN-XiaoxiaoNeural"}},
+                  "grok_bot": {"enabled": True, "bot_name": "硬件"},
+                  "gateway": {"skills": [], "call_names": {"grok_bot": ["bot"]}}}
+        with mock.patch("core.gateway.settings.get", return_value=None):
+            view = flow.view(config)
+        steps = {s["name"]: s for s in view["steps"]}
+        self.assertEqual(steps["收音"]["note"], "静音 1 秒算说完")
+        self.assertEqual(steps["识别"]["value"], "SherpaXASR")
+        self.assertIn("zh-CN-XiaoxiaoNeural", steps["合成和播放"]["note"])
+        self.assertEqual(view["skills"], [])  # 没开本机技能
+        self.assertEqual(view["calls"], [{"agent": "Grok Bot · 硬件", "names": ["bot"]}])
+        self.assertEqual(view["agent"], "Grok Bot · 硬件")
+        self.assertFalse(view["speaker"]["on"])

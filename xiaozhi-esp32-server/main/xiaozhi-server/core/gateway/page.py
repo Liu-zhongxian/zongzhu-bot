@@ -10,7 +10,7 @@ from pathlib import Path
 
 from aiohttp import web
 
-from core.gateway import control, modules, status, tasks, wake_assets
+from core.gateway import control, flow, modules, status, tasks, wake_assets
 from core.gateway.xiaoai import control as speaker_control
 
 PAGE = Path(__file__).with_name("page.html")
@@ -45,7 +45,7 @@ class GatewayPageHandler:
         return web.json_response(status.snapshot(self.config) | {"music": music,
                                  "password": control.password_required(self.config),
                                  "settings": control.settings_view(self.config), "modules": checked,
-                                 "tasks": handed},
+                                 "tasks": handed, "flow": flow.view(self.config)},
                                  headers=NO_STORE)
 
     def _token_ok(self, request):
