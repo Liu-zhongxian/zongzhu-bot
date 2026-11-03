@@ -146,7 +146,8 @@ section[hidden] { display: none; }
       </div>
       <h2>板子</h2>
       <div class="grid" id="boards"></div>
-      <p class="later">模块状态、转交任务、工作原理三块，跟着后面的任务（G2–G7）逐步加上。</p>
+      <h2>模块 <small>绿色能用，黄色开着但现在没在运行，红色要处理，灰色没开</small></h2>
+      <div class="grid" id="modules"></div>
     </section>
 
     <section data-page="devices" hidden>
@@ -309,12 +310,10 @@ function renderMusic() {
 function boardControls(b, i) {
   if (!canControl()) return "";
   const off = !b.online, tools = new Set((i?.tools || []).map(t => t.name));
-  const theme = i?.theme;
   return `<h4>设置${off ? "（板子待机中：唤醒后再改）" : ""}</h4>
     <div class="ctl">${slider("板子音量", "volume", b.id, i?.volume, off)}${slider("屏幕亮度", "brightness", b.id, i?.brightness, off)}</div>
     <div class="btns">
-      <button class="btn ${theme === "light" ? "on" : ""}" data-act="theme" data-dev="${esc(b.id)}" data-val="light" ${off ? "disabled" : ""}>浅色主题</button>
-      <button class="btn ${theme === "dark" ? "on" : ""}" data-act="theme" data-dev="${esc(b.id)}" data-val="dark" ${off ? "disabled" : ""}>深色主题</button>
+      ${""/* 没有深浅色主题按钮：宗主的眼睛界面（eye_display.h）换了主题后立刻 ApplyMonochrome() 涂回黑底白字，三块板子都看不出变化（2026-11-03 查固件） */}
       <button class="btn danger" data-act="reboot" data-dev="${esc(b.id)}" data-ask="重启${esc(b.name)}？重启后十几秒会自己连回来。" ${off ? "disabled" : ""}>重启板子</button>
       ${tools.has("self.system.reconfigure_wifi") ? `<button class="btn danger" data-act="wifi_config" data-dev="${esc(b.id)}"
         data-ask="让${esc(b.name)}进入配网模式？板子会断开 WiFi，要用手机连它的配网热点重新选 WiFi。" ${off ? "disabled" : ""}>WiFi 配网</button>` : ""}
@@ -352,7 +351,7 @@ function renderDevices() {
           ["屏幕", i.display ? i.display.join(" × ") : null],
           ...(i.temperature != null ? [["芯片温度", i.temperature.toFixed(1) + " ℃"]] : []),
           ...(battery ? [["电量", battery]] : [])])}</div>
-        <div><h4>声音和屏幕</h4>${kv([["音量", i.volume], ["亮度", i.brightness], ["主题", esc(i.theme) || null]])}</div>
+        <div><h4>声音和屏幕</h4>${kv([["音量", i.volume], ["亮度", i.brightness]])}</div>
       </div>
       ${boardControls(b, i)}
       <h4>MCP 工具（${tools.length}）</h4>
@@ -419,6 +418,15 @@ function callNamesCard() {
     <p class="note">几个名字用顿号或逗号隔开；可以把识别常听成的写法也加上（比如把 bot 听成 but，就加个 but）。留空就不能用名字叫这个 AI。改完马上生效。</p>
   </div>`;
 }
+// G17: each skill / AI / device link, checked by the backend (core/gateway/modules.py, every 10 s)
+function renderModules() {
+  const list = data.modules || [];
+  document.getElementById("modules").innerHTML = list.map(m => `
+    <div class="card ${m.state === "off" ? "off" : ""}">
+      <h3><span class="dot ${m.state === "ok" ? "" : m.state}"></span>${esc(m.name)}</h3>
+      <div class="sub">${esc(m.kind)}</div><div class="note">${esc(m.detail)}</div>
+    </div>`).join("");
+}
 function renderStats() {
   const online = data.boards.filter(b => b.online).length;
   document.getElementById("s-online").textContent = `${online} / ${data.boards.length}`;
@@ -478,7 +486,7 @@ function renderLog() {
     </tr>`).join("") : `<tr><td colspan="6" class="empty">还没有${filter === "all" ? "" : "这一类的"}话。</td></tr>`;
 }
 function render() {
-  renderNav(); renderStats(); renderBoards(); renderLog(); renderLogin();
+  renderNav(); renderStats(); renderBoards(); renderModules(); renderLog(); renderLogin();
   // Re-rendering would reset a slider while it is being dragged
   // ...and would wipe what is being typed into "说一句话"
   if (Date.now() > busyUntil && !document.querySelector("#devices input:active, #music input:active, #devices input[data-keep]:focus")) { renderDevices(); renderMusic(); }

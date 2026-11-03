@@ -191,7 +191,7 @@ Open `http://localhost:8003/gateway` in a browser for the gateway page. Other de
 
 - **Overview**: which boards are online and what they're doing (listening, speaking, waiting N seconds for the Bot).
 - **Recent sentences**: for the last 30 sentences, which layer handled each one, who got it and how long until sound. Kept in memory only, cleared when the backend restarts.
-- **Devices**: what was read from each board while it was awake: WiFi and signal, IP, firmware version, memory, volume, brightness, theme, and the board's MCP tool list; after the board goes to standby the last values are shown. You can change the board's volume, screen brightness and theme (the theme makes no visible difference on the 立创 board's eye UI yet), reboot it, and put it into its WiFi setup hotspot (shown only if the firmware has that tool). At the top: previous, pause / resume, next, stop and computer volume for music playing on this Mac. Board controls work only while the board is awake.
+- **Devices**: what was read from each board while it was awake: WiFi and signal, IP, firmware version, memory, volume, brightness, and the board's MCP tool list; after the board goes to standby the last values are shown. You can change the board's volume, screen brightness and wake word (there is no light / dark theme: the Zongzhu eye UI is always white on black), reboot it, and put it into its WiFi setup hotspot (shown only if the firmware has that tool). At the top: previous, pause / resume, next, stop and computer volume for music playing on this Mac. Board controls work only while the board is awake.
 
 Anyone who opens the page can change things by default. To require a password, set `gateway.password` in `.config.yaml` (see `examples/backend.config.yaml`).
 
