@@ -160,6 +160,12 @@ section[hidden] { display: none; }
       </div>
     </section>
 
+    <section data-page="tasks" hidden>
+      <h1>转交任务</h1>
+      <p class="lead">最近 24 小时交给 Bot 的话、它的回复、念了没有。回复到的时候板子在说话或者在等你说新问题，就先放进"等着念"，空下来再念。</p>
+      <div id="tasks"></div>
+    </section>
+
     <section data-page="log" hidden>
       <h1>最近的话</h1>
       <p class="lead">最近 30 句：识别出来的话、走了哪一层、交给了谁、多久出声，交给 AI 的话下面是它的回复。只存在内存里，后端重启后清空。</p>
@@ -175,7 +181,7 @@ section[hidden] { display: none; }
 <div id="toast" hidden></div>
 
 <script>
-const PAGES = [["overview", "◎", "总览"], ["devices", "▣", "设备"], ["log", "☰", "最近的话"]];
+const PAGES = [["overview", "◎", "总览"], ["devices", "▣", "设备"], ["log", "☰", "最近的话"], ["tasks", "⇄", "转交任务"]];
 const SIGNAL = { strong: "强", medium: "中", weak: "弱" };
 const LAYERS = { skill: "① 本机技能", agent: "转交 AI", call: "呼名", filter: "过滤掉", wake: "唤醒", upstream: "上游对话" };
 let data = null, fetchedAt = 0, filter = "all", replyMode = "all";
@@ -193,10 +199,11 @@ function show(id) {
 }
 function renderNav() {
   const n = data ? data.recent.length : 0;
+  const t = data && data.tasks ? data.tasks.running.length + data.tasks.report.length : 0;
   for (const target of ["nav", "mnav"]) {
     const current = document.querySelector(`#${target} [aria-current="true"]`)?.dataset.go;
     document.getElementById(target).innerHTML = PAGES.map(([id, icon, name]) =>
-      `<button data-go="${id}" aria-current="${id === current}">${target === "nav" ? icon + " " : ""}${name}${id === "log" && n && target === "nav" ? `<span class="count">${n}</span>` : ""}</button>`).join("");
+      `<button data-go="${id}" aria-current="${id === current}">${target === "nav" ? icon + " " : ""}${name}${id === "log" && n && target === "nav" ? `<span class="count">${n}</span>` : ""}${id === "tasks" && t && target === "nav" ? `<span class="count">${t}</span>` : ""}</button>`).join("");
   }
 }
 document.addEventListener("click", e => { const b = e.target.closest("[data-go]"); if (b) show(b.dataset.go); });
@@ -427,6 +434,24 @@ function renderModules() {
       <div class="sub">${esc(m.kind)}</div><div class="note">${esc(m.detail)}</div>
     </div>`).join("");
 }
+// G17: what was handed to the Bot (core/gateway/tasks.py, from its reply directory)
+function renderTasks() {
+  const el = document.getElementById("tasks"), t = data.tasks;
+  if (!t) { el.innerHTML = `<div class="card empty">没开 Grok Bot，或者它的配置里没有回传目录：回复只在 Grok 对话里，这里看不到。</div>`; return; }
+  const now = Date.now() / 1000;
+  const card = (x, extra) => `<div class="card">
+      <h3>${esc(x.question || "（这条没记下问的话）")}</h3>
+      <div class="sub">${esc(x.board)} · ${clock(x.created)} 交出 · ${extra}</div>
+      ${x.reply ? `<div class="reply"><span class="who">Bot</span>${esc(x.reply)}</div>` : ""}
+    </div>`;
+  const section = (title, items, extra, empty) => `<h2>${title} <small>${items.length}</small></h2>
+    ${items.length ? `<div class="grid">${items.map(x => card(x, extra(x))).join("")}</div>` : `<p class="note">${empty}</p>`}`;
+  el.innerHTML =
+    section("进行中", t.running, x => `已等 ${duration(Math.max(0, Math.round(now - x.created)))}`, "没有在等的。") +
+    section("等着念", t.report, x => `回复 ${clock(x.replied)} 到`, "没有。") +
+    section("念过了", t.done, x => x.replied ? `用了 ${duration(Math.max(0, Math.round(x.replied - x.created)))}` : "已念", "最近 24 小时还没有。") +
+    (t.timeout.length ? section("没等到回复", t.timeout, () => "超过等待时间（一天内晚到的回复照样念）", "") : "");
+}
 function renderStats() {
   const online = data.boards.filter(b => b.online).length;
   document.getElementById("s-online").textContent = `${online} / ${data.boards.length}`;
@@ -486,7 +511,7 @@ function renderLog() {
     </tr>`).join("") : `<tr><td colspan="6" class="empty">还没有${filter === "all" ? "" : "这一类的"}话。</td></tr>`;
 }
 function render() {
-  renderNav(); renderStats(); renderBoards(); renderModules(); renderLog(); renderLogin();
+  renderNav(); renderStats(); renderBoards(); renderModules(); renderLog(); renderTasks(); renderLogin();
   // Re-rendering would reset a slider while it is being dragged
   // ...and would wipe what is being typed into "说一句话"
   if (Date.now() > busyUntil && !document.querySelector("#devices input:active, #music input:active, #devices input[data-keep]:focus")) { renderDevices(); renderMusic(); }
@@ -511,7 +536,8 @@ show(PAGES.some(p => p[0] === start) ? start : "overview");
 // Every 3 s; every second while an answer is being said, so "跟着语音" keeps up
 (async function poll() {
   await refresh();
-  const speaking = data && data.recent.some(r => r.reply && r.reply.state === "speaking");
+  const speaking = data && (data.recent.some(r => r.reply && r.reply.state === "speaking")
+    || (data.tasks && data.tasks.running.length));
   setTimeout(poll, speaking ? 1000 : 3000);
 })();
 setInterval(() => { if (data) renderBoards(); }, 1000);

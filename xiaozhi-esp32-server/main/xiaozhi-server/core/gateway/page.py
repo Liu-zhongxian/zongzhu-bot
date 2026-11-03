@@ -10,7 +10,7 @@ from pathlib import Path
 
 from aiohttp import web
 
-from core.gateway import control, modules, status, wake_assets
+from core.gateway import control, modules, status, tasks, wake_assets
 from core.gateway.xiaoai import control as speaker_control
 
 PAGE = Path(__file__).with_name("page.html")
@@ -41,9 +41,11 @@ class GatewayPageHandler:
     async def handle_status(self, request):
         music = await asyncio.to_thread(control.music_status)
         checked = await asyncio.to_thread(modules.cached, self.config)
+        handed = await asyncio.to_thread(tasks.cached, self.config, status.names())
         return web.json_response(status.snapshot(self.config) | {"music": music,
                                  "password": control.password_required(self.config),
-                                 "settings": control.settings_view(self.config), "modules": checked},
+                                 "settings": control.settings_view(self.config), "modules": checked,
+                                 "tasks": handed},
                                  headers=NO_STORE)
 
     def _token_ok(self, request):

@@ -40,6 +40,12 @@ def board_name(board_type):
     return board_type or "未知板子"
 
 
+def names() -> dict:
+    """{device id: the name shown on the page} for every board seen."""
+    return {device_id: board_name(info["type"]) if info.get("type") else "板子 " + device_id[-5:]
+            for device_id, info in list(_boards.items())}
+
+
 def load():
     try:
         data = json.loads(BOARDS_PATH.read_text(encoding="utf-8"))
