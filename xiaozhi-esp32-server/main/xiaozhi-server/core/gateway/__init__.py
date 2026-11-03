@@ -12,8 +12,11 @@ Calling an AI by name at the start ("嗨 硬件，帮我……") hands the rest 
 it this board's AI from then on (kept in data/agent_sessions.json); the name alone gets "我在。".
 
 Without the section the order is the one before the gateway: local music, then the Bot.
+A connection can narrow the skills with `conn.gateway_skills` (a list of names): the Xiaomi speaker
+sets [] so its sentences only go to the AI, and music (played on this Mac) never starts for it.
 Skills are in core/gateway/skills/ (see skill.py), AIs in core/gateway/agents/ (see agent.py).
 """
+import re
 import time
 import uuid
 
@@ -56,10 +59,26 @@ def active_skills(config):
     return [skill for skill in skills if skill is not None and skill.enabled(config)]
 
 
+def _skill_names(conn):
+    names = getattr(conn, "gateway_skills", None)
+    return _settings(conn.config)[0] if names is None else list(names)
+
+
+def connection_skills(conn):
+    """The skills this connection uses (see the module doc), in order."""
+    skills = (SKILLS.get(name) for name in _skill_names(conn))
+    return [skill for skill in skills if skill is not None and skill.enabled(conn.config)]
+
+
 def agent_call_names(config) -> dict:
-    """{AI module name: [call names]} for the AIs that are switched on."""
+    """{AI module name: [call names]} for the AIs that are switched on. Names set on the gateway page
+    (data/gateway_settings.json) come first, then `gateway.call_names` in the config, then the module's own."""
+    from core.gateway import settings
+
     custom = (config.get("gateway") or {}).get("call_names")
-    custom = custom if isinstance(custom, dict) else {}
+    custom = dict(custom) if isinstance(custom, dict) else {}
+    saved = settings.get("call_names")
+    custom.update(saved if isinstance(saved, dict) else {})
     return {name: custom.get(name, agent.names(config)) for name, agent in AGENTS.items() if agent.enabled(config)}
 
 
@@ -94,7 +113,7 @@ def warm(conn):
     from core.handle import grokBotPhrases
 
     agent = active_agent(conn)
-    modules = ([agent] if agent else []) + active_skills(conn.config)
+    modules = ([agent] if agent else []) + connection_skills(conn)
     texts = [text for module in modules for text in module.phrases(conn.config)]
     if texts:
         asyncio.create_task(grokBotPhrases.warm(conn, list(dict.fromkeys(texts))))
@@ -107,7 +126,7 @@ def warm(conn):
 def on_listen(conn):
     waiting.resume_input(conn)
     agent = active_agent(conn)
-    for module in ([agent] if agent else []) + active_skills(conn.config):
+    for module in ([agent] if agent else []) + connection_skills(conn):
         module.on_listen(conn)
 
 
@@ -117,9 +136,34 @@ def _warn(conn, message):
         logger.bind(tag=TAG).warning(message)
 
 
+# G19c (2026-11-02 实测，"对"被交给了 Bot): a sentence that is only one of these is not sent anywhere.
+# A confirmation still goes to the AI when its last answer, within CONFIRM_SECONDS, asked a question.
+FILLERS = {"嗯", "嗯嗯", "啊", "哦", "噢", "呃", "额", "唉", "哎", "诶"}
+CONFIRMATIONS = {"对", "对对", "对的", "是", "是的", "好", "好的", "行", "可以"}
+CONFIRM_SECONDS = 120
+
+
+def _asked_a_question(conn):
+    said = getattr(conn, "gateway_last_said", None)
+    if not said or time.time() - said[0] > CONFIRM_SECONDS:
+        return False
+    end = said[1].rstrip("。！!…~～ \n")
+    return "？" in end[-40:] or "?" in end[-40:] or end.endswith(("吗", "呢"))
+
+
+def is_filler(conn, text):
+    plain = re.sub(r"[\W_]", "", text or "")
+    return plain in FILLERS or (plain in CONFIRMATIONS and not _asked_a_question(conn))
+
+
 async def dispatch(conn, text) -> bool:
     """True when a skill or the AI took the sentence; False leaves it to the upstream chat flow."""
     record = status.begin(conn, text)
+    if is_filler(conn, text):
+        # Nothing is said either: the device keeps listening for the real sentence
+        conn.logger.bind(tag=TAG).info(f"只有语气词，不提交: {text}")
+        status.finish(record, "filter", "语气词，不提交")
+        return True
     kind = status.classify(conn, text)
     conn.gateway_not_sent = None
     call = None if kind else _call_name(conn, text)
@@ -153,7 +197,8 @@ def _call_name(conn, text):
     return match_call_name(rest if had_wake else command, agent_call_names(conn.config))
 
 
-async def _answer_call(conn, heard, name, rest):
+def use_agent(conn, name):
+    """This board's AI from now on (called by name); kept across reconnects (agent_store)."""
     agent = AGENTS[name]
     if getattr(conn, "gateway_agent", None) != name:
         conn.gateway_agent = name
@@ -162,6 +207,17 @@ async def _answer_call(conn, heard, name, rest):
         conn.logger.bind(tag=TAG).info(f"呼名：这块板子改用 {agent.label(conn.config)}")
         if agent.answers_later:
             waiting.start(conn, agent)
+    return agent
+
+
+def call_words(config) -> dict:
+    """{call name: AI module name}: the Xiaomi speaker also wakes on these (core/gateway/xiaoai/)."""
+    return {word: name for name, words in agent_call_names(config).items()
+            for word in ([words] if isinstance(words, str) else words or ()) if str(word).strip()}
+
+
+async def _answer_call(conn, heard, name, rest):
+    agent = use_agent(conn, name)
     if rest:
         if await hand_over(conn, agent, rest):
             return "agent", agent.label(conn.config), True
@@ -173,6 +229,9 @@ async def _answer_call(conn, heard, name, rest):
 
     conn.client_abort = False
     conn.sentence_id = uuid.uuid4().hex
+    # The question comes next: a device that goes quiet after speaking listens again (the Xiaomi
+    # speaker, 2026-11-02: after "嗨硬件" → "我在。" the question was never heard)
+    conn.gateway_listen_again = True
     await send_stt_message(conn, heard)
     if not await phrases.speak(conn, phrases.HERE):
         speak_txt(conn, phrases.HERE)
@@ -180,7 +239,7 @@ async def _answer_call(conn, heard, name, rest):
 
 
 async def _route(conn, text):
-    skill_names = _settings(conn.config)[0]
+    skill_names = _skill_names(conn)
     current = agent_name(conn)
     for name in skill_names:
         skill = SKILLS.get(name)

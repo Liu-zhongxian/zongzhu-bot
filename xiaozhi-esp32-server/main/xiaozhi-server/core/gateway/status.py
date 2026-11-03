@@ -16,10 +16,11 @@ from pathlib import Path
 RECENT_MAX = 30
 # Board types the firmware reports in OTA (board.type) -> the names used in our docs
 BOARD_NAMES = (("lichuang", "立创实战派"), ("amoled-1.75", "微雪 1.75C"), ("stopwatch", "M5Stack StopWatch"),
-               ("open-xiaoai-bridge", "小米音箱 Pro"))
-# Not a board: the speaker reaches us through open-xiaoai-bridge on this Mac (experiments/xiaoai-bridge).
-# No screen and no MCP, so there is nothing to read or set; its IP here is the Mac's.
-BRIDGE_TYPES = {"open-xiaoai-bridge"}
+               ("open-xiaoai", "小米音箱 Pro"))
+# Not a board: the Xiaomi speaker, straight into the backend (core/gateway/xiaoai/, type "open-xiaoai");
+# "open-xiaoai-bridge" is the type it had through the old bridge (still in data/gateway_boards.json).
+# No screen and no MCP, so there is nothing to read or set ("bridge" in the snapshot).
+BRIDGE_TYPES = {"open-xiaoai-bridge", "open-xiaoai"}
 # Types our check scripts use (tools/verify, probes): shown only while connected
 SIMULATED_TYPES = {"local-test", "probe"}
 
@@ -85,6 +86,28 @@ def is_live(conn):
     return id(conn) in _conns
 
 
+_linked = set()  # device ids of Xiaomi speakers connected to the backend (port 4399) right now
+
+
+def speaker_linked(device_id, linked, wake=None):
+    """The Xiaomi speaker is connected to the backend: listed online ("待机") even with no conversation."""
+    if linked:
+        _linked.add(device_id)
+        if wake:
+            _boards.setdefault(device_id, {})["wake"] = wake
+            _save()
+    else:
+        _linked.discard(device_id)
+
+
+_speaker_play = {}  # device id -> playing / paused / idle, from the speaker's own "playing" events
+
+
+def note_speaker_play(device_id, play):
+    if play in ("playing", "paused", "idle"):
+        _speaker_play[device_id] = play
+
+
 def note_info(device_id, info):
     """G18a: what the board reported over MCP (core/gateway/board_info.py)."""
     if device_id:
@@ -100,6 +123,33 @@ def disconnected(conn):
         if wake:
             _boards[conn.device_id]["wake"] = wake
         _save()
+
+
+# A new board wake word sent from the page waits for the board to reboot and download it; the board
+# only says which word it uses when it is woken. Until then the page shows the new word as pending
+# (2026-11-03: it kept showing the old one until the board was woken with the new word).
+WAKE_PENDING_SECONDS = 120
+
+
+def note_new_wake_word(device_id, text):
+    board = _boards.setdefault(device_id, {})
+    board["wake_new"], board["wake_new_at"] = text, time.time()
+    _save()
+
+
+def _wake_of(device_id, info, conn, now):
+    """(wake word to show, pending): a pending new word until the board is heard using a word."""
+    heard = (getattr(conn, "device_wake_word", None) if conn else None) or info.get("wake", "")
+    new = info.get("wake_new")
+    if not new:
+        return heard, False
+    if heard == new or (heard and now - info.get("wake_new_at", 0) > WAKE_PENDING_SECONDS):
+        # In use now, or the board still uses another word long after the change (the download failed)
+        board = _boards.get(device_id, {})
+        board.pop("wake_new", None)
+        board.pop("wake_new_at", None)
+        return heard, False
+    return new, True
 
 
 def note_asr(conn, before, after, started=None):
@@ -141,6 +191,13 @@ def begin(conn, text):
     return record
 
 
+def note_wake(device_id, word, reply):
+    """A device that spots its wake word itself, outside the gateway (the Xiaomi speaker, core/gateway/xiaoai/):
+    listed like a board's wake."""
+    _recent.appendleft({"time": time.time(), "device": device_id, "text": word, "raw": "",
+                        "layer": "wake", "target": reply, "first_audio": None, "_t": time.monotonic()})
+
+
 def finish(record, layer, target):
     record["layer"], record["target"] = layer, target
     if layer not in ("wake",):
@@ -148,11 +205,95 @@ def finish(record, layer, target):
         _totals["local"] += layer in ("skill", "filter", "call")
 
 
+# G23: the AI's answer under the sentence it answers, for the "最近的话" page.
+# record["reply"] = {"state": waiting | speaking | interrupted | done, "text": the answer,
+#                    "upto": how much of the text has been said (characters), "since": when it started waiting}
+_REPLY_PUNCTUATION = "，。；：！？、,.;:!? \n"
+
+
+def _find_request(request_id):
+    return next((r for r in _recent if r.get("_request") == request_id), None)
+
+
+def note_request(conn, request_id):
+    """The sentence was handed to an AI that answers later under this request id."""
+    record = getattr(conn, "gateway_record", None)
+    if record is not None:
+        record["_request"] = request_id
+        record["reply"] = {"state": "waiting", "text": "", "upto": 0, "since": time.time()}
+
+
+def reply_text(conn, text):
+    """An answer said right after the hand-over (not one that comes back later)."""
+    record = getattr(conn, "gateway_record", None)
+    if record is not None and text:
+        record["reply"] = {"state": "done", "text": text, "upto": len(text)}
+
+
+def reply_started(conn, request_id, text, question=None, target=""):
+    """An answer that came back is being said (waiting.deliver). A second one for the same request
+    (the AI's follow-up) is added below the first."""
+    record = _find_request(request_id)
+    if record is None:
+        # The sentence is gone from the list (restart, or more than RECENT_MAX since): list it again
+        record = {"time": time.time(), "device": getattr(conn, "device_id", None),
+                  "text": question or "（之前的话）", "raw": "", "layer": "agent", "target": target,
+                  "first_audio": None, "_t": time.monotonic(), "_request": request_id}
+        _recent.appendleft(record)
+    before = (record.get("reply") or {}).get("text", "")
+    if before:
+        text = before + "\n" + text
+    record["reply"] = {"state": "speaking", "text": text, "upto": len(before)}
+    record["_cursor"] = len(before)
+    conn.gateway_reply_record = record
+
+
+def reply_resumed(conn, request_id):
+    """The rest of an interrupted answer is being said."""
+    record = _find_request(request_id)
+    if record is not None and record.get("reply"):
+        record["reply"]["state"] = "speaking"
+        conn.gateway_reply_record = record
+
+
+def reply_sentence(conn, sentence):
+    """One more sentence of the answer was sent to the device."""
+    record = getattr(conn, "gateway_reply_record", None)
+    reply = (record or {}).get("reply")
+    if not reply or reply["state"] != "speaking":
+        return
+    plain = sentence.strip(_REPLY_PUNCTUATION)
+    found = reply["text"].find(plain, record.get("_cursor", 0)) if plain else -1
+    if found >= 0:  # not found: a sentence that is not part of the answer ("你刚才问……")
+        record["_cursor"] = found
+        reply["upto"] = max(reply["upto"], found + len(plain))
+
+
+def reply_stopped(conn, interrupted=False):
+    record = getattr(conn, "gateway_reply_record", None)
+    reply = (record or {}).get("reply")
+    if not reply or reply["state"] != "speaking":
+        return
+    if interrupted:
+        reply["state"] = "interrupted"
+    else:
+        reply["state"], reply["upto"] = "done", len(reply["text"])
+    conn.gateway_reply_record = None
+
+
 def note_audio(conn):
     """First audio packet after a sentence: how long the board waited for sound."""
     record = getattr(conn, "gateway_record", None)
     if record is not None and record["first_audio"] is None:
         record["first_audio"] = round(time.monotonic() - record["_t"], 2)
+
+
+def _with_play(info, device_id):
+    """The speaker's playback state from its events wins over the one read every 15 s."""
+    play = _speaker_play.get(device_id)
+    if not info or not play or "speaker" not in info:
+        return info
+    return {**info, "speaker": {**info["speaker"], "play": play}}
 
 
 def _state(conn, now):
@@ -199,15 +340,18 @@ def snapshot(config):
         if not conns and info.get("type") in SIMULATED_TYPES:
             continue
         conn = conns[-1] if conns else None
+        bridge = info.get("type") in BRIDGE_TYPES
+        linked = device_id in _linked
         boards.append({
             "id": device_id[-5:], "name": name, "type": info.get("type", ""), "version": info.get("version", ""),
-            "ip": (conn.client_ip if conn else None) or info.get("ip", ""), "online": bool(conns),
-            "wake": (getattr(conn, "device_wake_word", None) if conn else None) or info.get("wake", ""),
+            "ip": (conn.client_ip if conn else None) or info.get("ip", ""), "online": bool(conns) or linked,
+            "wake": info.get("wake", "") if bridge else _wake_of(device_id, info, conn, now)[0],
+            "wake_pending": False if bridge else _wake_of(device_id, info, conn, now)[1],
             "agent": _agent_label(_agent(conn, device_id, agent), config),
-            "state": _state(conn, now) if conn else {"kind": "offline"},
+            "state": _state(conn, now) if conn else {"kind": "standby" if linked else "offline"},
             "seen": info.get("seen"),
-            "info": info.get("info"),
-            "bridge": info.get("type") in BRIDGE_TYPES,
+            "info": _with_play(info.get("info"), device_id) if bridge else info.get("info"),
+            "bridge": bridge,
         })
     boards.sort(key=lambda b: (not b["online"], b["name"]))
     recent = [{k: v for k, v in r.items() if not k.startswith("_")} | {"board": names.get(r["device"], "")}

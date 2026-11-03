@@ -74,6 +74,11 @@ td.nowrap { white-space: nowrap; }
 .layer.filter, .layer.wake { color: var(--l-filter); }
 .layer.call { color: var(--l-name); }
 .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.chips .label { color: var(--muted); font-size: 13px; padding: 4px 0; }
+.reply { margin-top: 6px; padding: 6px 10px; border-left: 3px solid var(--accent); background: var(--accent-soft);
+  border-radius: 4px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.reply .who { color: var(--accent); font-weight: 600; margin-right: 6px; }
+.reply .wait { color: var(--muted); }
 .chips button { all: unset; cursor: pointer; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); font-size: 13px; }
 .chips button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .mobile-nav { display: none; }
@@ -105,6 +110,8 @@ section[hidden] { display: none; }
 .btn.danger:hover { border-color: var(--bad); color: var(--bad); }
 .btn[disabled] { opacity: .45; pointer-events: none; }
 .login { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.say { display: flex; gap: 8px; margin-top: 12px; }
+.say input { flex: 1; min-width: 0; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
 .login input { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
 #toast { position: fixed; right: 20px; bottom: 20px; max-width: min(420px, calc(100vw - 32px)); padding: 10px 14px; border-radius: 10px;
   background: var(--panel); border: 1px solid var(--line); box-shadow: 0 4px 16px rgba(0,0,0,.15); font-size: 13px; }
@@ -154,8 +161,9 @@ section[hidden] { display: none; }
 
     <section data-page="log" hidden>
       <h1>最近的话</h1>
-      <p class="lead">最近 30 句：识别出来的话、走了哪一层、交给了谁、多久出声。只存在内存里，后端重启后清空。</p>
+      <p class="lead">最近 30 句：识别出来的话、走了哪一层、交给了谁、多久出声，交给 AI 的话下面是它的回复。只存在内存里，后端重启后清空。</p>
       <div class="chips" id="chips"></div>
+      <div class="chips" id="reply-mode"></div>
       <div class="tablewrap"><table>
         <thead><tr><th>时间</th><th>板子</th><th>说的话</th><th>走了哪一层</th><th>交给</th><th>出声</th></tr></thead>
         <tbody id="log"></tbody>
@@ -169,7 +177,8 @@ section[hidden] { display: none; }
 const PAGES = [["overview", "◎", "总览"], ["devices", "▣", "设备"], ["log", "☰", "最近的话"]];
 const SIGNAL = { strong: "强", medium: "中", weak: "弱" };
 const LAYERS = { skill: "① 本机技能", agent: "转交 AI", call: "呼名", filter: "过滤掉", wake: "唤醒", upstream: "上游对话" };
-let data = null, fetchedAt = 0, filter = "all";
+let data = null, fetchedAt = 0, filter = "all", replyMode = "all";
+try { replyMode = localStorage.getItem("gw-reply-mode") === "voice" ? "voice" : "all"; } catch (e) {}
 
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const clock = t => new Date(t * 1000).toLocaleTimeString("zh-CN", { hour12: false });
@@ -198,6 +207,7 @@ function stateText(state) {
   }
   if (state.kind === "speaking") return `<span class="pill ok">正在说</span>`;
   if (state.kind === "listening") return `<span class="pill ok">在听</span>`;
+  if (state.kind === "standby") return `<span class="pill ok">待机</span>`;
   return `<span class="pill">离线</span>`;
 }
 function renderBoards() {
@@ -208,9 +218,9 @@ function renderBoards() {
       <h3><span class="dot ${b.online ? "" : "off"}"></span>${esc(b.name)}</h3>
       <div class="sub">${esc([b.type, b.version].filter(Boolean).join(" · "))}</div>
       <dl class="kv"><dt>现在</dt><dd>${stateText(b.state)}</dd>
-      <dt>唤醒词</dt><dd>${esc(b.wake || "—")}</dd>
+      <dt>唤醒词</dt><dd>${esc(b.wake || "—")}${b.wake_pending ? `<span class="pill">等重启下载后生效</span>` : ""}</dd>
       <dt>交给</dt><dd>${esc(b.agent)}</dd>
-      <dt>地址</dt><dd>${b.bridge ? "经这台 Mac 上的 bridge" : esc(b.ip || "—")}</dd>
+      <dt>地址</dt><dd>${esc(b.ip || "—")}</dd>
       ${b.online ? "" : `<dt>上次</dt><dd>${b.seen ? clock(b.seen) : "—"}</dd>`}</dl>
     </div>`).join("");
 }
@@ -234,11 +244,16 @@ async function post(url, body) {
   if (!response.ok) throw new Error(result.error || response.status);
   return result;
 }
-async function act(action, device, value, ask) {
+// The speaker's play / pause button flips at once; it flips back if the speaker says no
+const FLIP = { speaker_play: "playing", speaker_pause: "paused" };
+async function act(action, device, value, ask, slider) {
   if (ask && !confirm(ask)) return;
-  busyUntil = Date.now() + 1500;
-  try { toast((await post("/gateway/api/control", { action, device, value })).message); refresh(); }
-  catch (e) { toast(e.message, true); }
+  // Only a slider waits before the page is redrawn, so it does not jump back while being dragged
+  if (slider) busyUntil = Date.now() + 1500;
+  const s = FLIP[action] && (data.boards.find(b => b.id === device)?.info || {}).speaker, before = s && s.play;
+  if (s) { s.play = FLIP[action]; renderDevices(); }
+  try { toast((await post("/gateway/api/control", { action, device, value })).message); busyUntil = 0; refresh(); }
+  catch (e) { if (s) { s.play = before; renderDevices(); } toast(e.message, true); }
 }
 function renderLogin() {
   const el = document.getElementById("login");
@@ -258,14 +273,20 @@ async function login() {
 document.addEventListener("click", e => {
   if (e.target.id === "pw-go") return login();
   const b = e.target.closest("button[data-act]"); if (!b) return;  // sliders act on "change"
-  act(b.dataset.act, b.dataset.dev, b.dataset.val, b.dataset.ask);
+  // "说一句话": the text comes from the box next to the button
+  let value = b.dataset.from ? document.getElementById(b.dataset.from).value : b.dataset.val;
+  if (b.dataset.agent) value = { agent: b.dataset.agent, names: value };  // 呼名：哪个 AI 的
+  act(b.dataset.act, b.dataset.dev, value, b.dataset.ask);
 });
-document.addEventListener("keydown", e => { if (e.target.id === "pw" && e.key === "Enter") login(); });
+document.addEventListener("keydown", e => {
+  if (e.target.id === "pw" && e.key === "Enter") login();
+  if (e.target.matches("input[data-keep]") && e.key === "Enter") e.target.nextElementSibling.click();
+});
 document.addEventListener("input", e => {
   if (e.target.matches("input[type=range]")) { busyUntil = Date.now() + 3000; e.target.nextElementSibling.value = e.target.value; }
 });
 document.addEventListener("change", e => {
-  const r = e.target.closest("input[data-act]"); if (r) act(r.dataset.act, r.dataset.dev, Number(r.value));
+  const r = e.target.closest("input[data-act]"); if (r) act(r.dataset.act, r.dataset.dev, Number(r.value), null, true);
 });
 const slider = (label, action, dev, value, off) => `<label>${label}</label>
   <input type="range" min="0" max="100" value="${value ?? 50}" data-act="${action}" data-dev="${esc(dev || "")}" ${off ? "disabled" : ""}>
@@ -297,7 +318,13 @@ function boardControls(b, i) {
       <button class="btn danger" data-act="reboot" data-dev="${esc(b.id)}" data-ask="重启${esc(b.name)}？重启后十几秒会自己连回来。" ${off ? "disabled" : ""}>重启板子</button>
       ${tools.has("self.system.reconfigure_wifi") ? `<button class="btn danger" data-act="wifi_config" data-dev="${esc(b.id)}"
         data-ask="让${esc(b.name)}进入配网模式？板子会断开 WiFi，要用手机连它的配网热点重新选 WiFi。" ${off ? "disabled" : ""}>WiFi 配网</button>` : ""}
-    </div>`;
+    </div>
+    ${tools.has("self.assets.set_download_url") ? `<h4>唤醒词</h4>
+    <div class="say"><input id="wake-${esc(b.id).replace(/\W/g, "")}" data-keep value="${esc(b.wake || "")}" placeholder="中文，2–8 个字，比如 你好宗主" ${off ? "disabled" : ""}>
+      <button class="btn danger" data-act="board_wake_word" data-dev="${esc(b.id)}" data-from="wake-${esc(b.id).replace(/\W/g, "")}"
+        data-ask="改${esc(b.name)}的唤醒词？板子会重启，开机下载约 4–5 MB 的资源包，下载时不要断电。" ${off ? "disabled" : ""}>保存并重启</button></div>
+    <p class="note">${b.wake_pending ? `<b>「${esc(b.wake)}」已发给板子，等它重启、下载资源包后生效</b>（屏幕上有进度）；用新唤醒词叫醒一次后这行提示消失。`
+      : "只能是中文（2–8 个字，4–6 个字最好）。板子重启、下载资源包后生效，不用刷固件。"}</p>` : ""}`;
 }
 const kv = rows => `<dl class="kv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v ?? "—"}</dd>`).join("")}</dl>`;
 function renderDevices() {
@@ -307,9 +334,7 @@ function renderDevices() {
     const i = b.info;
     const head = `<h3><span class="dot ${b.online ? "" : "off"}"></span>${esc(b.name)}</h3>
       <div class="sub">${esc([b.id, b.type].filter(Boolean).join(" · "))}</div>`;
-    if (b.bridge) return `<div class="card device ${b.online ? "" : "off"}">${head}
-      <p class="note">经这台 Mac 上的 open-xiaoai-bridge 接入：没有屏幕，也没有 MCP 工具，读不到 WiFi、固件这些信息，音量、亮度和重启也不能在这里改。
-        ${b.online ? "正连着。" : "待机中（后端会断开空闲连接），喊“你好宗主”就会连上。"}</p></div>`;
+    if (b.bridge) return speakerCard(b, head);
     if (!i) return `<div class="card device ${b.online ? "" : "off"}">${head}
       <p class="note">${b.online ? "正在读……板子连上后几秒钟内会读到。" : "还没读到过：唤醒板子后几秒钟内自动读取。"}</p></div>`;
     const w = i.wifi || {}, f = i.firmware || {}, tools = i.tools || [];
@@ -335,7 +360,64 @@ function renderDevices() {
       <p class="note">紫色是 AI 能调的工具；"仅后端"的不给 AI，只有后端能调（改唤醒词、重启、升级固件都用它们）。最低剩余内存是开机以来的最低值；固件不报 PSRAM。
         ${b.online ? "" : "板子待机中，"}读取于 ${clock(i.read_at)}（${ago(i.read_at)}前）。</p>
     </div>`;
-  }).join("");
+  }).join("") + callNamesCard();
+}
+// G19d: the Xiaomi speaker (no MCP): what the backend reads on it with fixed read-only commands
+const PLAY = { idle: "没在放", playing: "在放", paused: "暂停" };
+function speakerCard(b, head) {
+  const s = (b.info || {}).speaker;
+  const where = b.online ? "连着后端（4399 端口）" : "没连上后端：音箱关机、断网，或者 Client 没在跑";
+  if (!s) return `<div class="card device ${b.online ? "" : "off"}">${head}
+    <p class="note">小米音箱直接接进后端，${where}。${b.online ? "连上后几秒钟内会读到设备信息。" : ""}</p></div>`;
+  return `<div class="card device ${b.online ? "" : "off"}">${head}
+    <div class="cols">
+      <div><h4>设备</h4>${kv([["型号", esc(s.model || s.hardware) || null], ["序列号", esc(s.sn) || null],
+        ["MAC", esc(s.mac) || null], ["IP", esc(b.ip) || null]])}</div>
+      <div><h4>系统</h4>${kv([["版本", esc(s.rom) || null], ["渠道", esc(s.channel) || null],
+        ["启动分区", esc(s.boot) || null]])}</div>
+      <div><h4>声音</h4>${kv([["音量", s.volume], ["播放", PLAY[s.play] || null]])}</div>
+      <div><h4>唤醒</h4>${kv([["唤醒词", esc(b.wake) || null], ["交给", esc(b.agent) || null]])}</div>
+    </div>
+    ${speakerControls(b, s)}
+    <p class="note">小米音箱直接接进后端，${where}；没有屏幕，也没有 MCP 工具。这些信息是后端在音箱上执行固定的只读命令读到的，每 15 秒读一次。
+      ${b.online ? "" : "下面是上次读到的，"}读取于 ${clock(s.read_at)}（${ago(s.read_at)}前）。</p>
+  </div>`;
+}
+// G19d step 2: fixed commands on the speaker (core/gateway/xiaoai/control.py); only while it is connected
+function speakerControls(b, s) {
+  if (!canControl()) return "";
+  const off = !b.online ? "disabled" : "", dev = esc(b.id), box = "say-" + dev.replace(/\W/g, "");
+  return `<h4>控制${b.online ? "" : "（音箱没连着后端）"}</h4>
+    <div class="ctl">${slider("音箱音量", "speaker_volume", b.id, s.volume, !b.online)}</div>
+    <div class="btns">
+      ${s.play === "playing" ? `<button class="btn" data-act="speaker_pause" data-dev="${dev}" ${off}>⏸ 暂停</button>`
+        : `<button class="btn" data-act="speaker_play" data-dev="${dev}" ${off}>▶ 继续播放</button>`}
+      <button class="btn danger" data-act="speaker_stop_xiaoai" data-dev="${dev}" ${off}>打断小爱</button>
+    </div>
+    <div class="say"><input id="${box}" data-keep maxlength="100" placeholder="让音箱说一句话（最多 100 字），回车发送" ${off}>
+      <button class="btn" data-act="speaker_say" data-dev="${dev}" data-from="${box}" ${off}>说</button></div>
+    ${speakerWakeEditor()}`;
+}
+// G8b step 5: wake words and call names, saved on this page (data/gateway_settings.json), in effect at once
+const joinWords = list => (list || []).join("、");
+function speakerWakeEditor() {
+  const st = data.settings || {};
+  return `<h4>唤醒词</h4>
+    <div class="say"><input id="wake-speaker" data-keep value="${esc(joinWords(st.speaker_wake_words))}" placeholder="比如：宗主、你好宗主">
+      <button class="btn" data-act="set_speaker_wake_words" data-from="wake-speaker">保存</button></div>
+    <p class="note">几个词用顿号或逗号隔开，最多 10 个；改完马上生效，不用重启。下面"呼名"里每个 AI 的名字也能直接唤醒音箱。
+      ${st.skipped && st.skipped.length ? `<b>唤醒词模型认不了：${esc(joinWords(st.skipped))}</b>，音箱不会被它们唤醒。` : ""}</p>`;
+}
+function callNamesCard() {
+  const st = data.settings || {}, rows = st.call_names || [];
+  if (!canControl() || !rows.length) return "";
+  return `<div class="card device"><h3>呼名</h3>
+    <div class="sub">喊 AI 的名字就交给它：板子上先唤醒再说"嗨 + 名字"；小米音箱上直接喊名字</div>
+    ${rows.map(r => `<h4>${esc(r.label)}</h4>
+      <div class="say"><input id="call-${esc(r.agent)}" data-keep value="${esc(joinWords(r.names))}" placeholder="比如：bot、波特">
+        <button class="btn" data-act="set_call_names" data-agent="${esc(r.agent)}" data-from="call-${esc(r.agent)}">保存</button></div>`).join("")}
+    <p class="note">几个名字用顿号或逗号隔开；可以把识别常听成的写法也加上（比如把 bot 听成 but，就加个 but）。留空就不能用名字叫这个 AI。改完马上生效。</p>
+  </div>`;
 }
 function renderStats() {
   const online = data.boards.filter(b => b.online).length;
@@ -356,12 +438,41 @@ document.getElementById("chips").addEventListener("click", e => {
   const b = e.target.closest("[data-f]"); if (!b) return;
   filter = b.dataset.f; renderChips(); renderLog();
 });
+// G23: the AI's answer under the sentence; all at once, or as far as the device has said it
+const REPLY_MODES = [["all", "一次性全部显示"], ["voice", "跟着语音一句句显示"]];
+function renderReplyMode() {
+  document.getElementById("reply-mode").innerHTML = `<span class="label">回复：</span>` + REPLY_MODES.map(([k, v]) =>
+    `<button data-m="${k}" aria-pressed="${k === replyMode}">${v}</button>`).join("");
+}
+document.getElementById("reply-mode").addEventListener("click", e => {
+  const b = e.target.closest("[data-m]"); if (!b) return;
+  replyMode = b.dataset.m;
+  try { localStorage.setItem("gw-reply-mode", replyMode); } catch (e) {}
+  renderReplyMode(); renderLog();
+});
+function replyHtml(r) {
+  const p = r.reply; if (!p) return "";
+  const who = `<span class="who">${esc(r.target || "AI")}</span>`;
+  if (p.state === "waiting") {
+    const late = Date.now() / 1000 - p.since > 600;
+    return `<div class="reply">${who}<span class="wait">${late ? "没等到回复" : "等回复…"}</span></div>`;
+  }
+  let text = p.text;
+  if (replyMode === "voice" && p.state !== "done") {
+    // Up to the end of the last sentence said, with the punctuation after it
+    const end = p.upto + (/^[，。；：！？、,.;:!?]/.test(text.slice(p.upto)) ? 1 : 0);
+    text = text.slice(0, end);
+  }
+  const tail = p.state === "speaking" ? (replyMode === "voice" ? " …" : "（正在念）")
+    : p.state === "interrupted" ? "（被打断，问完新问题接着念）" : "";
+  return `<div class="reply">${who}${esc(text)}<span class="wait">${tail}</span></div>`;
+}
 function renderLog() {
   const rows = data.recent.filter(r => filter === "all" || r.layer === filter);
   document.getElementById("log").innerHTML = rows.length ? rows.map(r => `
     <tr>
       <td class="nowrap">${clock(r.time)}</td><td class="nowrap">${esc(r.board || "—")}</td>
-      <td>${esc(r.text)}${r.raw ? `<div class="fix">识别原文：${esc(r.raw)}</div>` : ""}</td>
+      <td>${esc(r.text)}${r.raw ? `<div class="fix">识别原文：${esc(r.raw)}</div>` : ""}${replyHtml(r)}</td>
       <td class="layer ${esc(r.layer)}">${esc(LAYERS[r.layer] || r.layer)}</td><td>${esc(r.target)}</td>
       <td class="nowrap">${r.first_audio == null ? "—" : r.first_audio + " 秒" + (r.layer === "agent" ? "（回执）" : "")}</td>
     </tr>`).join("") : `<tr><td colspan="6" class="empty">还没有${filter === "all" ? "" : "这一类的"}话。</td></tr>`;
@@ -369,7 +480,8 @@ function renderLog() {
 function render() {
   renderNav(); renderStats(); renderBoards(); renderLog(); renderLogin();
   // Re-rendering would reset a slider while it is being dragged
-  if (Date.now() > busyUntil && !document.querySelector("#devices input:active, #music input:active")) { renderDevices(); renderMusic(); }
+  // ...and would wipe what is being typed into "说一句话"
+  if (Date.now() > busyUntil && !document.querySelector("#devices input:active, #music input:active, #devices input[data-keep]:focus")) { renderDevices(); renderMusic(); }
 }
 
 async function refresh() {
@@ -384,12 +496,16 @@ async function refresh() {
   }
 }
 
-renderNav(); renderChips();
+renderNav(); renderChips(); renderReplyMode();
 let start = "overview";
 try { start = localStorage.getItem("gw-page") || start; } catch (e) {}
 show(PAGES.some(p => p[0] === start) ? start : "overview");
-refresh();
-setInterval(refresh, 3000);
+// Every 3 s; every second while an answer is being said, so "跟着语音" keeps up
+(async function poll() {
+  await refresh();
+  const speaking = data && data.recent.some(r => r.reply && r.reply.state === "speaking");
+  setTimeout(poll, speaking ? 1000 : 3000);
+})();
 setInterval(() => { if (data) renderBoards(); }, 1000);
 </script>
 </body>

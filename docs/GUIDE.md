@@ -122,25 +122,47 @@
 
 ## 接入小米智能音箱 Pro（可选）
 
-给小米智能音箱 Pro（OH2P）刷 [open-xiaoai](https://github.com/idootop/open-xiaoai) 的补丁固件后，音箱就像一块没有屏幕的宗主板子：喊"你好宗主"，音箱回"在"，后面的话交给后端，走的是同一个网关（点歌、Bot、呼名），回答从音箱里念出来。小爱同学照常能用。
+给小米智能音箱 Pro（OH2P）刷 [open-xiaoai](https://github.com/idootop/open-xiaoai) 的补丁固件、装上 Client 后，音箱直接连宗主后端，就像一块没有屏幕的宗主板子：喊"宗主"，音箱回"在"，后面的话交给 Bot，回答从音箱里念出来；直接喊某个 AI 的呼名（比如 Bot 的名字）也能唤醒，并交给那个 AI。念的时候再喊"宗主"可以打断（这时不认呼名，免得音箱念到 AI 的名字时把自己叫醒）；问完新问题，它先把没念完的接着念完，再念新回答（前面带上"你刚才问……"）。小爱同学照常能用。本机点歌不接音箱：歌在电脑上放，音箱说的"暂停""放首歌"也交给 Bot。
 
 ```
-音箱（补丁固件 + Client）──4399──▶ 电脑上的 xiaoai-bridge ──小智协议──▶ 宗主后端
+音箱（补丁固件 + Client）──WebSocket 4399──▶ 宗主后端（core/gateway/xiaoai/）
 ```
 
-- **音箱上**：补丁固件开 SSH、关小米自动升级、开机运行 `/data/init.sh`；open-xiaoai 的 Client 把麦克风和播放交给电脑。
-- **电脑上**：`xiaoai-bridge/` 在本机识别唤醒词"你好宗主"、检测说完没有，再像一块小智板子一样连后端（向 OTA 要 token，空闲被断开后，下次唤醒自动重连）。网关页面上显示为"小米音箱 Pro"，没有屏幕和 MCP 工具，所以没有音量、亮度这些控件。
+- **音箱上**：补丁固件开 SSH、关小米自动升级、开机运行 `/data/init.sh`；open-xiaoai 的 Client 把麦克风和播放交给后端。
+- **后端里**：唤醒词在后端识别（sherpa-onnx），之后和板子走同一套识别、网关、TTS。音箱按 4 个声道录音：3 个麦克风，加 1 个音箱自己放出的声音。后端只用麦克风，所以音箱说话时也能喊醒；等音箱真的放完、回声过去才开始听，不会把它自己的声音当成你的话。网关页面上显示为"小米音箱 Pro"，没有屏幕和 MCP 工具，所以没有音量、亮度这些控件。
 
-步骤（详见 [xiaoai-bridge/README.md](../xiaoai-bridge/README.md)）：
+步骤（刷机和 Client 的细节见 [zongzhu-speaker/README.md](../zongzhu-speaker/README.md)）：
 
 1. 查音箱版本，用 `ota_query.py` 找到同版本的官方固件包；
 2. `build_image.sh` 打补丁、打包，并核对只改了补丁的 8 个文件；
 3. `backup_readonly.sh` 进刷机模式只读备份，判断现在用的是 A/B 哪一边；
 4. `flash_slot.sh` 只写另一边，读回逐字节核对后才切启动参数，官方系统留在原来那边当退路；
-5. `build_client.sh` 编译 Client，`install_client.sh` 装到音箱上；
-6. `scripts/run-zongzhu.sh` 启动 bridge。
+5. `build_client.sh` 编译 Client，生成 token；
+6. 下载唤醒词模型，放进后端（在 `xiaozhi-esp32-server/main/xiaozhi-server/` 里运行；压缩包约 490 MB，只取其中 5 个文件，约 120 MB）：
 
-只在 OH2P、固件 1.62.2、Apple Silicon 的 Mac 上完整做过。**刷机有变砖的风险**，务必先备份。
+   ```sh
+   curl -L -o /tmp/xiaoai-models.zip https://github.com/coderzc/open-xiaoai-bridge/releases/download/vad-kws-asr-models/models.zip
+   unzip -j -o /tmp/xiaoai-models.zip models/encoder.onnx models/decoder.onnx models/joiner.onnx \
+     models/tokens.txt models/bpe.model -d models/sherpa-onnx-kws-open-xiaoai
+   rm /tmp/xiaoai-models.zip
+   ```
+
+7. 在后端配置 `data/.config.yaml` 里打开音箱接入，然后重启后端：
+
+   ```yaml
+   gateway:
+     xiaoai:
+       enabled: true
+       port: 4399                     # 和装 Client 时写的端口一样
+       token_file: /完整路径/token.txt  # 第 5 步生成的 token，和音箱上的一样
+       # wake_words: [宗主]           # 默认"宗主"；AI 的呼名也自动算唤醒词
+       # kws_threshold: 0.05          # 越低越容易唤醒
+   ```
+
+   日志里出现 `小米音箱接入：ws://0.0.0.0:4399` 就好了。
+8. `install_client.sh <音箱 IP> ws://<电脑的局域网 IP>:4399 <token 文件>` 把 Client 装到音箱上；约 20 秒后后端日志出现 `小米音箱已连接`，音箱"嘀"一声。
+
+电脑的 IP 写进了音箱，所以要在路由器里给电脑固定一个 IP。只在 OH2P、固件 1.62.2、Apple Silicon 的 Mac 上完整做过。**刷机有变砖的风险**，务必先备份。
 
 ## 手动安装（不用网页）
 
@@ -195,9 +217,9 @@ done
 
 默认打开页面就能改。不想让局域网里的人随便改，在 `.config.yaml` 里写 `gateway.password`，页面会先要口令（见 `examples/backend.config.yaml`）。
 
-**改唤醒词**（不用重刷固件）：板子连着后端时，在仓库根目录运行 `.venv/bin/python tools/wake_word.py 你好小雨`。脚本会等你喊唤醒词叫醒板子，然后让板子重启、下载换了唤醒词的资源包（约 4–5 MB，屏幕显示进度，过程中不要断电），之后用新唤醒词。资源包要和板子的固件同一版，脚本从 `firmware/` 里按型号和版本找；只支持中文唤醒词。
+**改唤醒词**（不用重刷固件）：最简单的是在网关页面"设备"里板子卡片的"唤醒词"填新词，点"保存并重启"（板子要醒着，先喊一声唤醒词）。也可以在仓库根目录运行 `.venv/bin/python tools/wake_word.py 你好小雨`。脚本会等你喊唤醒词叫醒板子，然后让板子重启、下载换了唤醒词的资源包（约 4–5 MB，屏幕显示进度，过程中不要断电），之后用新唤醒词。资源包要和板子的固件同一版，从 `firmware/` 里按型号和版本找（后端不在仓库里跑时，配置里写 `gateway.firmware_root` 指向仓库根目录）；只支持中文唤醒词。小米音箱的唤醒词也在网关页面上改（音箱卡片里），改完马上生效。
 
-**呼名**：先喊"你好宗主"唤醒，再说"嗨 <Bot 的名字>，……"（"嘿"也行），后面的话直接交给这个 Bot，不经过点歌；只喊名字回一句"我在。"，什么也不提交。Bot 的名字是它在 Grok 里的名字，写在 `.config.yaml` 的 `grok_bot.bot_name`（例如 `硬件`），不写时称呼是"Grok Bot""Grok"。以后接了第二个 AI，喊谁的名字，这块板子之后就交给谁，记在 `data/agent_sessions.json`，重连、重启后照旧。称呼也可以在 `gateway.call_names` 里整个替换。没唤醒时直接喊名字，板子听不到：板子只认它的唤醒词。
+**呼名**：先喊"你好宗主"唤醒，再说"嗨 <Bot 的名字>，……"（"嘿"也行），后面的话直接交给这个 Bot，不经过点歌；只喊名字回一句"我在。"，什么也不提交。Bot 的名字是它在 Grok 里的名字，写在 `.config.yaml` 的 `grok_bot.bot_name`（例如 `硬件`），不写时称呼是"Grok Bot""Grok"。以后接了第二个 AI，喊谁的名字，这块板子之后就交给谁，记在 `data/agent_sessions.json`，重连、重启后照旧。称呼在网关页面"设备"的"呼名"卡片里改（可以加识别常听成的写法），改完马上生效，存在 `data/gateway_settings.json`；也可以在配置的 `gateway.call_names` 里写，页面上改过的优先。没唤醒时直接喊名字，板子听不到：板子只认它的唤醒词；小米音箱能听到，呼名也是它的唤醒词。只喊名字、回了"我在。"以后，音箱接着听你的问题。
 
 想让后端开机自动在后台运行（进程退出会自动拉起，运行期间 Mac 不会因空闲睡眠）：
 
@@ -316,7 +338,7 @@ python scripts/build.py lckfb/szpi-esp32s3 --name lichuang-dev-zongzhu          
 | `web/` | 网页刷机页面和 macOS 后端安装脚本 `install-mac.sh`，推到 main 后自动发布到 GitHub Pages |
 | `deploy/` | 把后端部署到公网 Linux 服务器（Caddy、systemd、服务器配置） |
 | `tools/` | `build_firmware.py`（编进 OTA 地址、打包、刷写）、`build_web.py`（组装网页）、`autostart.sh`（开机自启）、`local_music_setup.sh`（下载点歌用的 go-music-dl 和 mpv）、`verify/`（端到端检查）、`asr-bench/`（识别对比） |
-| `xiaoai-bridge/` | 小米音箱和宗主后端之间的桥（基于 coderzc/open-xiaoai-bridge）；`speaker/` 是补丁、Client 源码和刷机、安装脚本，`scripts/run-zongzhu.sh` 启动它；说明见它的 README |
+| `zongzhu-speaker/` | 小米音箱这一边：补丁、Client 源码和刷机、安装脚本，说明见它的 README；后端接音箱的代码在 `core/gateway/xiaoai/` |
 | `local-music/` | `local_music_setup.sh` 下载的程序和 go-music-dl 的数据（含登录 Cookie）；只在本机，不进 Git |
 | `examples/` | 不含真实凭证的配置模板 |
 | `docs/` | 本文、各板说明，目录见 [docs/README.md](README.md) |

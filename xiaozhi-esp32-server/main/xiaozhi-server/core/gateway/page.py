@@ -11,6 +11,7 @@ from pathlib import Path
 from aiohttp import web
 
 from core.gateway import control, status, wake_assets
+from core.gateway.xiaoai import control as speaker_control
 
 PAGE = Path(__file__).with_name("page.html")
 NO_STORE = {"Cache-Control": "no-store"}
@@ -40,7 +41,8 @@ class GatewayPageHandler:
     async def handle_status(self, request):
         music = await asyncio.to_thread(control.music_status)
         return web.json_response(status.snapshot(self.config) | {"music": music,
-                                 "password": control.password_required(self.config)},
+                                 "password": control.password_required(self.config),
+                                 "settings": control.settings_view(self.config)},
                                  headers=NO_STORE)
 
     def _token_ok(self, request):
@@ -71,6 +73,16 @@ class GatewayPageHandler:
         try:
             if action in control.MUSIC_ACTIONS:
                 return web.json_response(await control.music_action(action, body.get("value")))
+            if action == "board_wake_word":
+                conn, reason = _board_conn(body.get("device"))
+                if conn is None:
+                    return web.json_response({"error": reason.replace("再马上运行", "再点")}, status=409)
+                return web.json_response(await control.board_wake_word(self.config, conn, body.get("value")))
+            if action in control.SETTING_ACTIONS:
+                return web.json_response(await control.settings_action(self.config, action, body.get("value")))
+            if action in speaker_control.ACTIONS:
+                return web.json_response(await speaker_control.act(self.config, body.get("device"), action,
+                                                                    body.get("value")))
             if action not in control.BOARD_ACTIONS:
                 return web.json_response({"error": f"不认识的操作 {action}"}, status=400)
             conn, reason = _board_conn(body.get("device"))

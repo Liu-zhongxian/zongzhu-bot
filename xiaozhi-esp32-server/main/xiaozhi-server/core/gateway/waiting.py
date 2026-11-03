@@ -12,6 +12,12 @@ ordinary input. The module only tells (see `Agent` in agent.py):
 Optional spoken progress (原清单 A9, off by default; config `gateway.progress_prompts: true`):
 30 s after the request "还在处理，请稍等。", then after 60 s more and every 120 s the time so far.
 
+Interrupted answer (2026-11-02, 你定的规则): waking the device while it says an answer stops it
+(abort). What was left — from the sentence it was on — is said once the next question has been
+handed over (or after RESUME_SECONDS when nothing is asked), then answers that came in meanwhile.
+An answer to a question asked after the interruption starts with that question
+("你刚才问「……」："), so it is clear which one it answers.
+
 The conn attributes keep their Grok-era names (bot_ui_waiting, bot_input_until ...):
 receiveAudioHandle, connection and the music skill read them.
 """
@@ -19,6 +25,7 @@ import asyncio
 import json
 import time
 
+from core.gateway import status
 from core.gateway.agent import _bot_ui, say_reply
 from core.gateway.agent_session import TextDelta
 
@@ -28,6 +35,10 @@ KEEPALIVE_SECONDS = 30
 # Leave time to speak after an explicit wake/button, before delivering an old reply.
 RESUME_SECONDS = 15
 PROGRESS_FIRST, PROGRESS_SECOND, PROGRESS_EVERY = 30, 60, 120
+# A wake this soon after an answer's last sentence was sent still interrupts it: the device
+# plays what it has buffered (the Xiaomi speaker up to ~1 s, 2026-11-02 录音) after tts stop.
+INTERRUPT_GRACE_SECONDS = 3
+_PUNCTUATION = "，。；：！？、,.;:!? \n"
 
 _delivery_lock = asyncio.Lock()
 
@@ -36,22 +47,92 @@ def _busy(conn):
     return conn.client_is_speaking or conn.client_have_voice or getattr(conn, "just_woken_up", False)
 
 
+def note_sentence(conn, text):
+    """The TTS queue sent this sentence of the answer being said (say_reply) to the device."""
+    current = getattr(conn, "gateway_reply_now", None)
+    if current and conn.sentence_id == current["sentence_id"]:
+        current["said"].append(text)
+        status.reply_sentence(conn, text)
+
+
+def note_stop(conn):
+    current = getattr(conn, "gateway_reply_now", None)
+    if current and conn.sentence_id == current["sentence_id"]:
+        current["stopped_at"] = time.monotonic()
+        status.reply_stopped(conn)
+
+
+def remaining_text(text, said):
+    """What is left of `text` from the last sentence in `said` (the one being played); the whole
+    text when nothing was said yet or the sentence is not found."""
+    start = 0
+    for sentence in said:
+        found = text.find(sentence.strip(_PUNCTUATION), start)
+        if found < 0:
+            return text if start == 0 else text[start:]
+        start = found
+    return text[start:]
+
+
+def on_abort(conn):
+    """The device interrupted (abort): keep what is left of the answer it was saying."""
+    current = getattr(conn, "gateway_reply_now", None)
+    conn.gateway_reply_now = None
+    if not current or conn.sentence_id != current["sentence_id"]:
+        return
+    stopped = current.get("stopped_at")
+    if stopped is not None and time.monotonic() - stopped > INTERRUPT_GRACE_SECONDS:
+        return
+    rest = remaining_text(current["text"], current["said"])
+    if not rest.strip(_PUNCTUATION):
+        status.reply_stopped(conn)
+        return
+    status.reply_stopped(conn, interrupted=True)
+    conn.gateway_resume = (rest, current["request_id"])
+    conn.gateway_interrupted_at = time.time()
+    # Leave time for the new question before saying the rest (a question clears this, hand_over)
+    conn.bot_input_until = time.monotonic() + RESUME_SECONDS
+    conn.logger.bind(tag=TAG).info(f"回复被打断，剩下的待会接着说: {rest[:30]}")
+
+
+def _question_prefix(conn, reply):
+    """「你刚才问……」 for an answer to a question asked after an interruption, else ""."""
+    since = getattr(conn, "gateway_interrupted_at", 0)
+    if not (since and reply.question and isinstance(reply.created, (int, float)) and reply.created >= since):
+        return ""
+    return f"你刚才问「{reply.question.strip(_PUNCTUATION)}」："
+
+
 async def deliver(conn, agent):
-    """Say the next answer that is ready; True when one was started."""
+    """Say the rest of an interrupted answer, else the next answer that is ready;
+    "resumed" / True when one was started."""
     async with _delivery_lock:
         if (conn.stop_event.is_set() or _busy(conn) or not conn.tts
                 or time.monotonic() < getattr(conn, "bot_input_until", 0)):
             return
+        resume = getattr(conn, "gateway_resume", None)
+        if resume:
+            conn.gateway_resume = None
+            status.reply_resumed(conn, resume[1])
+            await say_reply(conn, TextDelta(resume[0]), resume[1])
+            conn.logger.bind(tag=TAG).info(f"接着说被打断的回复: {resume[1]}")
+            return "resumed"
         reply = agent.next_reply(conn)
         if reply is None:
             return
         text = reply.text
+        prefix = _question_prefix(conn, reply)
+        if prefix:
+            text = prefix + text
         # An answer to a request from an earlier connection (interrupted, timed out, or the board
         # slept in between) needs context: "硬件做完了：……"
-        if isinstance(reply.created, (int, float)) and reply.created < getattr(conn, "bot_reply_since", 0):
+        elif isinstance(reply.created, (int, float)) and reply.created < getattr(conn, "bot_reply_since", 0):
             text = agent.done_prefix(conn) + text
+        status.reply_started(conn, reply.request_id, reply.text, reply.question, agent.label(conn.config))
         await say_reply(conn, TextDelta(text), reply.request_id)
         agent.delivered(conn, reply)
+        if prefix and not agent.waiting_since(conn):
+            conn.gateway_interrupted_at = 0  # every question since the interruption is answered
         conn.logger.bind(tag=TAG).info(f"迟到的回复已交给板子朗读和显示: {reply.request_id}")
         return True
 
@@ -128,6 +209,10 @@ async def hold_connection(conn):
 
 def resume_input(conn):
     """Wake or button while waiting: listen again, the answer is still said when it comes."""
+    if getattr(conn, "gateway_resume", None):
+        # Woken again before the rest of an interrupted answer was said: the user speaks first
+        # (2026-11-02: the rest started right over a new wake, the question was never heard)
+        conn.bot_input_until = time.monotonic() + RESUME_SECONDS
     if getattr(conn, "bot_ui_waiting", False):
         conn.bot_ui_waiting = False
         conn.bot_input_until = time.monotonic() + RESUME_SECONDS
@@ -151,7 +236,8 @@ async def watch(conn, agent):
         except Exception as error:
             # Unanswered requests survive disconnects/restarts and are retried on hello.
             conn.logger.bind(tag=TAG).warning(f"迟到的回复暂缓处理: {type(error).__name__}")
-        await asyncio.sleep(10 if delivered else 1)
+        # The rest of an interrupted answer: the next answer may follow as soon as it ends
+        await asyncio.sleep(10 if delivered is True else 1)
 
 
 def start(conn, agent):

@@ -323,6 +323,11 @@ async def send_tts_message(conn: "ConnectionHandler", state, text=None):
     message = {"type": "tts", "state": state, "session_id": conn.session_id}
     if text is not None:
         message["text"] = textUtils.check_emoji(text)
+    if state == "sentence_start":
+        # 网关记下 Bot 回复念到哪一句了：被打断时接着说剩下的（core/gateway/waiting.py）
+        from core.gateway import waiting
+
+        waiting.note_sentence(conn, text)
 
     # TTS播放结束
     if state == "stop":
@@ -342,6 +347,11 @@ async def send_tts_message(conn: "ConnectionHandler", state, text=None):
         # 检查是否是当前轮次
         if current_sentence_id != conn.sentence_id:
             return
+        # 声音都发完了才算念完（2026-11-02：在开始发最后一句时就记，音箱还在念、过了 3 秒宽限被打断，
+        # 剩下的没记下）
+        from core.gateway import waiting
+
+        waiting.note_stop(conn)
 
         # 停止音频发送循环（仅在流控器已初始化时调用）
         if hasattr(conn, "audio_rate_controller") and conn.audio_rate_controller:

@@ -39,7 +39,7 @@ async def warm(conn, texts=PHRASES):
             packets = await asyncio.to_thread(conn.tts.to_tts, text)
             if isinstance(packets, list) and packets:
                 _cache[key] = packets
-                conn.logger.bind(tag=__name__).info(f"Phrase cached: {text}")
+                conn.logger.bind(tag=__name__).debug(f"Phrase cached: {text}")
         except Exception as error:
             conn.logger.bind(tag=__name__).warning(f"Phrase cache skipped: {type(error).__name__}")
         finally:

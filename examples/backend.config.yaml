@@ -49,6 +49,10 @@ grok_bot:
 #   call_names:             # 呼名"嗨 <称呼>"；不写时 Grok Bot 用 grok_bot.bot_name，没有名字时用 Grok Bot、Grok
 #     grok_bot: [硬件]
 #   password: 换成你自己的口令  # 网关页面（/gateway）改设置前要先输口令；不写时打开页面就能改
+#   xiaoai:                 # 小米音箱直接接进后端（刷机、Client、唤醒词模型见 docs/GUIDE.md），默认关
+#     enabled: true
+#     port: 4399
+#     token_file: /完整路径/token.txt  # 和音箱上的 token 一样
 prompt: 你是宗主，用简洁自然的中文回答用户，适合语音播报。
 wakeup_words: [你好宗主, 你好小智, 嘿你好呀]
 enable_greeting: true

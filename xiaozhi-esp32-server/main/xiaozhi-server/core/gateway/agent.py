@@ -36,6 +36,7 @@ class Reply:
     text: str
     created: Optional[float] = None  # when the request was sent (time.time())
     ref: object = None  # whatever the module needs back in `delivered`
+    question: Optional[str] = None  # the sentence that was handed over, when the module kept it
 
 
 class Agent:
@@ -162,6 +163,10 @@ async def hand_over(conn, agent, text) -> bool:
     if conn.client_abort:
         return True
     text = error.voice_message if error else said
+    if said and error is None:
+        from core.gateway import status
+
+        status.reply_text(conn, said)  # shown under the sentence on the gateway page (G23)
     if not acked:
         speak_txt(conn, text or agent.accepted)
     elif text:
@@ -181,6 +186,7 @@ async def _say_after_ack(conn, text, show):
         }, ensure_ascii=False))
         conn.bot_ui_waiting = False
     conn.sentence_id = uuid.uuid4().hex
+    conn.gateway_last_said = (time.time(), text)
     await send_tts_message(conn, "start")
     conn.client_is_speaking = True
     speak_txt(conn, text)
@@ -191,9 +197,12 @@ async def say_reply(conn, reply: TextDelta, request_id):
     from core.handle.intentHandler import speak_txt
 
     text = reply.text
+    conn.gateway_last_said = (time.time(), text)  # a question in it lets a bare "对" through (gateway.is_filler)
     sentence_id = uuid.uuid4().hex
     conn.sentence_id = sentence_id
     conn.bot_reply_sentence_id = sentence_id
+    # What is being said, so an interruption can keep the rest (waiting.on_abort)
+    conn.gateway_reply_now = {"text": text, "request_id": request_id, "sentence_id": sentence_id, "said": []}
     conn.client_abort = False
     conn.client_is_speaking = True
     conn.last_activity_time = time.time() * 1000

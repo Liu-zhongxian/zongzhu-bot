@@ -137,3 +137,80 @@ def music_status() -> dict:
     except Exception:  # mpv went away
         state = "stopped"
     return {"state": state, "title": song.name, "artist": song.artist, "mac_volume": volume}
+
+
+# G8b step 5: wake words and call names set on this page (core/gateway/settings.py), in effect at once
+SETTING_ACTIONS = {"set_speaker_wake_words", "set_call_names"}
+
+
+def settings_view(config) -> dict:
+    """What the page shows and edits."""
+    from core import gateway
+    from core.gateway.xiaoai import control as speaker_control, server as speaker_server
+
+    server = speaker_control.server
+    names = gateway.agent_call_names(config)
+    return {
+        "speaker": server is not None,
+        "speaker_wake_words": speaker_server.wake_words(config),
+        "skipped": list(server.skipped) if server else [],
+        "call_names": [{"agent": name, "label": gateway.AGENTS[name].label(config),
+                        "names": [names[name]] if isinstance(names[name], str) else list(names[name] or [])}
+                       for name in names],
+    }
+
+
+async def settings_action(config, action, value) -> dict:
+    from core import gateway
+    from core.gateway import settings
+    from core.gateway.xiaoai import control as speaker_control
+
+    try:
+        if action == "set_speaker_wake_words":
+            words = settings.words(value)
+            settings.put("speaker_wake_words", words)
+            message = f"音箱唤醒词改成：{'、'.join(words)}。"
+        else:
+            agent = (value or {}).get("agent") if isinstance(value, dict) else None
+            if agent not in gateway.agent_call_names(config):
+                raise ControlError("没有这个 AI")
+            words = settings.words((value or {}).get("names", ""), allow_empty=True)
+            saved = settings.get("call_names") or {}
+            saved[agent] = words
+            settings.put("call_names", saved)
+            label = gateway.AGENTS[agent].label(config)
+            message = f"{label} 的呼名改成：{'、'.join(words)}。" if words else f"{label} 不再能用名字叫。"
+    except settings.SettingError as e:
+        raise ControlError(str(e)) from None
+    server = speaker_control.server
+    if server:
+        # 呼名也是音箱的唤醒词，两种改动都要重载音箱的唤醒词识别
+        _, skipped = await server.reload()
+        if skipped:
+            message += f"唤醒词模型认不了这些，音箱不会被它们唤醒：{'、'.join(skipped)}。"
+    return {"message": message}
+
+
+async def board_wake_word(config, conn, text) -> dict:
+    """G8b step 5: a new wake word for this board, from the page. Same as tools/wake_word.py: the
+    resource package of the board's firmware version gets the new word, the board reboots and downloads it."""
+    from core.gateway import wake_assets
+
+    text = str(text or "").strip()
+    command = wake_assets.pinyin_command(text) if text else ""
+    reason = wake_assets.check_wake_word(text, command)
+    if reason:
+        raise ControlError(reason)
+    board = status._boards.get(conn.device_id, {})
+    source, reason = wake_assets.package_assets(wake_assets.firmware_root(config), board.get("type", ""),
+                                                board.get("version", ""))
+    if reason:
+        raise ControlError(reason)
+    try:
+        image = await asyncio.to_thread(source.read_bytes)
+        result = await wake_assets.change_wake_word(conn, image, text, command, reboot=True)
+    except (ValueError, RuntimeError) as e:
+        raise ControlError(f"没改成：{e}") from None
+    status.note_new_wake_word(conn.device_id, text)
+    return {"message": f"板子正在重启，开机下载资源包（约 {result['size'] / 1024 / 1024:.1f} MB，屏幕显示进度，"
+                       f"下载时不要断电）。之后说「{text}」唤醒。" + (result.get("note") or "")}
