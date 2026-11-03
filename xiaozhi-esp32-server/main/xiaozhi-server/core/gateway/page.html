@@ -194,6 +194,8 @@ section[hidden] { display: none; }
   </main>
 </div>
 <div id="toast" hidden></div>
+<!-- G18c: one file picker outside the device page, so redrawing the page never loses the file picked -->
+<input type="file" id="fw-file" accept=".bin" hidden>
 
 <script>
 const PAGES = [["overview", "◎", "总览"], ["devices", "▣", "设备"], ["log", "☰", "最近的话"], ["tasks", "⇄", "转交任务"],
@@ -268,6 +270,43 @@ async function post(url, body) {
   if (!response.ok) throw new Error(result.error || response.status);
   return result;
 }
+// G18c: firmware for this board: upload (checked by the backend), then now or at next boot
+async function uploadFirmware(device, file, force) {
+  toast(`正在上传 ${file.name}（${mb(file.size)}）……`);
+  try {
+    const response = await fetch(`/gateway/api/firmware?device=${encodeURIComponent(device)}${force ? "&force=1" : ""}`,
+      { method: "POST", headers: { "Content-Type": "application/octet-stream", "X-Gateway-Token": token }, body: file });
+    const result = await response.json().catch(() => ({ error: "后端没有回应" }));
+    if (response.status === 409 && result.confirm) { if (confirm(result.confirm)) return uploadFirmware(device, file, true); return; }
+    if (!response.ok) throw new Error(result.error || response.status);
+    toast(`收下了：${result.version}（${result.built} 编译）。` + (result.newer
+      ? "这个型号的板子下次开机会自己更新；板子醒着时也可以点「立即更新」。"
+      : "不比板子上的新，开机不会自动装，要装就点「立即更新」。"));
+  } catch (e) { toast(e.message, true); }
+  refresh();
+}
+function firmwareBlock(b) {
+  if (!canControl() || !(b.info?.tools || []).some(t => t.name === "self.upgrade_firmware")) return "";
+  const files = (data.firmware || []).filter(f => f.type === b.type), dev = esc(b.id);
+  return `<h4>固件 <small>板子上是 ${esc(b.version || "—")}</small></h4>
+    <div class="btns"><button class="btn" data-upload data-dev="${dev}">选择固件文件并上传</button></div>
+    ${files.map(f => `<div class="say"><span>${esc(f.version)} · ${mb(f.size)} · ${clock(f.time)} 传的</span>
+      <button class="btn danger" data-act="firmware_now" data-dev="${dev}" data-val="${esc(f.file)}" ${b.online ? "" : "disabled"}
+        data-ask="给${esc(b.name)}装 ${esc(f.version)}？板子会下载、写入、重启，下载时不要断电。">立即更新</button>
+      <button class="btn" data-act="firmware_delete" data-val="${esc(f.file)}" data-ask="删掉 ${esc(f.file)}？">删除</button></div>`).join("")}
+    <p class="note">选编译出来的 xiaozhi.bin，选好就上传。上传时检查：是不是小智固件、型号和芯片对不对、版本是不是更新；型号不对的直接拒绝。
+      比板子新的，这个型号的板子下次开机自己下载更新；「立即更新」要板子醒着。新固件起不来会退回旧版。</p>`;
+}
+let uploadFor = "";  // the board the picker was opened for
+document.addEventListener("click", e => {
+  const b = e.target.closest("button[data-upload]"); if (!b) return;
+  uploadFor = b.dataset.dev; document.getElementById("fw-file").click();
+});
+document.getElementById("fw-file").addEventListener("change", e => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = "";  // picking the same file again fires change again
+  if (file) uploadFirmware(uploadFor, file);
+});
 // The speaker's play / pause button flips at once; it flips back if the speaker says no
 const FLIP = { speaker_play: "playing", speaker_pause: "paused" };
 async function act(action, device, value, ask, slider) {
@@ -349,10 +388,22 @@ function boardControls(b, i) {
       : "只能是中文（2–8 个字，4–6 个字最好）。板子重启、下载资源包后生效，不用刷固件。"}</p>` : ""}`;
 }
 const kv = rows => `<dl class="kv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v ?? "—"}</dd>`).join("")}</dl>`;
+// Redrawing keeps what is typed into the text boxes (wake words, call names, "说一句话") and where the
+// cursor is, so nothing has to pause the page (2026-11-03 你定：只有拖滑块时才不重画)
+function keepTyping(el, draw) {
+  const typed = new Map([...el.querySelectorAll("input[data-keep]")].filter(x => x.value !== x.defaultValue || x === document.activeElement)
+    .map(x => [x.id, { value: x.value, focus: x === document.activeElement, start: x.selectionStart, end: x.selectionEnd }]));
+  draw();
+  for (const [id, t] of typed) {
+    const x = document.getElementById(id); if (!x) continue;
+    x.value = t.value;
+    if (t.focus) { x.focus(); try { x.setSelectionRange(t.start, t.end); } catch (e) {} }
+  }
+}
 function renderDevices() {
   const el = document.getElementById("devices");
   if (!data.boards.length) { el.innerHTML = `<div class="card empty">后端启动以来还没有板子连上来。</div>`; return; }
-  el.innerHTML = data.boards.map(b => {
+  keepTyping(el, () => el.innerHTML = data.boards.map(b => {
     const i = b.info;
     const head = `<h3><span class="dot ${b.online ? "" : "off"}"></span>${esc(b.name)}</h3>
       <div class="sub">${esc([b.id, b.type].filter(Boolean).join(" · "))}</div>`;
@@ -377,12 +428,13 @@ function renderDevices() {
         <div><h4>声音和屏幕</h4>${kv([["音量", i.volume], ["亮度", i.brightness]])}</div>
       </div>
       ${boardControls(b, i)}
+      ${firmwareBlock(b)}
       <h4>MCP 工具（${tools.length}）</h4>
       <div class="tools">${tools.length ? tools.map(t => `<span class="pill ${t.user_only ? "" : "acc"}" title="${esc(t.description)}">${esc(t.name)}${t.user_only ? " · 仅后端" : ""}</span>`).join("") : `<span class="note">没读到</span>`}</div>
       <p class="note">紫色是 AI 能调的工具；"仅后端"的不给 AI，只有后端能调（改唤醒词、重启、升级固件都用它们）。最低剩余内存是开机以来的最低值；固件不报 PSRAM。
         ${b.online ? "" : "板子待机中，"}读取于 ${clock(i.read_at)}（${ago(i.read_at)}前）。</p>
     </div>`;
-  }).join("") + callNamesCard();
+  }).join("") + callNamesCard());
 }
 // G19d: the Xiaomi speaker (no MCP): what the backend reads on it with fixed read-only commands
 const PLAY = { idle: "没在放", playing: "在放", paused: "暂停" };
@@ -555,9 +607,8 @@ function renderLog() {
 }
 function render() {
   renderNav(); renderStats(); renderBoards(); renderModules(); renderLog(); renderTasks(); renderFlow(); renderLogin();
-  // Re-rendering would reset a slider while it is being dragged
-  // ...and would wipe what is being typed into "说一句话"
-  if (Date.now() > busyUntil && !document.querySelector("#devices input:active, #music input:active, #devices input[data-keep]:focus")) { renderDevices(); renderMusic(); }
+  // Only a slider stops the redraw (it would jump back while being dragged); typed text is kept (keepTyping)
+  if (Date.now() > busyUntil && !document.querySelector("#devices input[type=range]:active, #music input[type=range]:active")) { renderDevices(); renderMusic(); }
 }
 
 async function refresh() {
