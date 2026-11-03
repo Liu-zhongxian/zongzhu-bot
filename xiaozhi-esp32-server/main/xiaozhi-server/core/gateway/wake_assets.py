@@ -161,3 +161,34 @@ async def change_wake_word(conn, source: bytes, text: str, command: str, reboot:
             # 实机：板子收到后立刻断开重启，来不及回应（2026-10-30）。地址已经存进板子，不算失败。
             result["note"] = "重启指令没收到回应：板子多半已经在重启；如果没有重启，请手动重启。"
     return result
+
+
+# 板子上报的型号（OTA 的 board.type）里带的字 → web/boards.json 的 id
+BOARD_IDS = (("lichuang", "szp"), ("amoled-1.75", "1.75c"), ("stopwatch", "stopwatch"))
+# 仓库根目录（里面有 firmware/ 和 web/boards.json）：后端在仓库里跑时就是往上三层；
+# 后端拷到别处跑时在配置里写 gateway.firmware_root
+DEFAULT_ROOT = Path(__file__).resolve().parents[5]
+
+
+def firmware_root(config) -> Path:
+    root = (config.get("gateway") or {}).get("firmware_root")
+    return Path(root).expanduser() if root else DEFAULT_ROOT
+
+
+def package_assets(root: Path, board_type: str, version: str):
+    """(资源包路径, None)，或 (None, 原因)：仓库 firmware/ 里和这块板子同型号、同版本的资源包
+    （资源包里还有字库和表情，必须和固件同一版）。"""
+    board_id = next((i for key, i in BOARD_IDS if key in (board_type or "")), None)
+    if board_id is None:
+        return None, f"不认识的板子型号 {board_type or '（未知）'}"
+    try:
+        entry = next(b for b in json.loads((root / "web" / "boards.json").read_text()) if b["id"] == board_id)
+    except (OSError, ValueError, StopIteration):
+        return None, f"找不到 {root / 'web' / 'boards.json'}：配置里的 gateway.firmware_root 要指向仓库根目录"
+    if not entry["package"].endswith("-" + (version or "")):
+        return None, (f"板子上是 {version or '未知版本'}，仓库里的资源包是 {entry['package']}：资源包必须和固件同一版，"
+                      "请先刷同一版固件")
+    path = root / "firmware" / entry["package"] / entry["assets"]
+    if not path.is_file():
+        return None, f"找不到资源包 {path}"
+    return path, None

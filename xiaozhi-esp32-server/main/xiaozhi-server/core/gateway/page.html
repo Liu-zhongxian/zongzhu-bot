@@ -218,7 +218,7 @@ function renderBoards() {
       <h3><span class="dot ${b.online ? "" : "off"}"></span>${esc(b.name)}</h3>
       <div class="sub">${esc([b.type, b.version].filter(Boolean).join(" · "))}</div>
       <dl class="kv"><dt>现在</dt><dd>${stateText(b.state)}</dd>
-      <dt>唤醒词</dt><dd>${esc(b.wake || "—")}</dd>
+      <dt>唤醒词</dt><dd>${esc(b.wake || "—")}${b.wake_pending ? `<span class="pill">等重启下载后生效</span>` : ""}</dd>
       <dt>交给</dt><dd>${esc(b.agent)}</dd>
       <dt>地址</dt><dd>${esc(b.ip || "—")}</dd>
       ${b.online ? "" : `<dt>上次</dt><dd>${b.seen ? clock(b.seen) : "—"}</dd>`}</dl>
@@ -318,7 +318,13 @@ function boardControls(b, i) {
       <button class="btn danger" data-act="reboot" data-dev="${esc(b.id)}" data-ask="重启${esc(b.name)}？重启后十几秒会自己连回来。" ${off ? "disabled" : ""}>重启板子</button>
       ${tools.has("self.system.reconfigure_wifi") ? `<button class="btn danger" data-act="wifi_config" data-dev="${esc(b.id)}"
         data-ask="让${esc(b.name)}进入配网模式？板子会断开 WiFi，要用手机连它的配网热点重新选 WiFi。" ${off ? "disabled" : ""}>WiFi 配网</button>` : ""}
-    </div>`;
+    </div>
+    ${tools.has("self.assets.set_download_url") ? `<h4>唤醒词</h4>
+    <div class="say"><input id="wake-${esc(b.id).replace(/\W/g, "")}" data-keep value="${esc(b.wake || "")}" placeholder="中文，2–8 个字，比如 你好宗主" ${off ? "disabled" : ""}>
+      <button class="btn danger" data-act="board_wake_word" data-dev="${esc(b.id)}" data-from="wake-${esc(b.id).replace(/\W/g, "")}"
+        data-ask="改${esc(b.name)}的唤醒词？板子会重启，开机下载约 4–5 MB 的资源包，下载时不要断电。" ${off ? "disabled" : ""}>保存并重启</button></div>
+    <p class="note">${b.wake_pending ? `<b>「${esc(b.wake)}」已发给板子，等它重启、下载资源包后生效</b>（屏幕上有进度）；用新唤醒词叫醒一次后这行提示消失。`
+      : "只能是中文（2–8 个字，4–6 个字最好）。板子重启、下载资源包后生效，不用刷固件。"}</p>` : ""}`;
 }
 const kv = rows => `<dl class="kv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v ?? "—"}</dd>`).join("")}</dl>`;
 function renderDevices() {

@@ -649,3 +649,39 @@ class PageSettingsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(server.wake_words(self.config), ["宗主", "你好宗主"])
         with self.assertRaises(control.ControlError):
             await control.settings_action(self.config, "set_speaker_wake_words", "")  # 至少留一个
+
+
+class BoardWakeWordTest(unittest.IsolatedAsyncioTestCase):
+    """G8b 第 5 步：网关页面上改板子的唤醒词（和 tools/wake_word.py 同一套）。"""
+
+    def setUp(self):
+        from core.gateway import status
+        self.status = status
+        status._boards["aa:bb:cc:dd:ee:01"] = {"type": "lichuang-dev", "version": "2.5.2.9"}
+        self.addCleanup(status._boards.pop, "aa:bb:cc:dd:ee:01", None)
+        self.conn = SimpleNamespace(device_id="aa:bb:cc:dd:ee:01", config={})
+
+    async def test_finds_the_same_version_package_and_reboots_the_board(self):
+        from core.gateway import control, wake_assets
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "assets.bin"
+            source.write_bytes(b"ASSETS")
+            with mock.patch.object(wake_assets, "package_assets", return_value=(source, None)) as find, \
+                    mock.patch.object(wake_assets, "change_wake_word",
+                                      mock.AsyncMock(return_value={"size": 4 * 1024 * 1024})) as change:
+                result = await control.board_wake_word({}, self.conn, "你好小雨")
+        self.assertEqual(find.call_args.args[1:], ("lichuang-dev", "2.5.2.9"))
+        change.assert_awaited_once_with(self.conn, b"ASSETS", "你好小雨", "ni hao xiao yu", reboot=True)
+        self.assertIn("你好小雨", result["message"])
+
+    async def test_bad_word_or_wrong_version_is_refused_before_the_board_is_touched(self):
+        from core.gateway import control, wake_assets
+        with mock.patch.object(wake_assets, "change_wake_word", mock.AsyncMock()) as change:
+            for word in ("hello", "宗", "你好宗主你好宗主你好"):
+                with self.assertRaises(control.ControlError):
+                    await control.board_wake_word({}, self.conn, word)
+            self.status._boards["aa:bb:cc:dd:ee:01"]["version"] = "2.5.2.1"
+            with self.assertRaises(control.ControlError) as caught:
+                await control.board_wake_word({}, self.conn, "你好小雨")
+        self.assertIn("同一版", str(caught.exception))
+        change.assert_not_awaited()

@@ -231,6 +231,29 @@ class StatusTest(unittest.IsolatedAsyncioTestCase):
         board = {b["name"]: b for b in status.snapshot(CONFIG)["boards"]}["小米音箱 Pro"]
         self.assertEqual(board["info"]["speaker"]["play"], "playing")
 
+    def test_new_board_wake_word_shows_until_the_board_uses_it(self):
+        # 2026-11-03：页面上改了唤醒词，板子重启、下载后，要用新词叫醒一次页面上才变
+        status.note_ota("94:a9:90:2d:a3:70", "lichuang-dev", "2.5.2.9", "192.168.1.20")
+        conn = make_conn()
+        status.connected(conn)
+        status.note_new_wake_word("94:a9:90:2d:a3:70", "你好小赵")
+        board = {b["name"]: b for b in status.snapshot(CONFIG)["boards"]}["立创实战派"]
+        self.assertEqual((board["wake"], board["wake_pending"]), ("你好小赵", True))
+        status.disconnected(conn)  # 重启断开时记下的是旧词，不能盖掉新词
+        board = {b["name"]: b for b in status.snapshot(CONFIG)["boards"]}["立创实战派"]
+        self.assertEqual((board["wake"], board["wake_pending"]), ("你好小赵", True))
+        status.connected(make_conn(device_wake_word="你好小赵"))  # 用新词叫醒了
+        board = {b["name"]: b for b in status.snapshot(CONFIG)["boards"]}["立创实战派"]
+        self.assertEqual((board["wake"], board["wake_pending"]), ("你好小赵", False))
+
+    def test_pending_wake_word_gives_way_when_the_board_keeps_the_old_one(self):
+        status.note_ota("94:a9:90:2d:a3:70", "lichuang-dev", "2.5.2.9", "192.168.1.20")
+        status.note_new_wake_word("94:a9:90:2d:a3:70", "你好小赵")
+        status._boards["94:a9:90:2d:a3:70"]["wake_new_at"] -= status.WAKE_PENDING_SECONDS + 1
+        status.connected(make_conn())  # 下载失败，板子还在用你好宗主
+        board = {b["name"]: b for b in status.snapshot(CONFIG)["boards"]}["立创实战派"]
+        self.assertEqual((board["wake"], board["wake_pending"]), ("你好宗主", False))
+
     def recent(self):
         return status.snapshot(CONFIG)["recent"]
 

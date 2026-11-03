@@ -125,6 +125,33 @@ def disconnected(conn):
         _save()
 
 
+# A new board wake word sent from the page waits for the board to reboot and download it; the board
+# only says which word it uses when it is woken. Until then the page shows the new word as pending
+# (2026-11-03: it kept showing the old one until the board was woken with the new word).
+WAKE_PENDING_SECONDS = 120
+
+
+def note_new_wake_word(device_id, text):
+    board = _boards.setdefault(device_id, {})
+    board["wake_new"], board["wake_new_at"] = text, time.time()
+    _save()
+
+
+def _wake_of(device_id, info, conn, now):
+    """(wake word to show, pending): a pending new word until the board is heard using a word."""
+    heard = (getattr(conn, "device_wake_word", None) if conn else None) or info.get("wake", "")
+    new = info.get("wake_new")
+    if not new:
+        return heard, False
+    if heard == new or (heard and now - info.get("wake_new_at", 0) > WAKE_PENDING_SECONDS):
+        # In use now, or the board still uses another word long after the change (the download failed)
+        board = _boards.get(device_id, {})
+        board.pop("wake_new", None)
+        board.pop("wake_new_at", None)
+        return heard, False
+    return new, True
+
+
 def note_asr(conn, before, after, started=None):
     """Recognised text before and after the correction table, for the sentence that follows.
 
@@ -318,8 +345,8 @@ def snapshot(config):
         boards.append({
             "id": device_id[-5:], "name": name, "type": info.get("type", ""), "version": info.get("version", ""),
             "ip": (conn.client_ip if conn else None) or info.get("ip", ""), "online": bool(conns) or linked,
-            "wake": (info.get("wake") if bridge else None)
-            or (getattr(conn, "device_wake_word", None) if conn else None) or info.get("wake", ""),
+            "wake": info.get("wake", "") if bridge else _wake_of(device_id, info, conn, now)[0],
+            "wake_pending": False if bridge else _wake_of(device_id, info, conn, now)[1],
             "agent": _agent_label(_agent(conn, device_id, agent), config),
             "state": _state(conn, now) if conn else {"kind": "standby" if linked else "offline"},
             "seen": info.get("seen"),

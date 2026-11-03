@@ -73,6 +73,11 @@ class GatewayPageHandler:
         try:
             if action in control.MUSIC_ACTIONS:
                 return web.json_response(await control.music_action(action, body.get("value")))
+            if action == "board_wake_word":
+                conn, reason = _board_conn(body.get("device"))
+                if conn is None:
+                    return web.json_response({"error": reason.replace("再马上运行", "再点")}, status=409)
+                return web.json_response(await control.board_wake_word(self.config, conn, body.get("value")))
             if action in control.SETTING_ACTIONS:
                 return web.json_response(await control.settings_action(self.config, action, body.get("value")))
             if action in speaker_control.ACTIONS:

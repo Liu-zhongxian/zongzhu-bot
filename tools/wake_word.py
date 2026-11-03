@@ -10,7 +10,6 @@
   4. 板子开机下载约 4–5 MB（屏幕显示进度），之后用新唤醒词。下载过程中不要断电。
 """
 import argparse
-import json
 import sys
 import time
 from pathlib import Path
@@ -19,22 +18,8 @@ import httpx
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "xiaozhi-esp32-server/main/xiaozhi-server"))
-from core.gateway.wake_assets import check_wake_word, pinyin_command, read_assets, wake_word_of  # noqa: E402
-
-# 板子上报的型号（OTA 的 board.type）里带的字 → web/boards.json 的 id
-BOARD_IDS = (("lichuang", "szp"), ("amoled-1.75", "1.75c"), ("stopwatch", "stopwatch"))
-
-
-def package_assets(board):
-    """firmware/ 里和这块板子同型号、同版本的资源包；找不到时说明原因。"""
-    board_id = next((i for key, i in BOARD_IDS if key in board["type"]), None)
-    if board_id is None:
-        return None, f"不认识的板子型号 {board['type'] or '（未知）'}，请用 --assets 指定资源包"
-    entry = next(b for b in json.loads((ROOT / "web/boards.json").read_text()) if b["id"] == board_id)
-    if not entry["package"].endswith("-" + board["version"]):
-        return None, (f"板子上是 {board['version'] or '未知版本'}，firmware/ 里是 {entry['package']}：资源包必须和固件同一版，"
-                      "请先刷同一版固件，或用 --assets 指定对应版本的资源包")
-    return ROOT / "firmware" / entry["package"] / entry["assets"], None
+from core.gateway.wake_assets import (check_wake_word, package_assets, pinyin_command, read_assets,  # noqa: E402
+                                      wake_word_of)
 
 
 def wait_for_board(client, device, timeout):
@@ -78,9 +63,9 @@ def main():
 
     with httpx.Client(base_url=args.server, trust_env=False, timeout=30) as client:
         board = wait_for_board(client, args.device, args.wait)
-        source, reason = (args.assets, None) if args.assets else package_assets(board)
+        source, reason = (args.assets, None) if args.assets else package_assets(ROOT, board["type"], board["version"])
         if reason:
-            sys.exit(reason)
+            sys.exit(reason + "（也可以用 --assets 指定对应版本的资源包）")
         image = source.read_bytes()
         read_assets(image)
         old = wake_word_of(image) or {}

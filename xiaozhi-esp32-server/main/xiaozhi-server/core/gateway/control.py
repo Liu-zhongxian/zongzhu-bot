@@ -189,3 +189,28 @@ async def settings_action(config, action, value) -> dict:
         if skipped:
             message += f"唤醒词模型认不了这些，音箱不会被它们唤醒：{'、'.join(skipped)}。"
     return {"message": message}
+
+
+async def board_wake_word(config, conn, text) -> dict:
+    """G8b step 5: a new wake word for this board, from the page. Same as tools/wake_word.py: the
+    resource package of the board's firmware version gets the new word, the board reboots and downloads it."""
+    from core.gateway import wake_assets
+
+    text = str(text or "").strip()
+    command = wake_assets.pinyin_command(text) if text else ""
+    reason = wake_assets.check_wake_word(text, command)
+    if reason:
+        raise ControlError(reason)
+    board = status._boards.get(conn.device_id, {})
+    source, reason = wake_assets.package_assets(wake_assets.firmware_root(config), board.get("type", ""),
+                                                board.get("version", ""))
+    if reason:
+        raise ControlError(reason)
+    try:
+        image = await asyncio.to_thread(source.read_bytes)
+        result = await wake_assets.change_wake_word(conn, image, text, command, reboot=True)
+    except (ValueError, RuntimeError) as e:
+        raise ControlError(f"没改成：{e}") from None
+    status.note_new_wake_word(conn.device_id, text)
+    return {"message": f"板子正在重启，开机下载资源包（约 {result['size'] / 1024 / 1024:.1f} MB，屏幕显示进度，"
+                       f"下载时不要断电）。之后说「{text}」唤醒。" + (result.get("note") or "")}
