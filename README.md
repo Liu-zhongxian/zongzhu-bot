@@ -94,7 +94,7 @@
   - 微雪 ESP32-S3-Touch-AMOLED-1.75C；
   - 立创·实战派 ESP32-S3（[说明](docs/BOARD-SZP.md)）。
   - M5Stack StopWatch 也能编译，但还没上过实机（[说明](docs/BOARD-STOPWATCH.md)）。
-- **电脑**：一台常开的 Mac（在 Apple 芯片上验证过）运行后端，要和板子在同一个 2.4GHz 局域网。有公网服务器也可以[部署到服务器](deploy/README.md)。
+- **电脑**：一台常开的 Mac（在 Apple 芯片上验证过）运行后端，要和板子在同一个 2.4GHz 局域网。也可以[用 Docker 运行](deploy/docker/README.md)（点歌除外），或[部署到公网服务器](deploy/README.md)。
 - **Bot**：你的 Grok Bot 要提供 Webhook，并且**能往这台电脑写文件**，回复才能回到板子上（[接口要求](docs/GUIDE.md#bot-接口要求)）。
 
 ## 快速开始
@@ -146,6 +146,7 @@ bash tools/local_music_setup.sh    # 下载 go-music-dl 和 mpv 到 local-music/
 | --- | --- |
 | [docs/GUIDE.md](docs/GUIDE.md) | 使用说明：功能、网关页面、本机点歌、小米音箱、手动安装、刷机、常见问题、Bot 接口、构建、测试、已知限制 |
 | [docs/README.md](docs/README.md) | 全部文档目录，包括各板说明 |
+| [deploy/docker/README.md](deploy/docker/README.md) | 用 Docker 运行后端 |
 | [deploy/README.md](deploy/README.md) | 部署到公网服务器 |
 | [zongzhu-speaker/README.md](zongzhu-speaker/README.md) | 小米智能音箱 Pro 的刷机和 Client |
 
@@ -158,7 +159,7 @@ bash tools/local_music_setup.sh    # 下载 go-music-dl 和 mpv 到 local-music/
 | 固件 | `xiaozhi-esp32/main/boards/common/zongzhu/` 和各板目录 |
 | 后端 | `xiaozhi-esp32-server/main/xiaozhi-server/core/` 下的这几处：<br>`gateway/`：网关和网关页面；点歌在 `gateway/skills/music/`，小米音箱在 `gateway/xiaoai/`，固件发布在 `gateway/releases.py`<br>`handle/grokBot*.py`：Bot 的提交和回复<br>`utils/asr_text.py`：热词和纠错 |
 | 小米音箱这一边 | `zongzhu-speaker/`：补丁、Client 源码和刷机、安装脚本 |
-| 其他 | `web/`（网页刷机）、`tools/`（编译、发布固件、改唤醒词）、`deploy/`、`examples/`、`docs/` |
+| 其他 | `web/`（网页刷机）、`tools/`（编译、发布固件、改唤醒词）、`deploy/`（服务器、Docker）、`examples/`、`docs/` |
 
 两个上游目录里其余的代码基本保持原样，方便以后合并上游、跟上小智固件的更新。上游基线的提交记录在 `UPSTREAM.json`。
 

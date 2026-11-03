@@ -4,7 +4,9 @@
 encoder.onnx、decoder.onnx、joiner.onnx、tokens.txt、bpe.model），放在 `gateway.xiaoai.kws_model_dir`
 （默认 models/sherpa-onnx-kws-open-xiaoai/，.gitignore 已排除 models/sherpa-onnx*）。
 """
+import os
 import queue
+import tempfile
 import threading
 from pathlib import Path
 
@@ -51,15 +53,20 @@ class Spotter:
                    if not (model / n).exists()]
         if missing:
             raise FileNotFoundError(f"唤醒词模型缺文件：{model} {missing}")
-        keywords = model / "keywords.zongzhu.txt"
         self.skipped = []
-        keywords.write_text("\n".join(keyword_lines(words, str(model / "tokens.txt"), str(model / "bpe.model"),
-                                                    self.skipped)) + "\n", encoding="utf-8")
-        self.spotter = sherpa_onnx.KeywordSpotter(
-            tokens=str(model / "tokens.txt"), encoder=str(model / "encoder.onnx"),
-            decoder=str(model / "decoder.onnx"), joiner=str(model / "joiner.onnx"),
-            keywords_file=str(keywords), num_threads=1, provider="cpu", max_active_paths=8,
-            keywords_score=score, keywords_threshold=threshold, num_trailing_blanks=0)
+        lines = keyword_lines(words, str(model / "tokens.txt"), str(model / "bpe.model"), self.skipped)
+        # 关键词文件写到临时目录，建好就删：模型目录可以是只读的（Docker 里只读挂载，G21）
+        fd, keywords = tempfile.mkstemp(prefix="zongzhu-kws-", suffix=".txt")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
+            self.spotter = sherpa_onnx.KeywordSpotter(
+                tokens=str(model / "tokens.txt"), encoder=str(model / "encoder.onnx"),
+                decoder=str(model / "decoder.onnx"), joiner=str(model / "joiner.onnx"),
+                keywords_file=keywords, num_threads=1, provider="cpu", max_active_paths=8,
+                keywords_score=score, keywords_threshold=threshold, num_trailing_blanks=0)
+        finally:
+            os.unlink(keywords)
 
     def create_stream(self):
         return self.spotter.create_stream()

@@ -237,6 +237,8 @@ bash tools/autostart.sh enable    # 开启并马上启动；status 自检，rest
 
 仓库在"桌面""文稿""下载"里时，第一次会弹出"宗主后端"想访问文件夹的窗口，点"允许"。
 
+**用 Docker 运行**：装好一次以后，也可以把后端放进容器里跑（`deploy/docker/`），配置、模型、私人目录挂载进去，板子、音箱、网关页面、Bot 回复都照常；本机点歌在容器里用不了。步骤见 [deploy/docker/README.md](../deploy/docker/README.md)。
+
 ### 3. 刷固件
 
 用 USB-C 连上板子，先找串口并备份整片 Flash（出问题可以原样刷回）：

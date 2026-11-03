@@ -1,0 +1,12 @@
+# 编译上下文是仓库根目录：只放镜像要用的，其余（固件源码、编译产物、私人文件）一律不进
+*
+!requirements-macos.txt
+!requirements-macos.lock.txt
+!xiaozhi-esp32-server/main/xiaozhi-server/
+# 这些挂载进去，不打进镜像
+xiaozhi-esp32-server/main/xiaozhi-server/data/
+xiaozhi-esp32-server/main/xiaozhi-server/models/sherpa-onnx-*/
+xiaozhi-esp32-server/main/xiaozhi-server/models/SenseVoiceSmall/model.pt
+xiaozhi-esp32-server/main/xiaozhi-server/tmp/
+**/__pycache__/
+**/.pytest_cache/

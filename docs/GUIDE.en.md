@@ -215,6 +215,8 @@ bash tools/autostart.sh enable    # enable and start now; status, restart, disab
 
 If the repository is in Desktop, Documents or Downloads, macOS asks once whether "宗主后端" (the launcher app) may access that folder; choose Allow.
 
+**Running in Docker**: once installed, the backend can also run in a container (`deploy/docker/`) with the config, models and private directory mounted; boards, the speaker, the gateway page and Bot replies all work as before, but local music does not (the container has no sound output). Steps: [deploy/docker/README.md](../deploy/docker/README.md) (Chinese).
+
 ### 3. Flash the firmware
 
 Connect the board over USB-C, find the serial port, and back up the whole flash first so you can restore it:
