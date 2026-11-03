@@ -107,7 +107,7 @@ speaker (patched firmware + Client) --WebSocket 4399--> Zongzhu backend (core/ga
 ```
 
 - **On the speaker**: the patched firmware enables SSH, turns off Xiaomi's automatic updates and runs `/data/init.sh` at boot; the open-xiaoai Client hands the microphone and playback to the backend.
-- **In the backend**: the wake word is spotted in the backend (sherpa-onnx); after that the speaker uses the same recognition, gateway and TTS as a board. The speaker records 4 channels: 3 microphones plus what the speaker itself is playing. The backend uses only the microphones, so you can wake it while it speaks, and it starts listening only after the speaker has really finished and the echo has died down, so it doesn't take its own voice for yours. The gateway page lists it as "小米音箱 Pro"; it has no screen and no MCP tools, so there are no volume or brightness controls.
+- **In the backend**: the wake word is spotted in the backend (sherpa-onnx); after that the speaker uses the same recognition, gateway and TTS as a board. The speaker records 4 channels: 3 microphones plus what the speaker itself is playing. The backend uses only the microphones, so you can wake it while it speaks, and it starts listening only after the speaker has really finished and the echo has died down, so it doesn't take its own voice for yours. The gateway page lists it as "小米音箱 Pro"; its card shows the model, system version, boot slot and volume, lets you set the volume, play / pause, make it say something and interrupt XiaoAI, and is where you change its wake words.
 
 Steps (flashing and Client details in [zongzhu-speaker/README.md](../zongzhu-speaker/README.md), Chinese):
 
@@ -187,11 +187,19 @@ Speech recognition defaults to X-ASR and needs no torch; hotwords and post-recog
 
 `start.sh` runs in the foreground; closing the terminal stops the service. Don't run more than one. The backend uses port 8000 (WebSocket) and 8003 (HTTP/OTA).
 
-Open `http://localhost:8003/gateway` in a browser for the gateway page. Other devices on the LAN can open it too, and it shows no keys. Three pages:
+Open `http://localhost:8003/gateway` in a browser for the gateway page. Other devices on the LAN can open it too, and it shows no keys. Five pages:
 
-- **Overview**: which boards are online and what they're doing (listening, speaking, waiting N seconds for the Bot).
-- **Recent sentences**: for the last 30 sentences, which layer handled each one, who got it and how long until sound. Kept in memory only, cleared when the backend restarts.
+- **Overview**: which boards are online and what they're doing (listening, speaking, waiting N seconds for the Bot), and whether each module (local music, Grok Bot, speaker link, recognition, synthesis) is healthy.
+- **Recent sentences**: for the last 30 sentences, which layer handled each one, who got it and how long until sound, with the AI's reply underneath (can be hidden). Kept in memory only, cleared when the backend restarts.
 - **Devices**: what was read from each board while it was awake: WiFi and signal, IP, firmware version, memory, volume, brightness, and the board's MCP tool list; after the board goes to standby the last values are shown. You can change the board's volume, screen brightness and wake word (there is no light / dark theme: the Zongzhu eye UI is always white on black), reboot it, and put it into its WiFi setup hotspot (shown only if the firmware has that tool). At the top: previous, pause / resume, next, stop and computer volume for music playing on this Mac. Board controls work only while the board is awake.
+- **Handed-over tasks** (转交任务): what was given to the Bot in the last 24 hours: running, reply waiting to be read, read, or no reply in time, with the question, the reply and the time taken.
+- **How it works** (工作原理): from the current config, how a sentence travels: listening → recognition → corrections and filtering → dispatch (local skills, call names, which AI) → synthesis.
+
+**Updating board firmware** (the firmware part of a board card on "设备"):
+
+- **Upload your own**: choose the built `xiaozhi.bin` (not the merged full-flash image). The upload is checked first: an ESP32 app image, the project name, the board's model and variant name inside the image, the chip, and a version newer than the board's (same version or a downgrade needs a second confirmation). Only then is it stored in the backend's `data/bin/`. Then press "立即更新" (update now; the board must be awake, it downloads and reboots at once), or do nothing and boards of that model update at their next boot. To build firmware with only the version changed: `tools/build_firmware.py ... --version 2.5.2.10`.
+- **Firmware published by the project**: one minute after start and then hourly, the backend checks this project's GitHub Releases. It accepts only releases signed by the project owner (the public key is in `core/gateway/releases.py`), downloads only a file that a board of yours uses and that is newer than that board, checks the size, SHA-256 and the image itself, and puts it in `data/bin/`; the board updates at its next boot. Published firmware has a placeholder backend address built in; boards use the backend address saved on them (both the web flasher and the setup page save it), so after the update they still connect to your backend. The "项目发布的固件" card on the page turns automatic updates off and has a "现在查" (check now) button; `gateway.firmware_releases: false` in the config stops the checks completely.
+- The firmware has rollback on: a new image that fails to start falls back to the old one. Flashing the wrong model may not be recoverable, so don't skip the checks above.
 
 Anyone who opens the page can change things by default. To require a password, set `gateway.password` in `.config.yaml` (see `examples/backend.config.yaml`).
 
