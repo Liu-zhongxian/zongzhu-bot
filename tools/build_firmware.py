@@ -9,6 +9,7 @@ Examples:
   tools/build_firmware.py szp                      # OTA = http://<this Mac>.local:8003/xiaozhi/ota/
   tools/build_firmware.py szp --flash PORT --erase # first install: wipe, then write
   tools/build_firmware.py 1.75c --ota-url https://zongzhu.example.com/xiaozhi/ota/
+  tools/build_firmware.py szp --version 2.5.2.10   # test an OTA update: only the version changes
 
 ESP-IDF 6.0.1+ is required: pass --idf (and --idf-tools if the tools are not in
 ~/.espressif) or set IDF_PATH / IDF_TOOLS_PATH.
@@ -58,6 +59,15 @@ def sync_source(build_root):
     for sub in ("main", "scripts"):
         subprocess.run(["rsync", "-a", "--delete", "--exclude", "assets/lang_config.h",
                         "--exclude", TEMP_CONFIG, f"{SOURCE / sub}/", f"{build_root / sub}/"], check=True)
+
+
+def set_version(build_root, version):
+    """PROJECT_VER of the build copy: the repo's, or `version` (the repo's own CMakeLists.txt is not touched)."""
+    pattern = re.compile(r'set\(PROJECT_VER "[^"]*"\)')
+    repo = pattern.search((SOURCE / "CMakeLists.txt").read_text(encoding="utf-8")).group(0)
+    wanted = f'set(PROJECT_VER "{version}")' if version else repo
+    path = build_root / "CMakeLists.txt"
+    path.write_text(pattern.sub(wanted, path.read_text(encoding="utf-8"), count=1), encoding="utf-8")
 
 
 def write_temp_config(build_root, board_dir, variant, url):
@@ -139,6 +149,7 @@ def main():
                         help="ASCII-only build directory (default: ~/.cache/xiaozhi-zongzhu-build)")
     parser.add_argument("--out", type=Path, default=REPO / "build-output",
                         help="where packages go (default: build-output/, not committed)")
+    parser.add_argument("--version", help="build this version instead of the repo's PROJECT_VER (e.g. to test OTA)")
     parser.add_argument("--flash", metavar="PORT", help="write the package to this serial port")
     parser.add_argument("--erase", action="store_true",
                         help="erase the whole flash first (Wi-Fi settings are lost)")
@@ -149,7 +160,10 @@ def main():
     board_dir, variant = BOARDS[args.board]
     url = check_url(args.ota_url or mac_ota_url())
     print(f"Board {args.board} ({variant}), OTA {url}")
+    if args.version and not re.fullmatch(r"\d+(\.\d+){1,3}", args.version):
+        sys.exit(f"Version must look like 2.5.2.10: {args.version!r}")
     sync_source(args.build_dir)
+    set_version(args.build_dir, args.version)
     write_temp_config(args.build_dir, board_dir, variant, url)
     build(args.build_dir, board_dir, variant, args.idf, args.idf_tools)
     check_ota(args.build_dir, url)

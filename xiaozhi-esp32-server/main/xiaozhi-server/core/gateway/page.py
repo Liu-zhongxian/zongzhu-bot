@@ -10,7 +10,7 @@ from pathlib import Path
 
 from aiohttp import web
 
-from core.gateway import control, status, wake_assets
+from core.gateway import control, firmware, flow, modules, status, tasks, wake_assets
 from core.gateway.xiaoai import control as speaker_control
 
 PAGE = Path(__file__).with_name("page.html")
@@ -40,9 +40,13 @@ class GatewayPageHandler:
 
     async def handle_status(self, request):
         music = await asyncio.to_thread(control.music_status)
+        checked = await asyncio.to_thread(modules.cached, self.config)
+        handed = await asyncio.to_thread(tasks.cached, self.config, status.names())
         return web.json_response(status.snapshot(self.config) | {"music": music,
                                  "password": control.password_required(self.config),
-                                 "settings": control.settings_view(self.config)},
+                                 "settings": control.settings_view(self.config), "modules": checked,
+                                 "tasks": handed, "flow": flow.view(self.config),
+                                 "firmware": await asyncio.to_thread(firmware.listing)},
                                  headers=NO_STORE)
 
     def _token_ok(self, request):
@@ -73,6 +77,19 @@ class GatewayPageHandler:
         try:
             if action in control.MUSIC_ACTIONS:
                 return web.json_response(await control.music_action(action, body.get("value")))
+            if action == "firmware_delete":
+                await asyncio.to_thread(firmware.delete, str(body.get("value") or ""))
+                return web.json_response({"message": "删掉了。"})
+            if action == "firmware_now":
+                name = str(body.get("value") or "")
+                if firmware.path_of(name) is None:
+                    return web.json_response({"error": "没有这个固件文件"}, status=400)
+                conn, reason = _board_conn(body.get("device"))
+                if conn is None:
+                    return web.json_response({"error": reason.replace("再马上运行", "再点")}, status=409)
+                await firmware.upgrade_now(conn, firmware.download_url(self.config, name))
+                return web.json_response({"message": "板子开始下载固件（屏幕上有进度），装好会自己重启；"
+                                                     "重启后几十秒内这里的版本号会变。下载时不要断电。"})
             if action == "board_wake_word":
                 conn, reason = _board_conn(body.get("device"))
                 if conn is None:
@@ -89,8 +106,32 @@ class GatewayPageHandler:
             if conn is None:
                 return web.json_response({"error": reason.replace("再马上运行", "再点")}, status=409)
             return web.json_response(await control.board_action(conn, action, body.get("value")))
-        except control.ControlError as e:
+        except (control.ControlError, firmware.FirmwareError) as e:
             return web.json_response({"error": str(e)}, status=400)
+
+    async def handle_firmware(self, request):
+        """Body: a xiaozhi.bin; query: device (board id), force=1 for the same or an older version.
+        Checked against the board (core/gateway/firmware.py), then kept in data/bin/."""
+        if not self._token_ok(request):
+            return web.json_response({"error": "要先输入口令"}, status=401)
+        device = (request.query.get("device") or "").strip().lower()
+        found = [k for k in list(status._boards) if device and k.lower().endswith(device)]
+        if len(found) != 1:
+            return web.json_response({"error": "找不到这块板子" if not found else "有好几块板子对得上"}, status=400)
+        image = bytearray()
+        async for chunk in request.content.iter_chunked(64 * 1024):
+            image += chunk
+            if len(image) > firmware.MAX_SIZE:
+                return web.json_response({"error": "文件超过 8 MB，不像是固件"}, status=413)
+        try:
+            info = firmware.check(bytes(image), status._boards[found[0]])
+            if not info["newer"] and request.query.get("force") != "1":
+                return web.json_response({"confirm": f"这份固件是 {info['version']}，板子上是 {info['board_version']}："
+                                                     "不比板子上的新。还要传吗？", **info}, status=409)
+            info["file"] = await asyncio.to_thread(firmware.save, bytes(image), info["model"], info["version"])
+        except firmware.FirmwareError as e:
+            return web.json_response({"error": str(e)}, status=400)
+        return web.json_response(info)
 
     async def handle_assets(self, request):
         path = wake_assets.path_of(request.match_info.get("filename", ""))

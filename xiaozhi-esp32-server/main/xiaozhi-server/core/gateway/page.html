@@ -74,6 +74,15 @@ td.nowrap { white-space: nowrap; }
 .layer.filter, .layer.wake { color: var(--l-filter); }
 .layer.call { color: var(--l-name); }
 .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.flow { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; }
+.step { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; width: 168px; }
+.step b { display: block; } .step .v { color: var(--accent); font-weight: 600; font-size: 13px; } .step .sub { font-size: 12px; }
+.arrow { align-self: center; color: var(--muted); }
+.branches { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-top: 14px; }
+.branch { border-left: 4px solid var(--line); }
+.branch.rule { border-left-color: var(--l-rule); } .branch.name { border-left-color: var(--l-name); } .branch.front { border-left-color: var(--l-front); }
+.targets { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+@media (max-width: 640px) { .step { width: 100%; } .arrow { transform: rotate(90deg); margin: 0 auto; } }
 .chips .label { color: var(--muted); font-size: 13px; padding: 4px 0; }
 .reply { margin-top: 6px; padding: 6px 10px; border-left: 3px solid var(--accent); background: var(--accent-soft);
   border-radius: 4px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -146,7 +155,8 @@ section[hidden] { display: none; }
       </div>
       <h2>板子</h2>
       <div class="grid" id="boards"></div>
-      <p class="later">模块状态、转交任务、工作原理三块，跟着后面的任务（G2–G7）逐步加上。</p>
+      <h2>模块 <small>绿色能用，黄色开着但现在没在运行，红色要处理，灰色没开</small></h2>
+      <div class="grid" id="modules"></div>
     </section>
 
     <section data-page="devices" hidden>
@@ -157,6 +167,18 @@ section[hidden] { display: none; }
         <div class="card" id="music"></div>
         <div class="devices" id="devices"></div>
       </div>
+    </section>
+
+    <section data-page="tasks" hidden>
+      <h1>转交任务</h1>
+      <p class="lead">最近 24 小时交给 Bot 的话、它的回复、念了没有。回复到的时候板子在说话或者在等你说新问题，就先放进"等着念"，空下来再念。</p>
+      <div id="tasks"></div>
+    </section>
+
+    <section data-page="flow" hidden>
+      <h1>工作原理</h1>
+      <p class="lead">按现在的配置画出一句话怎么走。灰色的是没开的；这里的数字都是配置里的，不是统计。</p>
+      <div id="flow"></div>
     </section>
 
     <section data-page="log" hidden>
@@ -172,9 +194,12 @@ section[hidden] { display: none; }
   </main>
 </div>
 <div id="toast" hidden></div>
+<!-- G18c: one file picker outside the device page, so redrawing the page never loses the file picked -->
+<input type="file" id="fw-file" accept=".bin" hidden>
 
 <script>
-const PAGES = [["overview", "◎", "总览"], ["devices", "▣", "设备"], ["log", "☰", "最近的话"]];
+const PAGES = [["overview", "◎", "总览"], ["devices", "▣", "设备"], ["log", "☰", "最近的话"], ["tasks", "⇄", "转交任务"],
+  ["flow", "✦", "工作原理"]];
 const SIGNAL = { strong: "强", medium: "中", weak: "弱" };
 const LAYERS = { skill: "① 本机技能", agent: "转交 AI", call: "呼名", filter: "过滤掉", wake: "唤醒", upstream: "上游对话" };
 let data = null, fetchedAt = 0, filter = "all", replyMode = "all";
@@ -192,10 +217,11 @@ function show(id) {
 }
 function renderNav() {
   const n = data ? data.recent.length : 0;
+  const t = data && data.tasks ? data.tasks.running.length + data.tasks.report.length : 0;
   for (const target of ["nav", "mnav"]) {
     const current = document.querySelector(`#${target} [aria-current="true"]`)?.dataset.go;
     document.getElementById(target).innerHTML = PAGES.map(([id, icon, name]) =>
-      `<button data-go="${id}" aria-current="${id === current}">${target === "nav" ? icon + " " : ""}${name}${id === "log" && n && target === "nav" ? `<span class="count">${n}</span>` : ""}</button>`).join("");
+      `<button data-go="${id}" aria-current="${id === current}">${target === "nav" ? icon + " " : ""}${name}${id === "log" && n && target === "nav" ? `<span class="count">${n}</span>` : ""}${id === "tasks" && t && target === "nav" ? `<span class="count">${t}</span>` : ""}</button>`).join("");
   }
 }
 document.addEventListener("click", e => { const b = e.target.closest("[data-go]"); if (b) show(b.dataset.go); });
@@ -244,6 +270,43 @@ async function post(url, body) {
   if (!response.ok) throw new Error(result.error || response.status);
   return result;
 }
+// G18c: firmware for this board: upload (checked by the backend), then now or at next boot
+async function uploadFirmware(device, file, force) {
+  toast(`正在上传 ${file.name}（${mb(file.size)}）……`);
+  try {
+    const response = await fetch(`/gateway/api/firmware?device=${encodeURIComponent(device)}${force ? "&force=1" : ""}`,
+      { method: "POST", headers: { "Content-Type": "application/octet-stream", "X-Gateway-Token": token }, body: file });
+    const result = await response.json().catch(() => ({ error: "后端没有回应" }));
+    if (response.status === 409 && result.confirm) { if (confirm(result.confirm)) return uploadFirmware(device, file, true); return; }
+    if (!response.ok) throw new Error(result.error || response.status);
+    toast(`收下了：${result.version}（${result.built} 编译）。` + (result.newer
+      ? "这个型号的板子下次开机会自己更新；板子醒着时也可以点「立即更新」。"
+      : "不比板子上的新，开机不会自动装，要装就点「立即更新」。"));
+  } catch (e) { toast(e.message, true); }
+  refresh();
+}
+function firmwareBlock(b) {
+  if (!canControl() || !(b.info?.tools || []).some(t => t.name === "self.upgrade_firmware")) return "";
+  const files = (data.firmware || []).filter(f => f.type === (b.variant || b.type) || f.type === b.type), dev = esc(b.id);
+  return `<h4>固件 <small>板子上是 ${esc(b.version || "—")}</small></h4>
+    <div class="btns"><button class="btn" data-upload data-dev="${dev}">选择固件文件并上传</button></div>
+    ${files.map(f => `<div class="say"><span>${esc(f.version)} · ${mb(f.size)} · ${clock(f.time)} 传的</span>
+      <button class="btn danger" data-act="firmware_now" data-dev="${dev}" data-val="${esc(f.file)}" ${b.online ? "" : "disabled"}
+        data-ask="给${esc(b.name)}装 ${esc(f.version)}？板子会下载、写入、重启，下载时不要断电。">立即更新</button>
+      <button class="btn" data-act="firmware_delete" data-val="${esc(f.file)}" data-ask="删掉 ${esc(f.file)}？">删除</button></div>`).join("")}
+    <p class="note">选编译出来的 xiaozhi.bin，选好就上传。上传时检查：是不是小智固件、型号和芯片对不对、版本是不是更新；型号不对的直接拒绝。
+      比板子新的，这个型号的板子下次开机自己下载更新；「立即更新」要板子醒着。新固件起不来会退回旧版。</p>`;
+}
+let uploadFor = "";  // the board the picker was opened for
+document.addEventListener("click", e => {
+  const b = e.target.closest("button[data-upload]"); if (!b) return;
+  uploadFor = b.dataset.dev; document.getElementById("fw-file").click();
+});
+document.getElementById("fw-file").addEventListener("change", e => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = "";  // picking the same file again fires change again
+  if (file) uploadFirmware(uploadFor, file);
+});
 // The speaker's play / pause button flips at once; it flips back if the speaker says no
 const FLIP = { speaker_play: "playing", speaker_pause: "paused" };
 async function act(action, device, value, ask, slider) {
@@ -309,12 +372,10 @@ function renderMusic() {
 function boardControls(b, i) {
   if (!canControl()) return "";
   const off = !b.online, tools = new Set((i?.tools || []).map(t => t.name));
-  const theme = i?.theme;
   return `<h4>设置${off ? "（板子待机中：唤醒后再改）" : ""}</h4>
     <div class="ctl">${slider("板子音量", "volume", b.id, i?.volume, off)}${slider("屏幕亮度", "brightness", b.id, i?.brightness, off)}</div>
     <div class="btns">
-      <button class="btn ${theme === "light" ? "on" : ""}" data-act="theme" data-dev="${esc(b.id)}" data-val="light" ${off ? "disabled" : ""}>浅色主题</button>
-      <button class="btn ${theme === "dark" ? "on" : ""}" data-act="theme" data-dev="${esc(b.id)}" data-val="dark" ${off ? "disabled" : ""}>深色主题</button>
+      ${""/* 没有深浅色主题按钮：宗主的眼睛界面（eye_display.h）换了主题后立刻 ApplyMonochrome() 涂回黑底白字，三块板子都看不出变化（2026-11-03 查固件） */}
       <button class="btn danger" data-act="reboot" data-dev="${esc(b.id)}" data-ask="重启${esc(b.name)}？重启后十几秒会自己连回来。" ${off ? "disabled" : ""}>重启板子</button>
       ${tools.has("self.system.reconfigure_wifi") ? `<button class="btn danger" data-act="wifi_config" data-dev="${esc(b.id)}"
         data-ask="让${esc(b.name)}进入配网模式？板子会断开 WiFi，要用手机连它的配网热点重新选 WiFi。" ${off ? "disabled" : ""}>WiFi 配网</button>` : ""}
@@ -327,10 +388,22 @@ function boardControls(b, i) {
       : "只能是中文（2–8 个字，4–6 个字最好）。板子重启、下载资源包后生效，不用刷固件。"}</p>` : ""}`;
 }
 const kv = rows => `<dl class="kv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v ?? "—"}</dd>`).join("")}</dl>`;
+// Redrawing keeps what is typed into the text boxes (wake words, call names, "说一句话") and where the
+// cursor is, so nothing has to pause the page (2026-11-03 你定：只有拖滑块时才不重画)
+function keepTyping(el, draw) {
+  const typed = new Map([...el.querySelectorAll("input[data-keep]")].filter(x => x.value !== x.defaultValue || x === document.activeElement)
+    .map(x => [x.id, { value: x.value, focus: x === document.activeElement, start: x.selectionStart, end: x.selectionEnd }]));
+  draw();
+  for (const [id, t] of typed) {
+    const x = document.getElementById(id); if (!x) continue;
+    x.value = t.value;
+    if (t.focus) { x.focus(); try { x.setSelectionRange(t.start, t.end); } catch (e) {} }
+  }
+}
 function renderDevices() {
   const el = document.getElementById("devices");
   if (!data.boards.length) { el.innerHTML = `<div class="card empty">后端启动以来还没有板子连上来。</div>`; return; }
-  el.innerHTML = data.boards.map(b => {
+  keepTyping(el, () => el.innerHTML = data.boards.map(b => {
     const i = b.info;
     const head = `<h3><span class="dot ${b.online ? "" : "off"}"></span>${esc(b.name)}</h3>
       <div class="sub">${esc([b.id, b.type].filter(Boolean).join(" · "))}</div>`;
@@ -352,15 +425,29 @@ function renderDevices() {
           ["屏幕", i.display ? i.display.join(" × ") : null],
           ...(i.temperature != null ? [["芯片温度", i.temperature.toFixed(1) + " ℃"]] : []),
           ...(battery ? [["电量", battery]] : [])])}</div>
-        <div><h4>声音和屏幕</h4>${kv([["音量", i.volume], ["亮度", i.brightness], ["主题", esc(i.theme) || null]])}</div>
+        <div><h4>声音和屏幕</h4>${kv([["音量", i.volume], ["亮度", i.brightness]])}</div>
       </div>
       ${boardControls(b, i)}
+      ${firmwareBlock(b)}
       <h4>MCP 工具（${tools.length}）</h4>
       <div class="tools">${tools.length ? tools.map(t => `<span class="pill ${t.user_only ? "" : "acc"}" title="${esc(t.description)}">${esc(t.name)}${t.user_only ? " · 仅后端" : ""}</span>`).join("") : `<span class="note">没读到</span>`}</div>
       <p class="note">紫色是 AI 能调的工具；"仅后端"的不给 AI，只有后端能调（改唤醒词、重启、升级固件都用它们）。最低剩余内存是开机以来的最低值；固件不报 PSRAM。
         ${b.online ? "" : "板子待机中，"}读取于 ${clock(i.read_at)}（${ago(i.read_at)}前）。</p>
     </div>`;
-  }).join("") + callNamesCard();
+  }).join("") + callNamesCard() + releasesCard());
+}
+// G18e: firmware the project owner publishes (signed), checked hourly, put in data/bin when it passes
+function releasesCard() {
+  const r = (data.settings || {}).releases; if (!r) return "";
+  const when = r.checked_at ? `上次查：${clock(r.checked_at)}（${ago(r.checked_at)}前）· ${esc(r.result)}` : esc(r.result);
+  return `<div class="card device"><h3>项目发布的固件</h3>
+    <div class="sub">${r.source ? when : "这台后端没开（配置 gateway.firmware_releases: false）"}</div>
+    ${canControl() && r.source ? `<div class="btns">
+      <button class="btn ${r.auto ? "on" : ""}" data-act="set_auto_firmware" data-val="${r.auto ? "off" : "on"}">${r.auto ? "自动更新：开（点一下关）" : "自动更新：关（点一下开）"}</button>
+      <button class="btn" data-act="check_releases">现在查</button></div>` : ""}
+    <p class="note">项目主人发布新固件后，每小时查一次：签名验过、文件和清单对得上、型号对得上，才放进来，你的板子下次开机自己更新。
+      只有项目主人能发布；这里只会更新连着这台后端的板子。关了以后不再自动下载，点"现在查"还能手动拿。</p>
+  </div>`;
 }
 // G19d: the Xiaomi speaker (no MCP): what the backend reads on it with fixed read-only commands
 const PLAY = { idle: "没在放", playing: "在放", paused: "暂停" };
@@ -418,6 +505,60 @@ function callNamesCard() {
         <button class="btn" data-act="set_call_names" data-agent="${esc(r.agent)}" data-from="call-${esc(r.agent)}">保存</button></div>`).join("")}
     <p class="note">几个名字用顿号或逗号隔开；可以把识别常听成的写法也加上（比如把 bot 听成 but，就加个 but）。留空就不能用名字叫这个 AI。改完马上生效。</p>
   </div>`;
+}
+// G17: each skill / AI / device link, checked by the backend (core/gateway/modules.py, every 10 s)
+function renderModules() {
+  const list = data.modules || [];
+  document.getElementById("modules").innerHTML = list.map(m => `
+    <div class="card ${m.state === "off" ? "off" : ""}">
+      <h3><span class="dot ${m.state === "ok" ? "" : m.state}"></span>${esc(m.name)}</h3>
+      <div class="sub">${esc(m.kind)}</div><div class="note">${esc(m.detail)}</div>
+    </div>`).join("");
+}
+// G17: what was handed to the Bot (core/gateway/tasks.py, from its reply directory)
+function renderTasks() {
+  const el = document.getElementById("tasks"), t = data.tasks;
+  if (!t) { el.innerHTML = `<div class="card empty">没开 Grok Bot，或者它的配置里没有回传目录：回复只在 Grok 对话里，这里看不到。</div>`; return; }
+  const now = Date.now() / 1000;
+  const card = (x, extra) => `<div class="card">
+      <h3>${esc(x.question || "（这条没记下问的话）")}</h3>
+      <div class="sub">${esc(x.board)} · ${clock(x.created)} 交出 · ${extra}</div>
+      ${x.reply ? `<div class="reply"><span class="who">Bot</span>${esc(x.reply)}</div>` : ""}
+    </div>`;
+  const section = (title, items, extra, empty) => `<h2>${title} <small>${items.length}</small></h2>
+    ${items.length ? `<div class="grid">${items.map(x => card(x, extra(x))).join("")}</div>` : `<p class="note">${empty}</p>`}`;
+  el.innerHTML =
+    section("进行中", t.running, x => `已等 ${duration(Math.max(0, Math.round(now - x.created)))}`, "没有在等的。") +
+    section("等着念", t.report, x => `回复 ${clock(x.replied)} 到`, "没有。") +
+    section("念过了", t.done, x => x.replied ? `用了 ${duration(Math.max(0, Math.round(x.replied - x.created)))}` : "已念", "最近 24 小时还没有。") +
+    (t.timeout.length ? section("没等到回复", t.timeout, () => "超过等待时间（一天内晚到的回复照样念）", "") : "");
+}
+// G17: how a sentence goes, from the current config (core/gateway/flow.py)
+function renderFlow() {
+  const f = data.flow; if (!f) return;
+  const pill = (text, kind) => `<span class="pill ${kind}">${esc(text)}</span>`;
+  const steps = f.steps.map(s => `<div class="step"><b>${s.icon} ${esc(s.name)}</b><div class="v">${esc(s.value)}</div>
+    <div class="sub">${esc(s.note)}</div></div>`).join(`<div class="arrow">→</div>`);
+  const calls = f.calls.flatMap(c => c.names.length ? [pill(`${c.names.join("、")} → ${c.agent}`, "acc")] : [pill(`${c.agent}（没设呼名）`, "off")]);
+  const wakes = [...f.boards.map(([w, n]) => `${n}：说"${w || "唤醒词"}"`), ...(f.speaker.on ? [`小米音箱：说"${f.speaker.wake_words.join("、")}"，或者直接喊 AI 的名字`] : [])];
+  document.getElementById("flow").innerHTML = `
+    <h2>一句话怎么走</h2>
+    <div class="flow">${steps}</div>
+    <div class="branches">
+      <div class="card branch rule ${f.skills.length ? "" : "off"}"><h3>① 本机技能</h3><div class="sub">固定说法在这台 Mac 上直接办，不经过 AI；小米音箱不走这一层</div>
+        <div class="targets">${f.skills.length ? f.skills.map(s => pill(s.name, "ok")).join("") : pill("没开", "off")}</div></div>
+      <div class="card branch name"><h3>② 呼名</h3><div class="sub">句首"嗨 + 名字"直接交给那个 AI，之后这台设备都交给它</div>
+        <div class="targets">${calls.join("") || pill("没有 AI", "off")}</div></div>
+      <div class="card branch front ${f.agent ? "" : "off"}"><h3>③ 交给 AI</h3><div class="sub">前两层不接的都交给它；回复晚到时屏幕显示等待秒数，回复到了再念</div>
+        <div class="targets">${f.agent ? pill(f.agent, "acc") : pill("没设：交给上游对话模型", "off")}</div></div>
+    </div>
+    <h2>怎么跟它说话</h2>
+    <div class="grid">
+      <div class="card"><h3>唤醒</h3><div class="sub">${wakes.map(esc).join("<br>") || "还没有板子连上来"}</div></div>
+      ${f.skills.length ? `<div class="card"><h3>放歌</h3><div class="sub">"放周杰伦的晴天""下一首""大声点"，在这台 Mac 上放</div></div>` : ""}
+      <div class="card"><h3>派活</h3><div class="sub">唤醒后直接说任务${f.calls.some(c => c.names.length) ? `，或者"嗨 ${esc(f.calls.find(c => c.names.length).names[0])}，……"` : ""}；做完的在"转交任务"里能看到</div></div>
+      <div class="card"><h3>打断</h3><div class="sub">它说话时再喊一次唤醒词（板子也可以按键）；没念完的，问完新问题接着念完</div></div>
+    </div>`;
 }
 function renderStats() {
   const online = data.boards.filter(b => b.online).length;
@@ -478,10 +619,9 @@ function renderLog() {
     </tr>`).join("") : `<tr><td colspan="6" class="empty">还没有${filter === "all" ? "" : "这一类的"}话。</td></tr>`;
 }
 function render() {
-  renderNav(); renderStats(); renderBoards(); renderLog(); renderLogin();
-  // Re-rendering would reset a slider while it is being dragged
-  // ...and would wipe what is being typed into "说一句话"
-  if (Date.now() > busyUntil && !document.querySelector("#devices input:active, #music input:active, #devices input[data-keep]:focus")) { renderDevices(); renderMusic(); }
+  renderNav(); renderStats(); renderBoards(); renderModules(); renderLog(); renderTasks(); renderFlow(); renderLogin();
+  // Only a slider stops the redraw (it would jump back while being dragged); typed text is kept (keepTyping)
+  if (Date.now() > busyUntil && !document.querySelector("#devices input[type=range]:active, #music input[type=range]:active")) { renderDevices(); renderMusic(); }
 }
 
 async function refresh() {
@@ -503,7 +643,8 @@ show(PAGES.some(p => p[0] === start) ? start : "overview");
 // Every 3 s; every second while an answer is being said, so "跟着语音" keeps up
 (async function poll() {
   await refresh();
-  const speaking = data && data.recent.some(r => r.reply && r.reply.state === "speaking");
+  const speaking = data && (data.recent.some(r => r.reply && r.reply.state === "speaking")
+    || (data.tasks && data.tasks.running.length));
   setTimeout(poll, speaking ? 1000 : 3000);
 })();
 setInterval(() => { if (data) renderBoards(); }, 1000);

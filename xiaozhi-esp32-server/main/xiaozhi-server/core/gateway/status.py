@@ -40,6 +40,12 @@ def board_name(board_type):
     return board_type or "未知板子"
 
 
+def names() -> dict:
+    """{device id: the name shown on the page} for every board seen."""
+    return {device_id: board_name(info["type"]) if info.get("type") else "板子 " + device_id[-5:]
+            for device_id, info in list(_boards.items())}
+
+
 def load():
     try:
         data = json.loads(BOARDS_PATH.read_text(encoding="utf-8"))
@@ -61,8 +67,11 @@ def _save():
         pass  # the page is only a view; never let it break a connection
 
 
-def note_ota(device_id, board_type, version, ip):
+def note_ota(device_id, board_type, version, ip, name=""):
+    """name: the firmware variant the board reports (board.name), e.g. lichuang-dev-zongzhu."""
     _boards.setdefault(device_id, {}).update(type=board_type, version=version, ip=ip, seen=time.time())
+    if name:
+        _boards[device_id]["name"] = name
     _save()
 
 
@@ -343,7 +352,8 @@ def snapshot(config):
         bridge = info.get("type") in BRIDGE_TYPES
         linked = device_id in _linked
         boards.append({
-            "id": device_id[-5:], "name": name, "type": info.get("type", ""), "version": info.get("version", ""),
+            "id": device_id[-5:], "name": name, "type": info.get("type", ""), "variant": info.get("name", ""),
+            "version": info.get("version", ""),
             "ip": (conn.client_ip if conn else None) or info.get("ip", ""), "online": bool(conns) or linked,
             "wake": info.get("wake", "") if bridge else _wake_of(device_id, info, conn, now)[0],
             "wake_pending": False if bridge else _wake_of(device_id, info, conn, now)[1],
