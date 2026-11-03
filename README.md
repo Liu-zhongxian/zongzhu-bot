@@ -167,9 +167,4 @@ bash tools/local_music_setup.sh    # 下载 go-music-dl 和 mpv 到 local-music/
 - 本项目代码使用 [MIT 许可证](LICENSE)。
 - 固件基于 [78/xiaozhi-esp32](https://github.com/78/xiaozhi-esp32)，后端基于 [xinnan-tech/xiaozhi-esp32-server](https://github.com/xinnan-tech/xiaozhi-esp32-server)，两者都是 MIT 许可证。
 - 本机点歌用到 [go-music-dl](https://github.com/guohuiyuan/go-music-dl)（AGPL-3.0）和 [mpv](https://github.com/mpv-player/mpv)。两者都不在这个仓库里：由 `tools/local_music_setup.sh` 从各自的发布页下载，作为独立程序运行，各自遵循自己的许可证。
-- 小米音箱：
-  - 补丁和 Client 源码（`zongzhu-speaker/`）来自 [open-xiaoai](https://github.com/idootop/open-xiaoai)（MIT，见 [zongzhu-speaker/LICENSE.open-xiaoai](zongzhu-speaker/LICENSE.open-xiaoai)）。
-  - 后端接音箱的做法（`core/gateway/xiaoai/`）参考了 [coderzc/open-xiaoai-bridge](https://github.com/coderzc/open-xiaoai-bridge)（MIT），唤醒词模型也用它发布的那一套。
-  - 小米官方固件和刷机工具不在这个仓库里。
-- 呼名的匹配规则参考了 [justhalfbit/xiaozhi-hub-server](https://github.com/justhalfbit/xiaozhi-hub-server)（MIT）。
-- 真实密钥、Wi-Fi 设置、Flash 备份、模型权重、登录 Cookie、日志和对话都只留在本机，不在这个仓库里。
+
