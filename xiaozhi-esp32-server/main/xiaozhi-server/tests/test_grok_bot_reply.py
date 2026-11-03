@@ -359,6 +359,24 @@ class GrokBotReplyTest(unittest.IsolatedAsyncioTestCase):
         from core.handle.grokBotHandle import prepare_submission
         submission = prepare_submission("帮我查天气", "board-1", config)
         self.assertIn(submission.payload["request_id"] + ".more-1.json", submission.payload["command"])
+        target = str(self.directory / (submission.payload["request_id"] + ".json"))
+        self.assertIn("在用户 Mac 写入 UTF-8 JSON 文件（不能只写云端同名路径）：" + target, submission.payload["command"])
+
+    def test_in_docker_the_bot_is_told_the_path_on_the_computer(self):
+        """G21b：后端在容器里读 reply_dir，Bot 在电脑上写 bot_reply_dir（Windows、Linux 的写法都照原样）"""
+        _recent.clear()
+        from core.handle.grokBotHandle import prepare_submission
+        config = self.directory / "config.json"
+        for bot_dir, expected in ((r"C:\Users\me\zongzhu\private\bot-replies", r"C:\Users\me\zongzhu\private\bot-replies" + "\\"),
+                                  ("/home/me/zongzhu/private/bot-replies", "/home/me/zongzhu/private/bot-replies/")):
+            config.write_text(json.dumps({"url": "https://example.test", "token": "t", "reply_dir": str(self.directory),
+                                          "bot_reply_dir": bot_dir}))
+            submission = prepare_submission("帮我查天气" + bot_dir[:2], "board-1", config)  # 两句不一样，免得被当成重复
+            command = submission.payload["command"]
+            self.assertIn("在用户电脑写入 UTF-8 JSON 文件（不能只写云端同名路径）：" + expected
+                          + submission.payload["request_id"] + ".json", command)
+            self.assertNotIn(str(self.directory), command)
+            self.assertTrue((self.directory / (submission.payload["request_id"] + ".pending.json")).exists())
 
     async def test_hello_without_features_is_not_an_error(self):
         # conn.features stays None when the board's hello has no features field.

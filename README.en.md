@@ -96,7 +96,7 @@ Gestures, the expression list and what you can say for music are in the [full gu
   - Waveshare ESP32-S3-Touch-AMOLED-1.75C;
   - Lichuang (立创) SZPI ESP32-S3 ([notes](docs/BOARD-SZP.md), Chinese).
   - An M5Stack StopWatch build exists too, but hasn't run on a real board yet ([notes](docs/BOARD-STOPWATCH.md), Chinese).
-- **Computer**: an always-on Mac (verified on Apple Silicon) runs the backend. It must be on the same 2.4 GHz LAN as the board. A public server also works: [deploy to a server](deploy/README.md) (Chinese).
+- **Computer**: an always-on Mac (verified on Apple Silicon) runs the backend. It must be on the same 2.4 GHz LAN as the board. On Windows or Linux, [run it in Docker](deploy/docker/README.md) (everything but local music) or [on a public server](deploy/README.md) (both Chinese).
 - **Bot**: your Grok Bot must expose a webhook **and be able to write files on this computer**, or replies never reach the board ([interface](docs/GUIDE.en.md#bot-interface)).
 
 ## Getting started
@@ -148,6 +148,7 @@ If you'd rather not use the web page, want to build the firmware yourself, or th
 | --- | --- |
 | [docs/GUIDE.en.md](docs/GUIDE.en.md) | Full guide: features, the gateway page, local music, the Xiaomi speaker, manual setup, flashing, troubleshooting, Bot interface, building, tests, known limitations |
 | [docs/README.md](docs/README.md) | Index of all docs, including board notes (Chinese) |
+| [deploy/docker/README.md](deploy/docker/README.md) | Running the backend in Docker (Chinese) |
 | [deploy/README.md](deploy/README.md) | Deploying to a public server (Chinese) |
 | [zongzhu-speaker/README.md](zongzhu-speaker/README.md) | Xiaomi Smart Speaker Pro: flashing and the Client (Chinese) |
 
@@ -160,7 +161,7 @@ This project's own changes are in:
 | Firmware | `xiaozhi-esp32/main/boards/common/zongzhu/` and the board directories |
 | Backend | under `xiaozhi-esp32-server/main/xiaozhi-server/core/`:<br>`gateway/`: the gateway and its page; music in `gateway/skills/music/`, the Xiaomi speaker in `gateway/xiaoai/`, firmware releases in `gateway/releases.py`<br>`handle/grokBot*.py`: sending to the Bot and its replies<br>`utils/asr_text.py`: hotwords and corrections |
 | The speaker side | `zongzhu-speaker/`: patches, the Client source, flashing and install scripts |
-| Everything else | `web/` (web flasher), `tools/` (building and publishing firmware, changing the wake word), `deploy/`, `examples/`, `docs/` |
+| Everything else | `web/` (web flasher), `tools/` (building and publishing firmware, changing the wake word), `deploy/` (server, Docker), `examples/`, `docs/` |
 
 The rest of the two upstream directories is kept mostly as is, so later upstream merges stay simple and the project keeps up with Xiaozhi firmware updates. Upstream base commits are in `UPSTREAM.json`.
 

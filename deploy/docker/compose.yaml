@@ -1,0 +1,24 @@
+# 宗主后端（G21、G21b）。在仓库根目录：
+#   cp deploy/docker/env.example deploy/docker/.env                   # 写上你放宗主文件的文件夹
+#   docker compose -f deploy/docker/compose.yaml build
+#   docker compose -f deploy/docker/compose.yaml run --rm zongzhu setup  # 第一次：配置、模型、Bot Webhook
+#   docker compose -f deploy/docker/compose.yaml up -d
+# 说明见 deploy/docker/README.md。
+services:
+  zongzhu:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    image: zongzhu-backend
+    container_name: zongzhu-backend
+    restart: unless-stopped  # 代替 Mac 上的开机自启：Docker 起来它就起来，退出了自动拉起
+    ports:
+      - "8000:8000"  # 板子的 WebSocket
+      - "8003:8003"  # OTA、网关页面
+      - "4399:4399"  # 小米音箱（不接音箱可以删掉这行）
+    environment:
+      # 文件夹在电脑上的路径：Bot 在电脑上写回复，后端要告诉它写到哪里
+      ZONGZHU_HOST_HOME: ${ZONGZHU_HOME:?在 deploy/docker/.env 里写 ZONGZHU_HOME}
+    volumes:
+      # 里面是 data/（配置、网关记下的东西）、models/（语音模型）、private/（Bot Webhook、回复、音箱 token）
+      - ${ZONGZHU_HOME}:/zongzhu

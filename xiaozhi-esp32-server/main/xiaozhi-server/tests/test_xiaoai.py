@@ -4,6 +4,7 @@ import asyncio
 import json
 import socket
 import struct
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -220,6 +221,20 @@ class WakeListenerTest(unittest.TestCase):
         model = Path(wake.DEFAULT_MODEL_DIR)
         lines = wake.keyword_lines(["你好宗主"], str(model / "tokens.txt"), str(model / "bpe.model"))
         self.assertEqual(lines, ["你 好 宗 主 @你好宗主"])
+
+    @unittest.skipUnless(Path(wake.DEFAULT_MODEL_DIR, "tokens.txt").exists(), "本机没有唤醒词模型")
+    def test_call_names_with_spaces_do_not_kill_the_backend(self):
+        """没写 Bot 名字时呼名是 "Grok Bot"：@ 后面带空格时 sherpa-onnx 直接让进程退出（2026-11-04），放子进程里试"""
+        import subprocess
+        code = ("from core.gateway.xiaoai import wake\n"
+                "s = wake.Spotter(wake.DEFAULT_MODEL_DIR, ['宗主', 'Grok Bot', 'grok'])\n"
+                "print(sorted(s.words.values()))")
+        result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stderr[-500:])
+        self.assertIn("['grok', 'grok bot', '宗主']", result.stdout)
+        model = Path(wake.DEFAULT_MODEL_DIR)
+        lines = wake.keyword_lines(["Grok Bot"], str(model / "tokens.txt"), str(model / "bpe.model"))
+        self.assertTrue(lines[0].endswith(" @grok_bot"), lines)
 
 
 class ReplyTest(unittest.IsolatedAsyncioTestCase):

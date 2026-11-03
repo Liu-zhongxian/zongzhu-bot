@@ -676,12 +676,19 @@ class BoardWakeWordTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_bad_word_or_wrong_version_is_refused_before_the_board_is_touched(self):
         from core.gateway import control, wake_assets
+        # 自带一份 web/boards.json：后端不在仓库里跑时（Docker 镜像里）也能测
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        (Path(directory.name) / "web").mkdir()
+        (Path(directory.name) / "web" / "boards.json").write_text(
+            '[{"id": "szp", "package": "zongzhu-szp-2.5.2.9", "assets": "generated_assets.bin"}]')
+        config = {"gateway": {"firmware_root": directory.name}}
         with mock.patch.object(wake_assets, "change_wake_word", mock.AsyncMock()) as change:
             for word in ("hello", "宗", "你好宗主你好宗主你好"):
                 with self.assertRaises(control.ControlError):
-                    await control.board_wake_word({}, self.conn, word)
+                    await control.board_wake_word(config, self.conn, word)
             self.status._boards["aa:bb:cc:dd:ee:01"]["version"] = "2.5.2.1"
             with self.assertRaises(control.ControlError) as caught:
-                await control.board_wake_word({}, self.conn, "你好小雨")
+                await control.board_wake_word(config, self.conn, "你好小雨")
         self.assertIn("同一版", str(caught.exception))
         change.assert_not_awaited()

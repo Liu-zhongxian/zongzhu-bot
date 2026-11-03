@@ -2,6 +2,8 @@
 
 把后端部署到一台有公网 IP 的 Linux 服务器上，板子在任何网络都能用，电脑可以关机。已在 Ubuntu 22.04（4 核 6GB）上验证。
 
+只想在局域网里用容器跑（Windows、Linux、Mac），看 [docker/README.md](docker/README.md)。
+
 前提：一个解析到服务器的子域名（Cloudflare 用户要关掉代理，用灰色云朵）；服务器放行 80、443。
 
 | 文件 | 放到哪里 | 作用 |

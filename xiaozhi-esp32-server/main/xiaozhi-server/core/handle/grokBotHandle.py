@@ -6,7 +6,7 @@ import time
 import uuid
 from collections import OrderedDict
 from functools import lru_cache
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import httpx
 from core.handle.grokBotReply import prepare_reply
@@ -181,6 +181,18 @@ class Submission:
         self.url, self.token, self.payload, self.pending, self.key = url, token, payload, pending, key
 
 
+def path_for_bot(config, target):
+    """The reply file as the Bot sees it. In Docker (G21b) the backend reads `reply_dir` inside the
+    container while the Bot writes on the computer: `bot_reply_dir` is that same directory on the computer
+    (C:\\... on Windows, /home/... on Linux)."""
+    base = str(config.get("bot_reply_dir") or "")
+    if not base:
+        return str(target)
+    name = Path(target).relative_to(config["reply_dir"]).parts
+    windows = re.match(r"^[A-Za-z]:[\\/]|^\\\\", base)
+    return str((PureWindowsPath if windows else PurePosixPath)(base, *name))
+
+
 def prepare_submission(command, device, config_file):
     """Local checks before anything is sent: a str is the reason it will not be sent."""
     if not command.strip("，。！？,.!? "):
@@ -239,7 +251,8 @@ def prepare_submission(command, device, config_file):
         payload["command"] = (
             intro
             + "\n完成后还需要把实际回复回传到板子屏幕。使用已有且获准的本机文件或本机终端能力，"
-            "在用户 Mac 写入 UTF-8 JSON 文件（不能只写云端同名路径）：" + str(target)
+            "在用户" + ("电脑" if config.get("bot_reply_dir") else " Mac ")
+            + "写入 UTF-8 JSON 文件（不能只写云端同名路径）：" + path_for_bot(config, target)
             + "\nJSON 格式：" + json.dumps({"request_id": request_id, "text": "这里填写给用户的实际回复"}, ensure_ascii=False)
             + "\ntext 使用中文纯文本，保留回答的主要内容，不要只写已收到或已完成；"
             "较长结果请给出最多2000字的可读摘要，完整版保留在原对话。"
