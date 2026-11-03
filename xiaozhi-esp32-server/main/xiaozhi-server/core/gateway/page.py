@@ -128,7 +128,7 @@ class GatewayPageHandler:
             if not info["newer"] and request.query.get("force") != "1":
                 return web.json_response({"confirm": f"这份固件是 {info['version']}，板子上是 {info['board_version']}："
                                                      "不比板子上的新。还要传吗？", **info}, status=409)
-            info["file"] = await asyncio.to_thread(firmware.save, bytes(image), info["board_type"], info["version"])
+            info["file"] = await asyncio.to_thread(firmware.save, bytes(image), info["model"], info["version"])
         except firmware.FirmwareError as e:
             return web.json_response({"error": str(e)}, status=400)
         return web.json_response(info)

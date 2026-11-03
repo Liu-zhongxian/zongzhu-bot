@@ -77,6 +77,10 @@ async def main():
     ota_task = asyncio.create_task(ota_server.start())
     # 小米音箱直接接进来（gateway.xiaoai，默认关；G19i）
     xiaoai_task = asyncio.create_task(XiaoaiServer(config, ws_server).start())
+    # 项目主人发布的固件：每小时查一次，验签后放进 data/bin（G18e，可在网关页面关）
+    from core.gateway import releases
+
+    releases_task = asyncio.create_task(releases.watch(config))
 
     read_config_from_api = config.get("read_config_from_api", False)
     port = int(config["server"].get("http_port", 8003))
@@ -137,6 +141,7 @@ async def main():
         stdin_task.cancel()
         ws_task.cancel()
         xiaoai_task.cancel()
+        releases_task.cancel()
         if ota_task:
             ota_task.cancel()
 

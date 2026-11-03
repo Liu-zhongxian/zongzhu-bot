@@ -287,7 +287,7 @@ async function uploadFirmware(device, file, force) {
 }
 function firmwareBlock(b) {
   if (!canControl() || !(b.info?.tools || []).some(t => t.name === "self.upgrade_firmware")) return "";
-  const files = (data.firmware || []).filter(f => f.type === b.type), dev = esc(b.id);
+  const files = (data.firmware || []).filter(f => f.type === (b.variant || b.type) || f.type === b.type), dev = esc(b.id);
   return `<h4>固件 <small>板子上是 ${esc(b.version || "—")}</small></h4>
     <div class="btns"><button class="btn" data-upload data-dev="${dev}">选择固件文件并上传</button></div>
     ${files.map(f => `<div class="say"><span>${esc(f.version)} · ${mb(f.size)} · ${clock(f.time)} 传的</span>
@@ -434,7 +434,20 @@ function renderDevices() {
       <p class="note">紫色是 AI 能调的工具；"仅后端"的不给 AI，只有后端能调（改唤醒词、重启、升级固件都用它们）。最低剩余内存是开机以来的最低值；固件不报 PSRAM。
         ${b.online ? "" : "板子待机中，"}读取于 ${clock(i.read_at)}（${ago(i.read_at)}前）。</p>
     </div>`;
-  }).join("") + callNamesCard());
+  }).join("") + callNamesCard() + releasesCard());
+}
+// G18e: firmware the project owner publishes (signed), checked hourly, put in data/bin when it passes
+function releasesCard() {
+  const r = (data.settings || {}).releases; if (!r) return "";
+  const when = r.checked_at ? `上次查：${clock(r.checked_at)}（${ago(r.checked_at)}前）· ${esc(r.result)}` : esc(r.result);
+  return `<div class="card device"><h3>项目发布的固件</h3>
+    <div class="sub">${r.source ? when : "这台后端没开（配置 gateway.firmware_releases: false）"}</div>
+    ${canControl() && r.source ? `<div class="btns">
+      <button class="btn ${r.auto ? "on" : ""}" data-act="set_auto_firmware" data-val="${r.auto ? "off" : "on"}">${r.auto ? "自动更新：开（点一下关）" : "自动更新：关（点一下开）"}</button>
+      <button class="btn" data-act="check_releases">现在查</button></div>` : ""}
+    <p class="note">项目主人发布新固件后，每小时查一次：签名验过、文件和清单对得上、型号对得上，才放进来，你的板子下次开机自己更新。
+      只有项目主人能发布；这里只会更新连着这台后端的板子。关了以后不再自动下载，点"现在查"还能手动拿。</p>
+  </div>`;
 }
 // G19d: the Xiaomi speaker (no MCP): what the backend reads on it with fixed read-only commands
 const PLAY = { idle: "没在放", playing: "在放", paused: "暂停" };

@@ -140,7 +140,7 @@ def music_status() -> dict:
 
 
 # G8b step 5: wake words and call names set on this page (core/gateway/settings.py), in effect at once
-SETTING_ACTIONS = {"set_speaker_wake_words", "set_call_names"}
+SETTING_ACTIONS = {"set_speaker_wake_words", "set_call_names", "set_auto_firmware", "check_releases"}
 
 
 def settings_view(config) -> dict:
@@ -150,7 +150,11 @@ def settings_view(config) -> dict:
 
     server = speaker_control.server
     names = gateway.agent_call_names(config)
+    from core.gateway import releases
+
     return {
+        "releases": {"source": releases.source(config) is not None, "auto": releases.auto_update(),
+                     "checked_at": releases.state["checked_at"], "result": releases.state["result"]},
         "speaker": server is not None,
         "speaker_wake_words": speaker_server.wake_words(config),
         "skipped": list(server.skipped) if server else [],
@@ -165,6 +169,13 @@ async def settings_action(config, action, value) -> dict:
     from core.gateway import settings
     from core.gateway.xiaoai import control as speaker_control
 
+    if action in ("set_auto_firmware", "check_releases"):
+        from core.gateway import releases
+
+        if action == "set_auto_firmware":
+            settings.put("auto_firmware", value in (True, "on", "1", 1))
+            return {"message": "自动更新项目发布的固件：" + ("开" if releases.auto_update() else "关")}
+        return {"message": await releases.run_check(config)}
     try:
         if action == "set_speaker_wake_words":
             words = settings.words(value)

@@ -34,6 +34,15 @@ class CheckTest(unittest.TestCase):
         self.assertFalse(firmware.check(image("2.5.2.9"), BOARD)["newer"])  # 同版本要另外确认
         self.assertFalse(firmware.check(image("2.5.1.10"), BOARD)["newer"])
 
+    def test_variant_is_checked_and_named_when_the_board_reports_it(self):
+        board = dict(BOARD, name="lichuang-dev-zongzhu")
+        self.assertEqual(firmware.check(image(board=b"lichuang-dev\0lichuang-dev-zongzhu\0"), board)["model"],
+                         "lichuang-dev-zongzhu")
+        with self.assertRaises(firmware.FirmwareError) as caught:
+            firmware.check(image(board=b"lichuang-dev\0lichuang-dev\0"), board)  # 同型号的官方版本
+        self.assertIn("lichuang-dev-zongzhu", str(caught.exception))
+        self.assertEqual(firmware.check(image(), BOARD)["model"], "lichuang-dev")  # 没报变体：按型号
+
     def test_wrong_files_are_refused(self):
         for bad, why in ((b"not firmware" * 100, "不是 ESP32"),
                          (image(project="other"), "不是小智"),
@@ -49,6 +58,7 @@ class CheckTest(unittest.TestCase):
     def test_real_firmware_only_fits_its_own_board(self):
         szp = (REPO / "firmware/zongzhu-szp-2.5.2.9/xiaozhi.bin").read_bytes()
         self.assertEqual(firmware.check(szp, BOARD)["version"], "2.5.2.9")
+        self.assertEqual(firmware.check(szp, dict(BOARD, name="lichuang-dev-zongzhu"))["model"], "lichuang-dev-zongzhu")
         with self.assertRaises(firmware.FirmwareError):
             firmware.check(szp, {"type": "m5stack-stopwatch", "version": "2.5.2.9"})
 

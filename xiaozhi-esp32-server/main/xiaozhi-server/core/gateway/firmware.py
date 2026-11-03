@@ -59,11 +59,18 @@ def check(image: bytes, board: dict) -> dict:
         raise FirmwareError("还不知道这块板子的型号：等它开机连一次后端再传")
     if board_type.encode() not in image:
         raise FirmwareError(f"固件里没有这块板子的型号 {board_type}：多半是别的板子的固件，不能刷")
+    # The variant (board.name) too, as a whole string: lichuang-dev-zongzhu, esp32-s3-touch-amoled-1.75c.
+    # (A 1.75C firmware also holds "esp32-s3-touch-amoled-1.75" as its type, so 1.75 vs 1.75C is not
+    # fully told apart here; G18e publishes by the variant written at build time.)
+    variant = board.get("name") or ""
+    if variant and (variant.encode() + b"\0") not in image:
+        raise FirmwareError(f"固件不是给 {variant} 编的（同型号的另一个版本？），不能刷")
     chip = ((board.get("info") or {}).get("chip") or "").lower().replace("-", "")
     if chip in CHIPS and CHIPS[chip] != info["chip"]:
         raise FirmwareError(f"芯片对不上：板子是 {chip}，固件是给芯片 {info['chip']} 的")
     current = board.get("version") or ""
     info["board_type"], info["board_version"] = board_type, current
+    info["model"] = variant or board_type  # the file is saved and offered under this name
     info["newer"] = _version(info["version"]) > _version(current)
     return info
 

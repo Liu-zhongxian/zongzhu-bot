@@ -220,7 +220,13 @@ class OTAHandler(BaseHandler):
                     device_version = ""
             if not device_version:
                 device_version = "0.0.0"
-            gateway_status.note_ota(device_id, device_model, device_version, request.remote or "")
+            # board.name is the firmware variant (lichuang-dev-zongzhu, esp32-s3-touch-amoled-1.75c):
+            # unlike board.type it tells 1.75 from 1.75C, so firmware files are matched by it first (G18c/G18e)
+            try:
+                board_name = str((data_json.get("board") or {}).get("name") or "").strip()
+            except Exception:
+                board_name = ""
+            gateway_status.note_ota(device_id, device_model, device_version, request.remote or "", board_name)
 
             return_json = {
                 "server_time": {
@@ -303,7 +309,11 @@ class OTAHandler(BaseHandler):
             try:
                 self._refresh_bin_cache_if_needed()
                 files_by_model = self._bin_cache.get("files_by_model", {})
-                candidates = files_by_model.get(device_model, [])
+                # Files named by the board's variant first, then by its type (older uploads)
+                candidates = sorted(
+                    (files_by_model.get(board_name, []) if board_name and board_name != device_model else [])
+                    + files_by_model.get(device_model, []),
+                    key=lambda it: _parse_version(it[0]), reverse=True)
 
                 self.logger.bind(tag=TAG).info(
                     f"查找型号 {device_model} 的固件，找到 {len(candidates)} 个候选"
