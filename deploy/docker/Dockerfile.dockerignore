@@ -3,7 +3,12 @@
 !requirements-macos.txt
 !requirements-macos.lock.txt
 !xiaozhi-esp32-server/main/xiaozhi-server/
-# 这些挂载进去，不打进镜像
+!firmware/
+!web/boards.json
+!examples/backend.config.yaml
+!examples/grok-bot-webhook.example.json
+!deploy/docker/zongzhu_docker.py
+# 这些在挂载的 /zongzhu 里，不打进镜像
 xiaozhi-esp32-server/main/xiaozhi-server/data/
 xiaozhi-esp32-server/main/xiaozhi-server/models/sherpa-onnx-*/
 xiaozhi-esp32-server/main/xiaozhi-server/models/SenseVoiceSmall/model.pt

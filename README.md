@@ -94,7 +94,7 @@
   - 微雪 ESP32-S3-Touch-AMOLED-1.75C；
   - 立创·实战派 ESP32-S3（[说明](docs/BOARD-SZP.md)）。
   - M5Stack StopWatch 也能编译，但还没上过实机（[说明](docs/BOARD-STOPWATCH.md)）。
-- **电脑**：一台常开的 Mac（在 Apple 芯片上验证过）运行后端，要和板子在同一个 2.4GHz 局域网。也可以[用 Docker 运行](deploy/docker/README.md)（点歌除外），或[部署到公网服务器](deploy/README.md)。
+- **电脑**：一台常开的 Mac（在 Apple 芯片上验证过）运行后端，要和板子在同一个 2.4GHz 局域网。Windows、Linux 可以[用 Docker 运行](deploy/docker/README.md)（点歌除外），或[部署到公网服务器](deploy/README.md)。
 - **Bot**：你的 Grok Bot 要提供 Webhook，并且**能往这台电脑写文件**，回复才能回到板子上（[接口要求](docs/GUIDE.md#bot-接口要求)）。
 
 ## 快速开始

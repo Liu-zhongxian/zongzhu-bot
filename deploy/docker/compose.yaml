@@ -1,6 +1,8 @@
-# 宗主后端（G21）。在仓库根目录：
-#   cp deploy/docker/env.example deploy/docker/.env   # 填上你自己的目录
-#   docker compose -f deploy/docker/compose.yaml up -d --build
+# 宗主后端（G21、G21b）。在仓库根目录：
+#   cp deploy/docker/env.example deploy/docker/.env                   # 写上你放宗主文件的文件夹
+#   docker compose -f deploy/docker/compose.yaml build
+#   docker compose -f deploy/docker/compose.yaml run --rm zongzhu setup  # 第一次：配置、模型、Bot Webhook
+#   docker compose -f deploy/docker/compose.yaml up -d
 # 说明见 deploy/docker/README.md。
 services:
   zongzhu:
@@ -14,13 +16,9 @@ services:
       - "8000:8000"  # 板子的 WebSocket
       - "8003:8003"  # OTA、网关页面
       - "4399:4399"  # 小米音箱（不接音箱可以删掉这行）
+    environment:
+      # 文件夹在电脑上的路径：Bot 在电脑上写回复，后端要告诉它写到哪里
+      ZONGZHU_HOST_HOME: ${ZONGZHU_HOME:?在 deploy/docker/.env 里写 ZONGZHU_HOME}
     volumes:
-      # 配置（.config.yaml）和网关记下的东西（页面设置、固件、唤醒词资源包）
-      - ${ZONGZHU_DATA:?在 .env 里写 ZONGZHU_DATA}:/opt/zongzhu/server/data
-      # 语音模型：Mac 上装好的后端的 models/ 目录（VAD、X-ASR，接音箱时还有唤醒词模型）
-      - ${ZONGZHU_MODELS:?在 .env 里写 ZONGZHU_MODELS}:/opt/zongzhu/server/models:ro
-      # 私人目录挂在和宿主机一样的路径：后端把回复文件的完整路径交给 Bot，Bot 在宿主机上写，
-      # 两边路径必须一样；配置里写的 Webhook、音箱 token 路径也不用改
-      - ${ZONGZHU_PRIVATE:?在 .env 里写 ZONGZHU_PRIVATE}:${ZONGZHU_PRIVATE}
-      # 仓库（只读）：网关页面改板子唤醒词时从这里的 firmware/ 找资源包（配置 gateway.firmware_root）
-      - ${ZONGZHU_REPO:?在 .env 里写 ZONGZHU_REPO}:${ZONGZHU_REPO}:ro
+      # 里面是 data/（配置、网关记下的东西）、models/（语音模型）、private/（Bot Webhook、回复、音箱 token）
+      - ${ZONGZHU_HOME}:/zongzhu

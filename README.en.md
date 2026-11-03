@@ -96,7 +96,7 @@ Gestures, the expression list and what you can say for music are in the [full gu
   - Waveshare ESP32-S3-Touch-AMOLED-1.75C;
   - Lichuang (立创) SZPI ESP32-S3 ([notes](docs/BOARD-SZP.md), Chinese).
   - An M5Stack StopWatch build exists too, but hasn't run on a real board yet ([notes](docs/BOARD-STOPWATCH.md), Chinese).
-- **Computer**: an always-on Mac (verified on Apple Silicon) runs the backend. It must be on the same 2.4 GHz LAN as the board. It can also [run in Docker](deploy/docker/README.md) (everything but local music) or [on a public server](deploy/README.md) (both Chinese).
+- **Computer**: an always-on Mac (verified on Apple Silicon) runs the backend. It must be on the same 2.4 GHz LAN as the board. On Windows or Linux, [run it in Docker](deploy/docker/README.md) (everything but local music) or [on a public server](deploy/README.md) (both Chinese).
 - **Bot**: your Grok Bot must expose a webhook **and be able to write files on this computer**, or replies never reach the board ([interface](docs/GUIDE.en.md#bot-interface)).
 
 ## Getting started

@@ -6,6 +6,7 @@ encoder.onnx、decoder.onnx、joiner.onnx、tokens.txt、bpe.model），放在 `
 """
 import os
 import queue
+import re
 import tempfile
 import threading
 from pathlib import Path
@@ -25,7 +26,9 @@ SAMPLE_RATE = 16000
 def keyword_lines(words, tokens, bpe_model, skipped=None):
     """唤醒词 → KeywordSpotter 的关键词行（"你 好 宗 主 @你好宗主"、"▁BO T @bot"），英文用 bpe 切。
     模型的英文片段是大写的（bpe 把 "BOT" 切成 ▁BO、T，小写的 "bot" 切不出来），所以按大写切；
-    @ 后面（认出来时返回的）用小写。模型切不出来的词跳过，放进 skipped，别的照用。"""
+    @ 后面（认出来时返回的）用小写；词里的空格换成 _（sherpa-onnx 按空格切这一行，"@grok bot" 里的 bot
+    会被当成模型的字、切不出来，整个后端直接退出，2026-11-04 Docker 新装没写 Bot 名字时碰到），
+    Spotter.feed 再换回原词。模型切不出来的词跳过，放进 skipped，别的照用。"""
     import sherpa_onnx
 
     lines = []
@@ -36,10 +39,15 @@ def keyword_lines(words, tokens, bpe_model, skipped=None):
         except Exception:
             pieces = None
         if pieces:
-            lines.append(" ".join(pieces) + " @" + w)
+            lines.append(" ".join(pieces) + " @" + label(w))
         elif skipped is not None:
             skipped.append(w)
     return lines
+
+
+def label(word):
+    """关键词行里 @ 后面的名字：不能有空格"""
+    return re.sub(r"\s+", "_", word)
 
 
 class Spotter:
@@ -55,6 +63,7 @@ class Spotter:
             raise FileNotFoundError(f"唤醒词模型缺文件：{model} {missing}")
         self.skipped = []
         lines = keyword_lines(words, str(model / "tokens.txt"), str(model / "bpe.model"), self.skipped)
+        self.words = {label(w.strip().lower()): w.strip().lower() for w in words if w and w.strip()}
         # 关键词文件写到临时目录，建好就删：模型目录可以是只读的（Docker 里只读挂载，G21）
         fd, keywords = tempfile.mkstemp(prefix="zongzhu-kws-", suffix=".txt")
         try:
@@ -80,7 +89,7 @@ class Spotter:
             self.spotter.decode_stream(stream)
             result = self.spotter.get_result(stream)
             if result:
-                found = result
+                found = self.words.get(result, result)
                 self.spotter.reset_stream(stream)
         return found
 
