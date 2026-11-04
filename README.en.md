@@ -170,9 +170,3 @@ The rest of the two upstream directories is kept mostly as is, so later upstream
 - This project's code: [MIT License](LICENSE).
 - The firmware is based on [78/xiaozhi-esp32](https://github.com/78/xiaozhi-esp32) and the backend on [xinnan-tech/xiaozhi-esp32-server](https://github.com/xinnan-tech/xiaozhi-esp32-server), both MIT.
 - Local music uses [go-music-dl](https://github.com/guohuiyuan/go-music-dl) (AGPL-3.0) and [mpv](https://github.com/mpv-player/mpv). Neither is in this repository: `tools/local_music_setup.sh` downloads them from their release pages, and they run as separate programs under their own licenses.
-- Xiaomi speaker:
-  - The patches and Client source (`zongzhu-speaker/`) come from [open-xiaoai](https://github.com/idootop/open-xiaoai) (MIT; see [zongzhu-speaker/LICENSE.open-xiaoai](zongzhu-speaker/LICENSE.open-xiaoai)).
-  - The way the backend connects the speaker (`core/gateway/xiaoai/`) follows [coderzc/open-xiaoai-bridge](https://github.com/coderzc/open-xiaoai-bridge) (MIT), and the wake word model is the one it publishes.
-  - Xiaomi's official firmware and the flashing tool are not in this repository.
-- Call-name matching follows [justhalfbit/xiaozhi-hub-server](https://github.com/justhalfbit/xiaozhi-hub-server) (MIT).
-- Real keys, Wi-Fi settings, flash backups, model weights, sign-in cookies, logs and conversations stay on the local machine and are not in this repository.
