@@ -131,38 +131,27 @@
 - **音箱上**：补丁固件开 SSH、关小米自动升级、开机运行 `/data/init.sh`；open-xiaoai 的 Client 把麦克风和播放交给后端。
 - **后端里**：唤醒词在后端识别（sherpa-onnx），之后和板子走同一套识别、网关、TTS。音箱按 4 个声道录音：3 个麦克风，加 1 个音箱自己放出的声音。后端只用麦克风，所以音箱说话时也能喊醒；等音箱真的放完、回声过去才开始听，不会把它自己的声音当成你的话。网关页面上显示为"小米音箱 Pro"，卡片里有型号、系统版本、启动分区、音量，可以调音量、播放 / 暂停、让它说一句话、打断小爱，也在这里改它的唤醒词。
 
-步骤（刷机和 Client 的细节见 [zongzhu-speaker/README.md](../zongzhu-speaker/README.md)）：
+都在网关页面上做（`http://<电脑>:8003/gateway` → 设备），后端在这台电脑上干活，不用敲命令：
 
-1. 查音箱版本，用 `ota_query.py` 找到同版本的官方固件包；
-2. `build_image.sh` 打补丁、打包，并核对只改了补丁的 8 个文件；
-3. `backup_readonly.sh` 进刷机模式只读备份，判断现在用的是 A/B 哪一边；
-4. `flash_slot.sh` 只写另一边，读回逐字节核对后才切启动参数，官方系统留在原来那边当退路；
-5. `build_client.sh` 编译 Client，生成 token；
-6. 下载唤醒词模型，放进后端（在 `xiaozhi-esp32-server/main/xiaozhi-server/` 里运行；压缩包约 490 MB，只取其中 5 个文件，约 120 MB）：
+1. **刷补丁固件**（只能在直接运行在 Mac 上的后端里做，Docker 里摸不到 USB）：音箱用能传数据的 Type-C 线直插电脑。在"给小米音箱刷补丁固件"里填音箱现在的系统版本（米家 App → 音箱 → 设置 → 检查更新，最好先升到最新）和要设的 root 密码，勾选知道风险，点「开始」。后端查到小米的官方包、下载、打补丁做镜像（核对只改了补丁的 8 个文件），然后提示"拔掉音箱的电源，等 3 秒再插上"：音箱一进刷机模式后端就接住，不用再点。接着把 6 个分区只读备份到电脑上（`data/xiaoai-flash/backup-*`），选边（一边的内核和系统都和官方包一样才算官方的一边，只写另一边，两边都对不上就不写），写进去都读回来逐字节核对，都对了才切启动分区。刷完拔电再插。想先看看接不接得住、会写哪一边，点「只读试一次（不写）」，它做到选边就停。
+2. **打开音箱接入**：在"接入小米音箱 Pro"里点「打开音箱接入」。后端生成 token，没有唤醒词模型就在后台下载（压缩包约 490 MB，只留 5 个文件，约 120 MB），下好就开 4399 端口，不用重启后端。
+3. **装 Client**：填音箱 IP（路由器管理页面或米家 App 里看）和刷机时设的 root 密码，点「装到音箱上」。后端经 SSH 写入 Client、后端地址、token 和开机脚本，核对后启动；几秒后音箱"嘀"一声，连上后端。以后再点一次就是更新。
 
-   ```sh
-   curl -L -o /tmp/xiaoai-models.zip https://github.com/coderzc/open-xiaoai-bridge/releases/download/vad-kws-asr-models/models.zip
-   unzip -j -o /tmp/xiaoai-models.zip models/encoder.onnx models/decoder.onnx models/joiner.onnx \
-     models/tokens.txt models/bpe.model -d models/sherpa-onnx-kws-open-xiaoai
-   rm /tmp/xiaoai-models.zip
-   ```
+root 密码只用这一次，后端不保存；它经网关页面发给后端时没有加密，只在自己家的局域网里用。网关页面设了口令时，这些操作要先登录。
 
-7. 在后端配置 `data/.config.yaml` 里打开音箱接入，然后重启后端：
+不用网页也行：[zongzhu-speaker/README.md](../zongzhu-speaker/README.md) 里有同样做法的脚本（`build_image.sh`、`backup_readonly.sh`、`flash_slot.sh`、`install_client.sh`），以及在后端配置里打开音箱接入的写法：
 
-   ```yaml
-   gateway:
-     xiaoai:
-       enabled: true
-       port: 4399                     # 和装 Client 时写的端口一样
-       token_file: /完整路径/token.txt  # 第 5 步生成的 token，和音箱上的一样
-       # wake_words: [宗主]           # 默认"宗主"；AI 的呼名也自动算唤醒词
-       # kws_threshold: 0.05          # 越低越容易唤醒
-   ```
+```yaml
+gateway:
+  xiaoai:
+    enabled: true
+    port: 4399                     # 和装 Client 时写的端口一样
+    token_file: /完整路径/token.txt  # 不写就用网关页面生成的 data/xiaoai_token.txt
+    # wake_words: [宗主]           # 默认"宗主"；AI 的呼名也自动算唤醒词
+    # kws_threshold: 0.05          # 越低越容易唤醒
+```
 
-   日志里出现 `小米音箱接入：ws://0.0.0.0:4399` 就好了。
-8. `install_client.sh <音箱 IP> ws://<电脑的局域网 IP>:4399 <token 文件>` 把 Client 装到音箱上；约 20 秒后后端日志出现 `小米音箱已连接`，音箱"嘀"一声。
-
-电脑的 IP 写进了音箱，所以要在路由器里给电脑固定一个 IP。只在 OH2P、固件 1.62.2、Apple Silicon 的 Mac 上完整做过。**刷机有变砖的风险**，务必先备份。
+电脑的 IP 写进了音箱，所以要在路由器里给电脑固定一个 IP。只在 OH2P、固件 1.62.2、Apple Silicon 的 Mac 上完整做过。**刷机有变砖的风险**：网页刷机会先只读备份，只写一边、留一边官方系统当退路，但刷机工具、USB 线、断电都可能出意外。
 
 ## 手动安装（不用网页）
 
