@@ -125,6 +125,7 @@ section[hidden] { display: none; }
 .form input { min-width: 0; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
 .form label.check { display: flex; align-items: center; color: var(--text); grid-column: 1 / -1; }
 .form label.check input { padding: 0; margin: 0 6px 0 0; vertical-align: middle; }
+.form label.check input[type=radio] { margin-left: 10px; }
 .say input { flex: 1; min-width: 0; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
 .login input { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
 #toast { position: fixed; right: 20px; bottom: 20px; max-width: min(420px, calc(100vw - 32px)); padding: 10px 14px; border-radius: 10px;
@@ -522,6 +523,10 @@ function speakerFlashCard() {
       <label>再输一次<input id="fl-pw2" type="password" data-keep autocomplete="new-password"></label>
     </div>
     <div class="form">
+      <label class="check"><span>写哪一边：
+        <input id="fl-slot-auto" type="radio" name="fl-slot" value="" data-keep checked> 自动（推荐）
+        <input id="fl-slot-0" type="radio" name="fl-slot" value="0" data-keep> 0 号
+        <input id="fl-slot-1" type="radio" name="fl-slot" value="1" data-keep> 1 号</span></label>
       <label class="check"><span><input id="fl-delay" type="checkbox" data-keep> 设 bootdelay 15（以后更容易再进刷机模式，开机慢几秒）</span></label>
       <label class="check"><span><input id="fl-risk" type="checkbox" data-keep> 我知道刷机有变砖的可能，风险自负</span></label>
     </div>
@@ -534,7 +539,7 @@ function speakerFlashCard() {
     ${form}${pills}${outcome}
     <p class="note">音箱用能传数据的 Type-C 线直插这台电脑（不要经过扩展坞）。点「开始」后，后端先查小米的官方包、下载、打补丁做镜像（版本在米家 App → 音箱 → 设置 → 检查更新里看，
       最好先升到最新），做好后提示你拔电再插；「只读试一次」做到选边就停、不写音箱，可以先用它确认接得住、选边对不对；接住刷机模式后先把 6 个分区只读备份到这台电脑，再选边：一边的内核和系统都和官方包一样才算官方的一边，
-      只写另一边，两边都对不上就不写。写进去都读回来逐字节核对，都对了才切启动分区；中途出错不切，音箱照旧从原来那边启动。
+      只写另一边，两边都对不上就不写；也可以自己选写 0 号还是 1 号，但另一边必须是官方的，不然没有退路，照样不写。写进去都读回来逐字节核对，都对了才切启动分区；中途出错不切，音箱照旧从原来那边启动。
       root 密码只用来做镜像，不保存；它经这个页面发给后端时没有加密，只在自己家的局域网里用。只在 OH2P、系统 ${esc((f.tested || []).join("、"))} 上完整做过。</p>
   </div>`;
 }
@@ -542,9 +547,11 @@ document.addEventListener("click", e => {
   const b = e.target.closest("button[data-flash]"); if (!b) return;
   if (b.dataset.flash === "cancel") return act("speaker_flash_cancel", "", {});
   const version = document.getElementById("fl-version").value.trim();
+  const picked = document.querySelector("input[name=fl-slot]:checked")?.value;
+  const slot = picked ? { slot: Number(picked) } : {};
   if (b.dataset.flash === "dry") {
     if (!version) return toast("先填音箱现在的版本", true);
-    return act("speaker_flash_start", "", { version, dry_run: true },
+    return act("speaker_flash_start", "", { version, dry_run: true, ...slot },
       `只读试一次？做镜像、接住刷机模式、备份、选边，到这里就停，不写音箱；不用填密码。`);
   }
   const pw = document.getElementById("fl-pw"), pw2 = document.getElementById("fl-pw2");
@@ -552,10 +559,10 @@ document.addEventListener("click", e => {
   if (!pw.value) return toast("先填要设的 root 密码", true);
   if (pw.value !== pw2.value) return toast("两次密码不一样", true);
   if (!document.getElementById("fl-risk").checked) return toast("先勾选「我知道刷机有变砖的可能」", true);
-  const value = { version, password: pw.value, confirm: true };
+  const value = { version, password: pw.value, confirm: true, ...slot };
   if (document.getElementById("fl-delay").checked) value.bootdelay = 15;
   pw.value = pw2.value = "";  // used once: not kept in the page either
-  act("speaker_flash_start", "", value, `开始给音箱刷 ${version} 的补丁固件？做好镜像后会提示你拔电再插。`);
+  act("speaker_flash_start", "", value, `开始给音箱刷 ${version} 的补丁固件${picked ? `，写 ${picked} 号` : ""}？做好镜像后会提示你拔电再插。`);
 });
 // G25 ①: connect a Xiaomi speaker from this page (core/gateway/xiaoai/setup.py): turn the speaker link on
 // (token, wake-word model in the background), then install the Client over SSH; the root password is used once
