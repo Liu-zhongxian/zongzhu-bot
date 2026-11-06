@@ -4,16 +4,22 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>宗主网页刷机</title>
-  <meta name="description" content="用浏览器给 ESP32-S3 板子刷入宗主固件：识别板子、选唤醒词、填后端地址和 Wi-Fi，一次刷好。">
+  <meta name="description" content="用浏览器给 ESP32-S3 板子刷入宗主固件：识别板子、选唤醒词、填后端地址和 Wi-Fi，一次刷好；也说明怎么把小米智能音箱 Pro 接进宗主。">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="top">
     <h1>宗主网页刷机</h1>
-    <p>用 USB 把板子接到电脑，按步骤操作。刷机全程在你的浏览器里完成，Wi-Fi 密码等信息只写进板子，不会上传到任何地方。</p>
+    <p id="intro-board">用 USB 把板子接到电脑，按步骤操作。刷机全程在你的浏览器里完成，Wi-Fi 密码等信息只写进板子，不会上传到任何地方。</p>
+    <p id="intro-speaker" hidden>小米智能音箱 Pro（OH2P）刷上补丁固件、装上 Client 后，直接连你的宗主后端，就像一块没有屏幕的宗主板子：喊"宗主"，回答从音箱里念出来，小爱同学照常能用。</p>
+    <div class="tabs" role="tablist">
+      <button type="button" role="tab" data-mode="board" aria-selected="true">ESP32 板子</button>
+      <button type="button" role="tab" data-mode="speaker" aria-selected="false">小米音箱 Pro</button>
+    </div>
   </header>
 
   <main>
+    <div id="mode-board">
     <div id="unsupported" class="notice error" hidden>
       这个浏览器不支持网页串口。请用电脑上的 <b>Chrome</b> 或 <b>Edge</b> 打开本页（Safari、Firefox 和手机浏览器都不行）。
     </div>
@@ -156,6 +162,49 @@
     <div class="wizard-nav" id="wizard-nav">
       <button id="prev" class="secondary" type="button">上一步</button>
       <button id="next" class="primary" type="button">下一步</button>
+    </div>
+    </div>
+
+    <div id="mode-speaker" hidden>
+      <section class="step">
+        <h2><span class="num">1</span>装宗主后端</h2>
+        <p>音箱只负责收音和播放，唤醒词、语音识别、转给 Bot 都在后端做，所以先在一台常开的电脑上装好后端。已经为板子装过的，跳过这步。</p>
+        <div class="install" id="speaker-install-mac">
+          <p class="hint">macOS：打开"终端"，粘贴下面这行并回车（和刷板子第 4 步的是同一个脚本）。装好后，脚本最后会显示后端的网关页面地址。</p>
+          <div class="cmd">
+            <code id="speaker-install-cmd"></code>
+            <button id="copy-speaker-install" type="button">复制</button>
+          </div>
+        </div>
+        <p class="hint" id="speaker-install-other">Windows / Linux：用 Docker 运行后端，见 <a id="link-docker" target="_blank" rel="noopener">Docker 部署说明</a>；运行 setup 时"接不接小米音箱"选 yes。Docker 里能装 Client，不能刷机：刷机要在 Mac 上用一键安装的后端，或照音箱刷机说明用脚本。</p>
+      </section>
+
+      <section class="step">
+        <h2><span class="num">2</span>打开网关页面</h2>
+        <p>后端自带一个网关页面，刷机和装 Client 都在那里点，由后端在你的电脑上做。网关页面在你自己的电脑上，只有同一个局域网里打得开。</p>
+        <div class="sub">
+          <label>电脑的地址（运行后端的那台）
+            <input id="gateway-host" placeholder="例如：my-mac.local 或 192.168.1.100" autocomplete="off" spellcheck="false">
+          </label>
+          <div class="row"><button id="open-gateway" class="primary" type="button" disabled>打开网关页面</button></div>
+          <p class="hint error-text" id="gateway-error"></p>
+        </div>
+      </section>
+
+      <section class="step">
+        <h2><span class="num">3</span>在网关页面刷补丁固件、装 Client</h2>
+        <p>补丁固件（来自 <a href="https://github.com/idootop/open-xiaoai" target="_blank" rel="noopener">open-xiaoai</a>）在小米官方系统上打开 SSH、设 root 密码、关掉自动升级，开机运行 Client。音箱有 A、B 两套系统，只写一边，另一边的官方系统留着当退路。</p>
+        <p class="notice warn">刷机有变砖的风险，风险自负。只在小米智能音箱 Pro（OH2P）、系统 1.62.2、Apple Silicon 的 Mac 上完整做过。刷机要后端直接运行在 Mac 上（Docker 里摸不到 USB）。</p>
+        <ol class="howto">
+          <li>在网关页面左边点"设备"，找到"给小米音箱刷补丁固件"。音箱用能传数据的 Type-C 线直插电脑。</li>
+          <li>填音箱现在的系统版本（米家 App → 音箱 → 设置 → 检查更新）和要设的 root 密码，点"开始"。后端下载小米的官方包、打补丁做镜像。</li>
+          <li>页面提示后，拔掉音箱电源、等 3 秒再插上。后端自动接住刷机模式，先备份，再写入、逐字节核对。不放心可以先点"只读试一次（不写）"。</li>
+          <li>刷完拔电再插。在下面"接入小米音箱 Pro"里填音箱 IP（路由器管理页面或米家 App 里看）和刚设的 root 密码，点"装到音箱上"。</li>
+          <li>5 步都打勾后几秒，音箱"嘀"一声，就连上了。之后喊"宗主"试试。</li>
+        </ol>
+        <p class="hint">root 密码只发给你自己的后端，用一次就丢。电脑的 IP 会写进音箱，最好在路由器上给电脑固定 IP。
+          不想用网页的，也可以照 <a id="link-speaker-readme" target="_blank" rel="noopener">音箱刷机说明</a> 用脚本做，Client 用 <a id="link-install-client" target="_blank" rel="noopener">安装脚本</a> 装。</p>
+      </section>
     </div>
   </main>
 

@@ -144,3 +144,12 @@ pre {
   flex: none; border: 1px solid var(--line); border-radius: 6px;
   background: var(--card); color: var(--text); padding: 0 14px;
 }
+
+.tabs { display: flex; gap: 8px; margin: 4px 0 8px; }
+.tabs button {
+  background: none; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 999px; padding: 6px 16px;
+}
+.tabs button[aria-selected="true"] { color: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.howto { margin: 12px 0 0; padding-left: 22px; }
+.howto li { margin: 4px 0; }

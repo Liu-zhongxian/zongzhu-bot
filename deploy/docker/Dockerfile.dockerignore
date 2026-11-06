@@ -8,6 +8,8 @@
 !examples/backend.config.yaml
 !examples/grok-bot-webhook.example.json
 !deploy/docker/zongzhu_docker.py
+!zongzhu-speaker/client/bin/client
+!zongzhu-speaker/client/init.sh
 # 这些在挂载的 /zongzhu 里，不打进镜像
 xiaozhi-esp32-server/main/xiaozhi-server/data/
 xiaozhi-esp32-server/main/xiaozhi-server/models/sherpa-onnx-*/

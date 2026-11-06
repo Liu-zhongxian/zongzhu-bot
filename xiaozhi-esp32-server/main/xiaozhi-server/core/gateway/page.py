@@ -11,7 +11,7 @@ from pathlib import Path
 from aiohttp import web
 
 from core.gateway import control, firmware, flow, modules, status, tasks, wake_assets
-from core.gateway.xiaoai import control as speaker_control
+from core.gateway.xiaoai import control as speaker_control, flash_job as speaker_flash, setup as speaker_setup
 
 PAGE = Path(__file__).with_name("page.html")
 NO_STORE = {"Cache-Control": "no-store"}
@@ -46,7 +46,9 @@ class GatewayPageHandler:
                                  "password": control.password_required(self.config),
                                  "settings": control.settings_view(self.config), "modules": checked,
                                  "tasks": handed, "flow": flow.view(self.config),
-                                 "firmware": await asyncio.to_thread(firmware.listing)},
+                                 "firmware": await asyncio.to_thread(firmware.listing),
+                                 "speaker_setup": await asyncio.to_thread(speaker_setup.view, self.config),
+                                 "speaker_flash": await asyncio.to_thread(speaker_flash.view)},
                                  headers=NO_STORE)
 
     def _token_ok(self, request):
@@ -97,6 +99,10 @@ class GatewayPageHandler:
                 return web.json_response(await control.board_wake_word(self.config, conn, body.get("value")))
             if action in control.SETTING_ACTIONS:
                 return web.json_response(await control.settings_action(self.config, action, body.get("value")))
+            if action in speaker_flash.ACTIONS:
+                return web.json_response(await speaker_flash.act(self.config, action, body.get("value")))
+            if action in speaker_setup.ACTIONS:
+                return web.json_response(await speaker_setup.act(self.config, action, body.get("value")))
             if action in speaker_control.ACTIONS:
                 return web.json_response(await speaker_control.act(self.config, body.get("device"), action,
                                                                     body.get("value")))

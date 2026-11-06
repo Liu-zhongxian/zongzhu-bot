@@ -368,15 +368,59 @@ class TrimTest(unittest.TestCase):
 
 
 class ConfigTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        from core.gateway import settings as page_settings
+
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.dir = Path(directory.name)
+        for p in (mock.patch.object(page_settings, "PATH", self.dir / "gateway_settings.json"),
+                  mock.patch.object(server, "DEFAULT_TOKEN_FILE", self.dir / "xiaoai_token.txt")):
+            p.start()
+            self.addCleanup(p.stop)
+
+    async def waits(self, srv):
+        """start() 没开端口，一直在等网关页面打开"""
+        with mock.patch.object(server.websockets, "serve") as serve, mock.patch.object(server.logger, "bind"):
+            task = asyncio.create_task(srv.start())
+            await asyncio.sleep(0.05)
+            self.assertFalse(task.done())
+            serve.assert_not_called()
+        return task
+
     async def test_disabled_by_default(self):
-        with mock.patch.object(server.websockets, "serve") as serve:
-            await server.XiaoaiServer({}).start()
-        serve.assert_not_called()
+        task = await self.waits(server.XiaoaiServer({}))
+        task.cancel()
 
     async def test_no_token_file_means_no_server(self):
-        with mock.patch.object(server.websockets, "serve") as serve, mock.patch.object(server.logger, "bind"):
-            await server.XiaoaiServer({"gateway": {"xiaoai": {"enabled": True}}}).start()
-        serve.assert_not_called()
+        task = await self.waits(server.XiaoaiServer({"gateway": {"xiaoai": {"enabled": True}}}))
+        task.cancel()
+
+    async def test_turned_on_from_the_page_without_a_restart(self):
+        from core.gateway import settings as page_settings
+
+        token = self.dir / "token.txt"
+        token.write_text("secret\n", encoding="utf-8")
+        srv = server.XiaoaiServer({"gateway": {"xiaoai": {"port": free_port(), "token_file": str(token)}}})
+        task = await self.waits(srv)
+        page_settings.put("speaker_enabled", True)
+        with mock.patch.object(server.wake, "Spotter", lambda *a, **k: FakeSpotter()):
+            srv.turn_on()
+            await asyncio.wait_for(srv.ready.wait(), 5)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    def test_the_page_switch_wins_over_the_config(self):
+        from core.gateway import settings as page_settings
+
+        self.assertTrue(server.enabled({"gateway": {"xiaoai": {"enabled": True}}}))
+        page_settings.put("speaker_enabled", False)
+        self.assertFalse(server.enabled({"gateway": {"xiaoai": {"enabled": True}}}))
+
+    def test_the_token_falls_back_to_the_data_file(self):
+        self.assertEqual(server.read_token({}), "")
+        (self.dir / "xiaoai_token.txt").write_text("abc\n", encoding="utf-8")
+        self.assertEqual(server.read_token({}), "abc")
 
 
 class LinkTest(unittest.IsolatedAsyncioTestCase):
