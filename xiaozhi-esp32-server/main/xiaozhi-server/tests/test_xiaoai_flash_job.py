@@ -117,6 +117,26 @@ class FlashJobTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(job["result"]["slot"], slot)
             self.assertEqual(self.env()[-2:], [f"setenv boot_part boot{slot}", "saveenv"])
 
+    async def test_the_side_can_be_chosen_but_one_official_side_is_kept(self):
+        self.speaker(KERNEL, SYSTEM, KERNEL, SYSTEM)  # 两边都是官方的：自动写 0 号，也能选 1 号
+        job = await self.start(slot=1)
+        self.assertEqual(job["result"]["slot"], 1, job["error"])
+        self.assertIn("按你选的写 1 号", next(s["detail"] for s in job["steps"] if s["name"] == "选边"))
+        self.assertEqual(self.env(), ["setenv boot_part boot1", "saveenv"])
+        self.assertEqual((self.state / "system0").read_bytes(), SYSTEM)
+
+    async def test_choosing_the_only_official_side_writes_nothing(self):
+        self.speaker(KERNEL, b"patched", KERNEL, SYSTEM)  # 你的音箱：1 号是唯一官方的一边
+        job = await self.start(slot=1)
+        self.assertEqual(job["state"], "error")
+        self.assertIn("0 号不是官方系统", job["error"])
+        self.assertIn("应该写 0 号", job["error"])
+        self.assertEqual(self.calls("partition"), [])
+        self.assertEqual(self.env(), [])
+        await flash_job.act({}, "speaker_flash_start", {"version": "1.62.2", "dry_run": True, "slot": 0})
+        await flash_job._task
+        self.assertEqual(flash_job.job["result"]["slot"], 0)  # 只读试一次也按选的来
+
     async def test_no_official_side_writes_nothing(self):
         self.speaker(OLD_KERNEL, OLD_SYSTEM, KERNEL, b"patched")
         job = await self.start()
@@ -184,7 +204,9 @@ class FlashJobTest(unittest.IsolatedAsyncioTestCase):
         for value, reason in (({"version": "1.62.2", "password": "pw"}, "确认"),
                               ({"version": "abc", "password": "pw", "confirm": True}, "版本不对"),
                               ({"version": "1.62.2", "password": "", "confirm": True}, "root 密码"),
-                              ({"version": "1.62.2", "password": "pw", "confirm": True, "bootdelay": 99}, "bootdelay")):
+                              ({"version": "1.62.2", "password": "pw", "confirm": True, "bootdelay": 99}, "bootdelay"),
+                              ({"version": "1.62.2", "password": "pw", "confirm": True, "slot": 2}, "0 号或 1 号"),
+                              ({"version": "1.62.2", "password": "pw", "confirm": True, "slot": True}, "0 号或 1 号")):
             with self.assertRaisesRegex(ControlError, reason):
                 await flash_job.act({}, "speaker_flash_start", value)
         self.assertEqual(flash_job.job["state"], "idle")

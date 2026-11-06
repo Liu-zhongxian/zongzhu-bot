@@ -512,6 +512,7 @@ function initSpeaker(script, isMac) {
   $("link-install-client").href = `${REPO}/blob/main/zongzhu-speaker/README.md#8-把-client-装到音箱上`;
   $("copy-speaker-install").addEventListener("click", () => copyCommand($("speaker-install-cmd"), $("copy-speaker-install")));
   $("gateway-host").addEventListener("input", gatewayHost);
+  gatewayHost();  // the box starts with "localhost", so the button works without typing
   $("open-gateway").addEventListener("click", () => {
     const host = gatewayHost();
     if (host) window.open(`http://${host}:8003/gateway`, "_blank", "noopener");

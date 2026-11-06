@@ -184,21 +184,32 @@
         <p>后端自带一个网关页面，刷机和装 Client 都在那里点，由后端在你的电脑上做。网关页面在你自己的电脑上，只有同一个局域网里打得开。</p>
         <div class="sub">
           <label>电脑的地址（运行后端的那台）
-            <input id="gateway-host" placeholder="例如：my-mac.local 或 192.168.1.100" autocomplete="off" spellcheck="false">
+            <input id="gateway-host" value="localhost" placeholder="例如：localhost、my-mac.local 或 192.168.1.100" autocomplete="off" spellcheck="false">
           </label>
-          <div class="row"><button id="open-gateway" class="primary" type="button" disabled>打开网关页面</button></div>
+          <div class="row"><button id="open-gateway" class="primary" type="button">打开网关页面</button></div>
           <p class="hint error-text" id="gateway-error"></p>
         </div>
+        <ul class="howto">
+          <li><b>就在运行后端的这台电脑上看这个网页</b>：保持 <code>localhost</code>，直接点「打开网关页面」。刷音箱也要在这台电脑上（音箱的数据线插它）。</li>
+          <li><b>用手机或别的电脑打开</b>：要和运行后端的电脑连同一个 Wi-Fi，把 <code>localhost</code> 换成那台电脑的地址：
+            <ul>
+              <li>Mac：一键安装结束时会显示网关页面地址；或者打开"系统设置 → Wi-Fi"，点已连接网络旁边的「详细信息」，看"IP 地址"；或者在"终端"运行 <code>ipconfig getifaddr en0</code>。</li>
+              <li>Mac 也可以填本地主机名（"系统设置 → 通用 → 共享"最下面，形如 <code>xxx.local</code>），电脑的 IP 变了也能打开。</li>
+              <li>Windows（Docker 运行的后端）：在"命令提示符"运行 <code>ipconfig</code>，看"IPv4 地址"。</li>
+            </ul>
+          </li>
+          <li>打不开的话，先确认后端在运行：在运行后端的电脑上打开 <code>http://localhost:8003/gateway</code> 试试。</li>
+        </ul>
       </section>
 
       <section class="step">
         <h2><span class="num">3</span>在网关页面刷补丁固件、装 Client</h2>
-        <p>补丁固件（来自 <a href="https://github.com/idootop/open-xiaoai" target="_blank" rel="noopener">open-xiaoai</a>）在小米官方系统上打开 SSH、设 root 密码、关掉自动升级，开机运行 Client。音箱有 A、B 两套系统，只写一边，另一边的官方系统留着当退路。</p>
+        <p>补丁固件在小米官方系统上打开 SSH、设 root 密码、关掉自动升级，开机运行 Client。音箱有 A、B 两套系统，只写一边，另一边的官方系统留着当退路。</p>
         <p class="notice warn">刷机有变砖的风险，风险自负。只在小米智能音箱 Pro（OH2P）、系统 1.62.2、Apple Silicon 的 Mac 上完整做过。刷机要后端直接运行在 Mac 上（Docker 里摸不到 USB）。</p>
         <ol class="howto">
           <li>在网关页面左边点"设备"，找到"给小米音箱刷补丁固件"。音箱用能传数据的 Type-C 线直插电脑。</li>
           <li>填音箱现在的系统版本（米家 App → 音箱 → 设置 → 检查更新）和要设的 root 密码，点"开始"。后端下载小米的官方包、打补丁做镜像。</li>
-          <li>页面提示后，拔掉音箱电源、等 3 秒再插上。后端自动接住刷机模式，先备份，再写入、逐字节核对。不放心可以先点"只读试一次（不写）"。</li>
+          <li>页面提示后，拔掉音箱电源、等 3 秒再插上。后端自动接住刷机模式，先备份，再写入、逐字节核对。写哪一边默认自动选，也可以自己选 0 号或 1 号（另一边必须是官方系统才会写）。不放心可以先点"只读试一次（不写）"。</li>
           <li>刷完拔电再插。在下面"接入小米音箱 Pro"里填音箱 IP（路由器管理页面或米家 App 里看）和刚设的 root 密码，点"装到音箱上"。</li>
           <li>5 步都打勾后几秒，音箱"嘀"一声，就连上了。之后喊"宗主"试试。</li>
         </ol>
