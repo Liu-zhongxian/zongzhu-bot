@@ -15,6 +15,8 @@ edge_tts==7.2.8
 httpx==0.28.1
 aiohttp==3.13.2
 aiohttp_cors==0.8.1
+asyncssh==2.24.1  # 网关页面装音箱 Client（SSH，G25）
+pyusb==1.3.1  # 网关页面刷音箱：抓刷机模式（zongzhu-speaker/firmware/aml_wait.py，要 Homebrew 的 libusb）
 ormsgpack==1.12.0
 ruamel.yaml==0.18.16
 loguru==0.7.3

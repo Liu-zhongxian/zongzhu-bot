@@ -23,6 +23,9 @@ COPY firmware/ /zongzhu-repo/firmware/
 COPY web/boards.json /zongzhu-repo/web/boards.json
 COPY examples/backend.config.yaml examples/grok-bot-webhook.example.json /zongzhu-repo/examples/
 COPY deploy/docker/zongzhu_docker.py /zongzhu-repo/deploy/docker/zongzhu_docker.py
+# 网关页面装音箱 Client 用（core/gateway/xiaoai/install.py）
+COPY zongzhu-speaker/client/bin/client /zongzhu-repo/zongzhu-speaker/client/bin/client
+COPY zongzhu-speaker/client/init.sh /zongzhu-repo/zongzhu-speaker/client/init.sh
 
 # 配置和模型在挂载的 /zongzhu 里；链接过去，配置里的相对路径和在 Mac 上一样
 RUN ln -s /zongzhu/data data \

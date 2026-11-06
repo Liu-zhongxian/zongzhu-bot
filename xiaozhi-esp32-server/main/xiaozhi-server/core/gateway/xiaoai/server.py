@@ -31,8 +31,20 @@ REPLY_ECHO_SECONDS = 0.2
 CALL_ECHO_SECONDS = 0.8
 
 
+# 配置里没写 token_file 时，网关页面接入音箱（G25）生成的 token 放这里（相对后端目录，和 gateway_settings.json 一样）
+DEFAULT_TOKEN_FILE = Path("data") / "xiaoai_token.txt"
+
+
 def settings(config):
     return (config.get("gateway") or {}).get("xiaoai") or {}
+
+
+def enabled(config):
+    """开没开音箱接入：网关页面上打开过（data/gateway_settings.json 的 speaker_enabled）就开，否则看配置"""
+    from core.gateway import settings as page_settings
+
+    on = page_settings.get("speaker_enabled")
+    return bool(settings(config).get("enabled")) if on is None else bool(on)
 
 
 def wake_words(config):
@@ -43,13 +55,15 @@ def wake_words(config):
                 or wake.DEFAULT_WAKE_WORDS)
 
 
-def read_token(xiaoai):
-    """token 文件的内容；没配或读不到返回空串（这时拒绝所有连接）"""
+def token_path(xiaoai) -> Path:
     path = str(xiaoai.get("token_file") or "").strip()
-    if not path:
-        return ""
+    return Path(path).expanduser() if path else DEFAULT_TOKEN_FILE
+
+
+def read_token(xiaoai):
+    """token 文件的内容；读不到返回空串（这时拒绝所有连接）"""
     try:
-        return Path(path).expanduser().read_text(encoding="utf-8").strip()
+        return token_path(xiaoai).read_text(encoding="utf-8").strip()
     except OSError:
         return ""
 
@@ -96,6 +110,7 @@ class XiaoaiServer:
         self.skipped = []     # 模型认不了、跳过的词
         self.listeners: set = set()
         self.ready = asyncio.Event()  # 端口开好了（测试用）
+        self.wanted = asyncio.Event()  # 网关页面打开了音箱接入（turn_on），不用重启后端
         speaker_control.server = self  # 网关页面上改唤醒词、呼名时要它重载
 
     def _load_spotter(self, xiaoai):
@@ -136,14 +151,21 @@ class XiaoaiServer:
             return connection.respond(HTTPStatus.UNAUTHORIZED, "Unauthorized\n")
         return None
 
+    def turn_on(self):
+        """网关页面打开了音箱接入（G25）：还没开端口的话现在开"""
+        self.wanted.set()
+
     async def start(self):
+        # 没打开或没有 token 时先等着，网关页面打开后（turn_on）接着开端口
+        warned = False
+        while not (enabled(self.config) and read_token(settings(self.config))):
+            if enabled(self.config) and not warned:
+                logger.bind(tag=TAG).error(f"音箱的 token 文件读不到（{token_path(settings(self.config))}），不接音箱")
+                warned = True
+            self.wanted.clear()
+            await self.wanted.wait()
         xiaoai = settings(self.config)
-        if not xiaoai.get("enabled"):
-            return
         port = int(xiaoai.get("port") or DEFAULT_PORT)
-        if not read_token(xiaoai):
-            logger.bind(tag=TAG).error("gateway.xiaoai.token_file 没配或读不到，不接音箱")
-            return
         await asyncio.to_thread(self._load_spotter, xiaoai)
         try:
             async with websockets.serve(self._handle, "0.0.0.0", port, process_request=self._check_auth,
