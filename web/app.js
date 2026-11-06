@@ -474,6 +474,57 @@ function choice(name, value, title, detail, { disabled = false, checked = false,
 
 // ---------- init ----------
 
+// ---------- 小米音箱 Pro（G25）：后端、刷补丁固件、在网关页面装 Client ----------
+
+const GATEWAY_HOST = /^[A-Za-z0-9.-]+$/;
+
+function showMode(mode) {
+  const speaker = mode === "speaker";
+  $("mode-board").hidden = $("intro-board").hidden = speaker;
+  $("mode-speaker").hidden = $("intro-speaker").hidden = !speaker;
+  for (const b of document.querySelectorAll(".tabs button")) b.setAttribute("aria-selected", String(b.dataset.mode === mode));
+}
+
+function gatewayHost() {
+  const host = $("gateway-host").value.trim().replace(/^https?:\/\//, "").replace(/[:/].*$/, "");
+  const ok = GATEWAY_HOST.test(host);
+  $("open-gateway").disabled = !ok;
+  $("gateway-error").textContent = host && !ok ? "地址只能有字母、数字、点和横线，比如 192.168.1.100" : "";
+  return ok ? host : "";
+}
+
+async function copyCommand(code, button) {
+  try {
+    await navigator.clipboard.writeText(code.textContent);
+    button.textContent = "已复制";
+  } catch {
+    getSelection().selectAllChildren(code);
+    button.textContent = "请按 ⌘C";
+  }
+  setTimeout(() => { button.textContent = "复制"; }, 2000);
+}
+
+function initSpeaker(script, isMac) {
+  $("speaker-install-cmd").textContent = `/bin/bash -c "$(curl -fsSL ${script})"`;
+  $("speaker-install-mac").hidden = !isMac;
+  $("link-docker").href = `${REPO}/blob/main/deploy/docker/README.md`;
+  $("link-speaker-readme").href = `${REPO}/blob/main/zongzhu-speaker/README.md`;
+  $("link-install-client").href = `${REPO}/blob/main/zongzhu-speaker/README.md#8-把-client-装到音箱上`;
+  $("copy-speaker-install").addEventListener("click", () => copyCommand($("speaker-install-cmd"), $("copy-speaker-install")));
+  $("gateway-host").addEventListener("input", gatewayHost);
+  $("open-gateway").addEventListener("click", () => {
+    const host = gatewayHost();
+    if (host) window.open(`http://${host}:8003/gateway`, "_blank", "noopener");
+  });
+  document.querySelector(".tabs").addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-mode]");
+    if (!button) return;
+    history.replaceState(null, "", button.dataset.mode === "speaker" ? "#speaker" : location.pathname + location.search);
+    showMode(button.dataset.mode);
+  });
+  showMode(location.hash === "#speaker" ? "speaker" : "board");
+}
+
 async function init() {
   $("link-repo").href = REPO;
   for (const a of document.querySelectorAll(".link-backend")) a.href = `${REPO}/blob/main/docs/GUIDE.md#2-后端`;
@@ -485,6 +536,7 @@ async function init() {
   const isMac = /Mac/i.test(navigator.userAgentData?.platform || navigator.platform || navigator.userAgent);
   $("install-mac").hidden = !isMac;
   $("install-other").hidden = isMac;
+  initSpeaker(script, isMac);
   if (!("serial" in navigator)) {
     $("unsupported").hidden = false;
     $("connect").disabled = $("connect-any").disabled = true;
@@ -502,16 +554,7 @@ async function init() {
     const button = event.target.closest("button[data-step]");
     if (button) go(Number(button.dataset.step));
   });
-  $("copy-install").addEventListener("click", async () => {
-    try {
-      await navigator.clipboard.writeText($("install-cmd").textContent);
-      $("copy-install").textContent = "已复制";
-    } catch {
-      getSelection().selectAllChildren($("install-cmd"));
-      $("copy-install").textContent = "请按 ⌘C";
-    }
-    setTimeout(() => { $("copy-install").textContent = "复制"; }, 2000);
-  });
+  $("copy-install").addEventListener("click", () => copyCommand($("install-cmd"), $("copy-install")));
   document.addEventListener("change", update);
   document.addEventListener("input", (event) => {
     if (event.target.id === "wake-pinyin") state.pinyinTouched = event.target.value !== "";

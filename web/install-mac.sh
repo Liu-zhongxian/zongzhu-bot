@@ -5,7 +5,8 @@
 #   /bin/bash -c "$(curl -fsSL <网页地址>/install-mac.sh)"
 #
 # 做的事：
-#   1. 检查 Python 3.10、FFmpeg、Opus，只用 Homebrew 安装缺的（不更新 Homebrew，不升级已装的软件）
+#   1. 检查 Python 3.10、FFmpeg、Opus，以及网关页面刷小米音箱要用的 libusb、libusb-compat、squashfs，
+#      只用 Homebrew 安装缺的（不更新 Homebrew，不升级已装的软件）
 #   2. 下载后端代码到 ~/zongzhu（ZONGZHU_DIR 可改），已有配置不会被覆盖
 #   3. 建 Python 虚拟环境并安装依赖
 #   4. 询问 Bot Webhook 地址和 token，写进 private/grok-bot-webhook.json
@@ -44,7 +45,7 @@ if [ "$BREW_PREFIX" != /opt/homebrew ]; then
   warn "检测到 Intel Mac（Homebrew 在 ${BREW_PREFIX}）。本项目只在 Apple 芯片上测试过。"
 fi
 
-say "检查 Python 3.10、FFmpeg、Opus（已有的不重装）"
+say "检查 Python 3.10、FFmpeg、Opus 和刷音箱用的 USB、squashfs 工具（已有的不重装）"
 # Install only what is missing, without updating Homebrew or upgrading what the
 # user has. Installing ffmpeg next to an existing ffmpeg-full once upgraded x265
 # under it and broke that ffmpeg-full (2026-10-21).
@@ -77,6 +78,11 @@ else
 fi
 
 if [ -e "$BREW_PREFIX/lib/libopus.dylib" ]; then echo "Opus：已有，跳过"; else missing="$missing opus"; fi
+# 网关页面给小米音箱刷补丁固件用（core/gateway/xiaoai/flash.py）：抓刷机模式的 libusb、晶晨 update 工具链接的
+# libusb-compat、做镜像的 squashfs。都很小，不刷音箱也不碍事
+if [ -e "$BREW_PREFIX/lib/libusb-1.0.dylib" ]; then echo "libusb：已有，跳过"; else missing="$missing libusb"; fi
+if [ -e "$BREW_PREFIX/opt/libusb-compat/lib/libusb-0.1.4.dylib" ]; then echo "libusb-compat：已有，跳过"; else missing="$missing libusb-compat"; fi
+if [ -x "$BREW_PREFIX/bin/mksquashfs" ] && [ -x "$BREW_PREFIX/bin/unsquashfs" ]; then echo "squashfs：已有，跳过"; else missing="$missing squashfs"; fi
 
 if [ -n "$missing" ]; then
   echo "需要安装：$missing"
@@ -99,6 +105,13 @@ for f in start.sh requirements-macos.txt requirements-macos-funasr.txt LICENSE R
 rsync -a "$TMP/src/examples" "$DIR/"
 mkdir -p "$DIR/tools"
 cp "$TMP/src/tools/autostart.sh" "$TMP/src/tools/launcher.c" "$DIR/tools/"
+# 网关页面装小米音箱 Client 用（core/gateway/xiaoai/install.py 在这里找编好的 Client 和开机脚本）
+mkdir -p "$DIR/zongzhu-speaker/client/bin"
+cp "$TMP/src/zongzhu-speaker/client/init.sh" "$DIR/zongzhu-speaker/client/"
+cp "$TMP/src/zongzhu-speaker/client/bin/client" "$DIR/zongzhu-speaker/client/bin/"
+# 网关页面刷补丁固件用（core/gateway/xiaoai/flash_job.py 调 aml_wait.py、build_image.sh 和补丁）
+rsync -a --exclude tools --exclude work "$TMP/src/zongzhu-speaker/firmware" "$DIR/zongzhu-speaker/"
+cp "$TMP/src/zongzhu-speaker/LICENSE.open-xiaoai" "$TMP/src/zongzhu-speaker/DISCLAIMER.md" "$DIR/zongzhu-speaker/"
 chmod +x "$DIR/start.sh"
 cd "$DIR"
 
@@ -202,6 +215,10 @@ printf '\n\033[1;32m安装完成。\033[0m\n\n'
 echo "回到网页第 4 步，在「电脑的地址」里填下面任意一个："
 [ -n "$HOSTNAME_LOCAL" ] && printf '  \033[1m%s.local\033[0m   （推荐，IP 变了也能用）\n' "$HOSTNAME_LOCAL"
 printf '  \033[1m%s\033[0m\n\n' "$IP"
+GATEWAY_HOST="$IP"
+[ -n "$HOSTNAME_LOCAL" ] && GATEWAY_HOST="$HOSTNAME_LOCAL.local"
+echo "网关页面（看设备、改设置、接小米音箱）：http://$GATEWAY_HOST:8003/gateway"
+echo
 echo "第一次启动时 macOS 如果询问是否允许 Python 接受传入连接，请选「允许」。"
 
 if launchctl print "gui/$(id -u)/com.zongzhu.backend" >/dev/null 2>&1; then
