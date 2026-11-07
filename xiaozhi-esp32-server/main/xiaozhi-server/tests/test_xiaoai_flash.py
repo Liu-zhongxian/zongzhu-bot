@@ -169,3 +169,20 @@ class FlashTest(unittest.IsolatedAsyncioTestCase):
             result = flash.check()
         self.assertFalse(result["ok"])
         self.assertTrue(any("brew install libusb libusb-compat squashfs" in m for m in result["missing"]))
+
+
+class BurnModeTest(unittest.TestCase):
+    def test_burn_mode_is_looked_up_by_id_and_never_fails(self):
+        import usb.core
+
+        with mock.patch.object(flash, "libusb", return_value=None):
+            self.assertFalse(flash.in_burn_mode())
+        with mock.patch.object(flash, "libusb", return_value="/x/libusb.dylib"), \
+                mock.patch("usb.backend.libusb1.get_backend", return_value=object()):
+            with mock.patch.object(usb.core, "find", return_value=object()) as find:
+                self.assertTrue(flash.in_burn_mode())
+            self.assertEqual((find.call_args.kwargs["idVendor"], find.call_args.kwargs["idProduct"]), (0x1B8E, 0xC003))
+            with mock.patch.object(usb.core, "find", return_value=None):
+                self.assertFalse(flash.in_burn_mode())
+            with mock.patch.object(usb.core, "find", side_effect=usb.core.NoBackendError("x")):
+                self.assertFalse(flash.in_burn_mode())

@@ -22,7 +22,7 @@ from urllib.parse import urlparse
 from config.logger import setup_logging
 from core.gateway import settings as page_settings
 from core.gateway.control import ControlError
-from core.gateway.xiaoai import control as speaker_control, install, server as speaker_server, wake
+from core.gateway.xiaoai import control as speaker_control, flash, flash_job, install, server as speaker_server, wake
 
 TAG = __name__
 logger = setup_logging()
@@ -240,6 +240,11 @@ async def act(config, action, value) -> dict:
         install.check_server_url(url)
     except install.InstallError as e:
         raise ControlError(str(e)) from None
+    if flash_job.job["state"] == "running":
+        raise ControlError("上面正在刷补丁固件：等它做完，拔掉音箱电源再插上、等小爱开机出声后再装")
+    if await asyncio.to_thread(flash.in_burn_mode):
+        raise ControlError("音箱还停在刷机模式（这台电脑的 USB 上能看到它），连不上：拔掉音箱电源，等 3 秒再插上，"
+                           "等小爱开机出声（约 1 分钟）后再点「装到音箱上」")
     enable(config)  # 装完音箱就来连，先把接入打开
     install_job.update(state="running", host=host, error="", result=None, steps=[])
     _spawn(_install(config, host, password, url))
