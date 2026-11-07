@@ -11,7 +11,7 @@ from unittest import mock
 
 from core.gateway import settings as page_settings
 from core.gateway.control import ControlError
-from core.gateway.xiaoai import control as speaker_control, install, server, setup
+from core.gateway.xiaoai import control as speaker_control, flash, flash_job, install, server, setup
 
 
 class FakeServer:
@@ -70,6 +70,8 @@ class SetupTest(unittest.IsolatedAsyncioTestCase):
                   mock.patch.object(install, "KNOWN_HOSTS", self.dir / "known_hosts.json"),
                   mock.patch.object(speaker_control, "server", self.server),
                   mock.patch.object(setup, "in_docker", lambda: False),
+                  mock.patch.object(flash, "in_burn_mode", lambda: False),
+                  mock.patch.dict(flash_job.job, state="idle"),
                   mock.patch.dict(setup.model_job, state="idle", done=0, total=0, error=""),
                   mock.patch.dict(setup.install_job, state="idle", host="", steps=[], error="", result=None)):
             p.start()
@@ -209,6 +211,19 @@ class SetupTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ControlError, "正在装"):
             await setup.act(self.config, "speaker_install", {"host": "10.0.0.9", "password": "x"})
         self.assertIsNone(page_settings.get("speaker_enabled"))
+
+    async def test_install_waits_for_the_speaker_to_leave_burn_mode(self):
+        connect = mock.AsyncMock()
+        with mock.patch.object(install, "connect", connect):
+            flash_job.job["state"] = "running"
+            with self.assertRaisesRegex(ControlError, "正在刷补丁固件"):
+                await setup.act(self.config, "speaker_install", {"host": "10.0.0.9", "password": "x"})
+            flash_job.job["state"] = "done"
+            with mock.patch.object(flash, "in_burn_mode", lambda: True), \
+                    self.assertRaisesRegex(ControlError, "还停在刷机模式.*拔掉音箱电源"):
+                await setup.act(self.config, "speaker_install", {"host": "10.0.0.9", "password": "x"})
+        connect.assert_not_awaited()
+        self.assertEqual(setup.install_job["state"], "idle")
 
     async def test_forget_key(self):
         install._save_known({"10.0.0.9": "ssh-rsa AAAA"})

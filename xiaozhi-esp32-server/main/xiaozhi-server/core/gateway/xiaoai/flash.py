@@ -55,6 +55,22 @@ def libusb() -> str | None:
     return os.environ.get("AML_LIBUSB") or _brew_file("lib/libusb-1.0.dylib")
 
 
+def in_burn_mode() -> bool:
+    """这台电脑的 USB 上有没有停在刷机模式的音箱（1b8e:c003）。只列设备、不打开它；查不了就当没有。
+    刷完（或只读试完）音箱会一直停在刷机模式，要拔电再插才开机（2026-11-07 装 Client 超时就是这样）"""
+    path = libusb()
+    if not path or importlib.util.find_spec("usb") is None:
+        return False
+    try:
+        import usb.backend.libusb1
+        import usb.core
+
+        backend = usb.backend.libusb1.get_backend(find_library=lambda _: path)
+        return backend is not None and usb.core.find(idVendor=0x1B8E, idProduct=0xC003, backend=backend) is not None
+    except Exception:
+        return False
+
+
 def _sha256(path) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
